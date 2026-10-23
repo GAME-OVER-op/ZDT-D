@@ -215,6 +215,30 @@ pub struct ImportNodeRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BulkImportNodesRequest {
+    pub target: String,
+    pub profile: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkImportFailure {
+    pub node_id: String,
+    pub name: String,
+    pub error: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkImportResult {
+    pub target: String,
+    pub profile: String,
+    pub compatible: usize,
+    pub imported: usize,
+    pub skipped: usize,
+    pub failed: usize,
+    pub failures: Vec<BulkImportFailure>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ManualImportPreviewRequest {
     pub content: String,
 }
@@ -585,8 +609,14 @@ pub fn export_node(subscription_id: &str, node_id: &str) -> Result<JsonValue> {
         match node.protocol.as_str() {
             "hysteria2" => (render_hysteria2_config(&node, 11590)?, "json"),
             "wireguard" => (render_wireproxy_config(&node, 1167)?, "conf"),
-            "vless" | "vmess" | "trojan" | "shadowsocks" | "socks" =>
-                (render_singbox_config(&node, 2080)?, "json"),
+            "vless" | "vmess" | "trojan" | "shadowsocks" | "socks" => {
+                let rendered = if node.targets.iter().any(|target| target == "sing-box") {
+                    render_singbox_config(&node, 2080)?
+                } else {
+                    render_singbox_lx_config(&node, 1180)?
+                };
+                (rendered, "json")
+            },
             _ => (serde_json::to_string_pretty(&node.definition)?, "json"),
         }
     };
@@ -948,6 +978,7 @@ fn transport_from_definition(definition: &JsonValue) -> String {
             .to_ascii_lowercase()
             .replace("websocket", "ws")
             .replace("none", "tcp")
+            .replace("splithttp", "xhttp")
     };
     if let Some(value) = definition.get("transport") {
         if let Some(raw) = value.as_str() { return normalized(raw); }
@@ -976,18 +1007,60 @@ fn security_from_definition(definition: &JsonValue) -> String {
 }
 
 fn targets_for_protocol(protocol: &str, transport: &str) -> Vec<String> {
+    let normalized_transport = transport.trim().to_ascii_lowercase();
+    let transport = if normalized_transport == "splithttp" { "xhttp" } else { normalized_transport.as_str() };
     match protocol {
         "hysteria2" => vec!["hysteria2".to_string()],
         "wireguard" => vec!["wireproxy".to_string()],
-        // Only transports rendered by this importer are offered. The bundled
-        // sing-box 1.13.x does not implement XHTTP, so those nodes stay
-        // visible/copyable without creating a silently incomplete config.
+        // Standard sing-box keeps exactly the transports it supported before
+        // the LX integration. sing-box-lx is offered as a second compatible
+        // target for those nodes, while native XHTTP is LX-only.
         "vless" | "vmess" | "trojan"
             if matches!(transport, "" | "tcp" | "ws" | "grpc" | "http" | "httpupgrade") =>
-                vec!["sing-box".to_string()],
-        "shadowsocks" | "socks" => vec!["sing-box".to_string()],
+                vec!["sing-box".to_string(), "sing-box-lx".to_string()],
+        "vless" | "vmess" | "trojan" if transport == "xhttp" =>
+            vec!["sing-box-lx".to_string()],
+        "shadowsocks" | "socks" =>
+            vec!["sing-box".to_string(), "sing-box-lx".to_string()],
         _ => Vec::new(),
     }
+}
+
+fn vless_encryption_from_definition(definition: &JsonValue) -> Option<String> {
+    let encryption = json_string_any(definition, &["encryption"]).trim().to_string();
+    if encryption.is_empty() || encryption.eq_ignore_ascii_case("none") {
+        None
+    } else {
+        Some(encryption)
+    }
+}
+
+fn valid_vless_encryption_shape(encryption: &str) -> bool {
+    let mut parts = encryption.split('.');
+    if parts.next() != Some("mlkem768x25519plus") {
+        return false;
+    }
+    let tail = parts.collect::<Vec<_>>();
+    tail.len() >= 3 && tail.iter().all(|part| !part.is_empty())
+}
+
+fn targets_for_definition(protocol: &str, transport: &str, definition: &JsonValue) -> Vec<String> {
+    if protocol == "vless" {
+        if let Some(encryption) = vless_encryption_from_definition(definition) {
+            // Never silently downgrade a PQ VLESS node by dropping encryption.
+            // Invalid shapes get no target and are rejected before rendering.
+            return if valid_vless_encryption_shape(&encryption) {
+                vec!["sing-box-lx".to_string()]
+            } else {
+                Vec::new()
+            };
+        }
+    }
+    targets_for_protocol(protocol, transport)
+}
+
+fn targets_for_node(node: &SubscriptionNode) -> Vec<String> {
+    targets_for_definition(&node.protocol, &node.transport, &node.definition)
 }
 
 fn normalize_stored_node(mut node: SubscriptionNode) -> SubscriptionNode {
@@ -1014,7 +1087,7 @@ fn normalize_stored_node(mut node: SubscriptionNode) -> SubscriptionNode {
     node.targets = if node.server.is_empty() || node.port == 0 {
         Vec::new()
     } else {
-        targets_for_protocol(&node.protocol, &node.transport)
+        targets_for_definition(&node.protocol, &node.transport, &node.definition)
     };
     node
 }
@@ -1048,7 +1121,7 @@ fn node_from_definition(subscription_id: &str, mut definition: JsonValue, occurr
     if security.is_empty() && matches!(protocol.as_str(), "hysteria2" | "trojan") {
         security = "tls".to_string();
     }
-    let targets = if server.is_empty() || port == 0 { Vec::new() } else { targets_for_protocol(&protocol, &transport) };
+    let targets = if server.is_empty() || port == 0 { Vec::new() } else { targets_for_definition(&protocol, &transport, &definition) };
     Some(normalize_stored_node(SubscriptionNode {
         id: stable_node_id(subscription_id, &protocol, &name, occurrence),
         name,
@@ -1216,6 +1289,7 @@ fn target_server_root(target: &str, profile: &str, server: &str) -> Result<PathB
     crate::programs::singbox::ensure_valid_profile_name(server)?;
     let program = match target {
         "sing-box" => "singbox",
+        "sing-box-lx" => "singbox-lx",
         "hysteria2" => "hysteria2",
         "wireproxy" => "wireproxy",
         _ => bail!("unsupported subscription import target"),
@@ -1226,8 +1300,15 @@ fn target_server_root(target: &str, profile: &str, server: &str) -> Result<PathB
 }
 
 fn ensure_target_accepts_new_server(target: &str, profile: &str) -> Result<()> {
-    if !matches!(target, "sing-box" | "hysteria2") { return Ok(()); }
-    let program = if target == "sing-box" { "singbox" } else { "hysteria2" };
+    if target == "sing-box-lx" && !crate::programs::singbox_lx::is_installed() {
+        bail!("sing-box-lx optional component is not installed");
+    }
+    if !matches!(target, "sing-box" | "sing-box-lx" | "hysteria2") { return Ok(()); }
+    let program = match target {
+        "sing-box" => "singbox",
+        "sing-box-lx" => "singbox-lx",
+        _ => "hysteria2",
+    };
     let root = PathBuf::from(format!("/data/adb/modules/ZDT-D/working_folder/{program}/profile/{profile}"));
     let vpn_mode = fs::read_to_string(root.join("setting.json")).ok()
         .and_then(|raw| serde_json::from_str::<JsonValue>(&raw).ok())
@@ -1261,14 +1342,26 @@ fn tls_json(definition: &JsonValue, default_enabled: bool) -> Option<JsonValue> 
     let security = json_string_any(definition, &["security", "tls"]);
     let enabled = default_enabled || security.eq_ignore_ascii_case("tls") || security.eq_ignore_ascii_case("reality") || bool_any(definition, &["tls"]);
     if !enabled { return None; }
-    let sni = json_string_any(definition, &["sni", "servername", "server-name", "peer"]);
+    let sni = json_string_any(definition, &["sni", "servername", "serverName", "server-name", "server_name", "peer"]);
     let mut tls = json!({"enabled": true, "insecure": bool_any(definition, &["skip-cert-verify", "allowInsecure", "insecure"])});
     if !sni.is_empty() { tls["server_name"] = json!(sni); }
-    let fp = json_string_any(definition, &["client-fingerprint", "fp"]);
-    if !fp.is_empty() { tls["utls"] = json!({"enabled": true, "fingerprint": fp}); }
+    let mut alpn_values = Vec::<String>::new();
+    if let Some(alpn) = definition.get("alpn") {
+        if let Some(raw) = alpn.as_str() {
+            alpn_values.extend(raw.split(|c| c == ',' || c == '\n').map(str::trim).filter(|value| !value.is_empty()).map(str::to_string));
+        } else if let Some(values) = alpn.as_array() {
+            alpn_values.extend(values.iter().filter_map(JsonValue::as_str).map(str::trim).filter(|value| !value.is_empty()).map(str::to_string));
+        }
+    }
+    if !alpn_values.is_empty() { tls["alpn"] = json!(alpn_values); }
     let reality = definition.get("reality-opts").or_else(|| definition.get("reality_opts"));
     let public_key = reality.map(|v| json_string_any(v, &["public-key", "public_key"]))
-        .filter(|v| !v.is_empty()).unwrap_or_else(|| json_string_any(definition, &["pbk", "public-key"]));
+        .filter(|v| !v.is_empty()).unwrap_or_else(|| json_string_any(definition, &["pbk", "public-key", "public_key"]));
+    let mut fp = json_string_any(definition, &["client-fingerprint", "client_fingerprint", "fingerprint", "fp"]);
+    let fp_disabled = fp.eq_ignore_ascii_case("none");
+    if fp_disabled { fp.clear(); }
+    if fp.is_empty() && !fp_disabled && !public_key.is_empty() { fp = "chrome".to_string(); }
+    if !fp.is_empty() { tls["utls"] = json!({"enabled": true, "fingerprint": fp}); }
     if !public_key.is_empty() {
         let short_id = reality.map(|v| json_string_any(v, &["short-id", "short_id"]))
             .filter(|v| !v.is_empty()).unwrap_or_else(|| json_string_any(definition, &["sid", "short-id"]));
@@ -1277,19 +1370,277 @@ fn tls_json(definition: &JsonValue, default_enabled: bool) -> Option<JsonValue> 
     Some(tls)
 }
 
-fn singbox_outbound(node: &SubscriptionNode) -> Result<JsonValue> {
+const XHTTP_MODES: &[&str] = &["auto", "packet-up", "stream-up", "stream-one"];
+const XHTTP_PLACEMENTS: &[&str] = &["path", "query", "header", "cookie"];
+const XHTTP_UPLINK_PLACEMENTS: &[&str] = &["body", "auto", "header", "cookie"];
+const XHTTP_PADDING_PLACEMENTS: &[&str] = &["cookie", "header", "query", "queryInHeader"];
+const XHTTP_PADDING_METHODS: &[&str] = &["repeat-x", "tokenish"];
+
+fn json_value_fold<'a>(value: &'a JsonValue, keys: &[&str]) -> Option<&'a JsonValue> {
+    let object = value.as_object()?;
+    keys.iter().find_map(|wanted| {
+        object.iter().find(|(key, _)| key.eq_ignore_ascii_case(wanted)).map(|(_, value)| value)
+    })
+}
+
+fn json_scalar_string(value: &JsonValue) -> Option<String> {
+    match value {
+        JsonValue::String(value) => {
+            let value = value.trim();
+            if value.is_empty() { None } else { Some(value.to_string()) }
+        }
+        JsonValue::Number(value) => {
+            let raw = value.to_string();
+            if let Ok(parsed) = raw.parse::<f64>() {
+                if parsed.is_finite() && parsed.fract() == 0.0 {
+                    return Some(format!("{:.0}", parsed));
+                }
+            }
+            Some(raw)
+        }
+        JsonValue::Bool(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+fn xhttp_query_map(share_link: &str) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let Some((_, raw_query)) = share_link.split_once('?') else { return out; };
+    let raw_query = raw_query.split('#').next().unwrap_or(raw_query);
+    for pair in raw_query.split('&') {
+        if pair.is_empty() { continue; }
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = percent_decode_str(key).decode_utf8_lossy().into_owned();
+        if key.trim().is_empty() { continue; }
+        // percent_decode_str deliberately keeps '+' literal, matching the
+        // Xray/LxBox XHTTP path contract instead of form-url decoding it.
+        let value = percent_decode_str(value).decode_utf8_lossy().into_owned();
+        out.insert(key, value);
+    }
+    out
+}
+
+fn map_string_fold(map: &BTreeMap<String, String>, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|wanted| {
+        map.iter().find(|(key, value)| key.eq_ignore_ascii_case(wanted) && !value.trim().is_empty())
+            .map(|(_, value)| value.trim().to_string())
+    })
+}
+
+fn map_raw_fold(map: &BTreeMap<String, String>, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|wanted| {
+        map.iter().find(|(key, _)| key.eq_ignore_ascii_case(wanted))
+            .map(|(_, value)| value.to_string())
+    })
+}
+
+fn parse_bool_spelled(raw: &str) -> Option<bool> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" => Some(true),
+        "0" | "false" => Some(false),
+        _ => None,
+    }
+}
+
+fn parse_flexible_i64(raw: &str) -> Option<i64> {
+    let raw = raw.trim();
+    if let Ok(value) = raw.parse::<i64>() { return Some(value); }
+    let value = raw.parse::<f64>().ok()?;
+    if !value.is_finite() || value.fract() != 0.0 || value < i64::MIN as f64 || value > i64::MAX as f64 {
+        return None;
+    }
+    Some(value as i64)
+}
+
+fn normalize_sc_range(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() { return None; }
+    if let Ok(value) = raw.parse::<f64>() {
+        if value.is_finite() && value.fract() == 0.0 { return Some(format!("{:.0}", value)); }
+    }
+    Some(raw.to_string())
+}
+
+fn has_percent_escape(raw: &str) -> bool {
+    let bytes = raw.as_bytes();
+    bytes.windows(3).any(|chunk| {
+        chunk[0] == b'%' && chunk[1].is_ascii_hexdigit() && chunk[2].is_ascii_hexdigit()
+    })
+}
+
+fn normalize_xhttp_path(mut path: String) -> String {
+    // URI query parsing already performs one percent-decode. Xray/LxBox links
+    // are commonly double-encoded, so mirror the Android one-line importer and
+    // peel at most two remaining valid percent-escape layers. Literal '+' is
+    // preserved because percent_decode_str does not apply form-url semantics.
+    for _ in 0..2 {
+        if !has_percent_escape(&path) { break; }
+        let decoded = percent_decode_str(&path).decode_utf8_lossy().into_owned();
+        if decoded == path { break; }
+        path = decoded;
+    }
+    if path.is_empty() { "/".to_string() } else { path }
+}
+
+fn xhttp_transport(node: &SubscriptionNode) -> JsonValue {
+    let d = &node.definition;
+    let opts = d.get("xhttp-opts").or_else(|| d.get("xhttp_opts")).filter(|value| value.is_object());
+    let flat_json = opts.unwrap_or(d);
+    let query = xhttp_query_map(&node.share_link);
+
+    let flat = |keys: &[&str]| -> Option<String> {
+        map_string_fold(&query, keys).or_else(|| json_value_fold(flat_json, keys).and_then(json_scalar_string))
+    };
+
+    let extra = map_string_fold(&query, &["extra"])
+        .and_then(|raw| serde_json::from_str::<JsonValue>(&raw).ok())
+        .filter(|value| value.is_object())
+        .or_else(|| {
+            let value = json_value_fold(flat_json, &["extra"])?;
+            if value.is_object() {
+                Some(value.clone())
+            } else {
+                json_scalar_string(value)
+                    .and_then(|raw| serde_json::from_str::<JsonValue>(&raw).ok())
+                    .filter(|parsed| parsed.is_object())
+            }
+        })
+        .unwrap_or_else(|| json!({}));
+    let extra_xmux = json_value_fold(&extra, &["xmux"]).filter(|value| value.is_object());
+
+    let extra_scalar = |keys: &[&str]| -> Option<String> {
+        json_value_fold(&extra, keys).and_then(json_scalar_string)
+    };
+    let extended = |keys: &[&str]| -> Option<String> { extra_scalar(keys).or_else(|| flat(keys)) };
+    let extended_bool = |keys: &[&str]| -> Option<bool> { extended(keys).as_deref().and_then(parse_bool_spelled) };
+    let extended_int = |keys: &[&str]| -> Option<i64> { extended(keys).as_deref().and_then(parse_flexible_i64) };
+    let extended_xmux = |keys: &[&str]| -> Option<String> {
+        extra_scalar(keys)
+            .or_else(|| extra_xmux.and_then(|xmux| json_value_fold(xmux, keys)).and_then(json_scalar_string))
+            .or_else(|| flat(keys))
+    };
+
+    let mut transport = serde_json::Map::new();
+    transport.insert("type".to_string(), json!("xhttp"));
+
+    if let Some(path) = map_raw_fold(&query, &["path"]) {
+        transport.insert("path".to_string(), json!(normalize_xhttp_path(path)));
+    } else if let Some(value) = json_value_fold(flat_json, &["path"]) {
+        if let Some(path) = value.as_str() {
+            transport.insert("path".to_string(), json!(normalize_xhttp_path(path.to_string())));
+        }
+    }
+    if let Some(host) = flat(&["host"]) { transport.insert("host".to_string(), json!(host)); }
+    if let Some(headers) = json_value_fold(flat_json, &["headers"]).and_then(JsonValue::as_object) {
+        let normalized: serde_json::Map<String, JsonValue> = headers.iter()
+            .filter_map(|(key, value)| json_scalar_string(value).map(|value| (key.clone(), json!(value))))
+            .collect();
+        if !normalized.is_empty() { transport.insert("headers".to_string(), JsonValue::Object(normalized)); }
+    }
+
+    let raw_mode = flat(&["mode"]);
+    let mut mode = raw_mode.as_deref().filter(|value| XHTTP_MODES.contains(value)).map(str::to_string);
+
+    if let Some(value) = extended(&["xPaddingBytes", "x_padding_bytes"]) { transport.insert("x_padding_bytes".to_string(), json!(value)); }
+
+    if let Some(value) = extended(&["sessionPlacement", "session_placement", "sessionIDPlacement"])
+        .filter(|value| XHTTP_PLACEMENTS.contains(&value.as_str()))
+    { transport.insert("session_placement".to_string(), json!(value)); }
+    if let Some(value) = extended(&["sessionKey", "session_key", "sessionIDKey"]) { transport.insert("session_key".to_string(), json!(value)); }
+
+    if let Some(value) = extended(&["seqPlacement", "seq_placement"])
+        .filter(|value| XHTTP_PLACEMENTS.contains(&value.as_str()))
+    { transport.insert("seq_placement".to_string(), json!(value)); }
+    if let Some(value) = extended(&["seqKey", "seq_key"]) { transport.insert("seq_key".to_string(), json!(value)); }
+
+    let mut uplink_placement = extended(&["uplinkDataPlacement", "uplink_data_placement"])
+        .filter(|value| XHTTP_UPLINK_PLACEMENTS.contains(&value.as_str()));
+    if matches!(uplink_placement.as_deref(), Some("header" | "cookie")) {
+        if raw_mode.as_deref().unwrap_or("").trim().is_empty() {
+            mode = Some("packet-up".to_string());
+        } else if mode.as_deref() != Some("packet-up") {
+            uplink_placement = None;
+        }
+    }
+    if let Some(value) = uplink_placement { transport.insert("uplink_data_placement".to_string(), json!(value)); }
+    if let Some(value) = extended(&["uplinkDataKey", "uplink_data_key"]) { transport.insert("uplink_data_key".to_string(), json!(value)); }
+    if let Some(value) = extended(&["uplinkChunkSize", "uplink_chunk_size"]) { transport.insert("uplink_chunk_size".to_string(), json!(value)); }
+    if let Some(value) = extended(&["uplinkHTTPMethod", "uplink_http_method"]) { transport.insert("uplink_http_method".to_string(), json!(value)); }
+
+    if extended_bool(&["xPaddingObfsMode", "x_padding_obfs_mode"]) == Some(true) { transport.insert("x_padding_obfs_mode".to_string(), json!(true)); }
+    if let Some(value) = extended(&["xPaddingKey", "x_padding_key"]) { transport.insert("x_padding_key".to_string(), json!(value)); }
+    if let Some(value) = extended(&["xPaddingHeader", "x_padding_header"]) { transport.insert("x_padding_header".to_string(), json!(value)); }
+    if let Some(value) = extended(&["xPaddingPlacement", "x_padding_placement"])
+        .filter(|value| XHTTP_PADDING_PLACEMENTS.contains(&value.as_str()))
+    { transport.insert("x_padding_placement".to_string(), json!(value)); }
+    if let Some(value) = extended(&["xPaddingMethod", "x_padding_method"])
+        .filter(|value| XHTTP_PADDING_METHODS.contains(&value.as_str()))
+    { transport.insert("x_padding_method".to_string(), json!(value)); }
+
+    for (keys, output) in [
+        (&["scMaxEachPostBytes", "sc_max_each_post_bytes"][..], "sc_max_each_post_bytes"),
+        (&["scMinPostsIntervalMs", "sc_min_posts_interval_ms"][..], "sc_min_posts_interval_ms"),
+        (&["scStreamUpServerSecs", "sc_stream_up_server_secs"][..], "sc_stream_up_server_secs"),
+    ] {
+        if let Some(value) = extended(keys).as_deref().and_then(normalize_sc_range) {
+            transport.insert(output.to_string(), json!(value));
+        }
+    }
+    if extended_bool(&["noGRPCHeader", "no_grpc_header"]) == Some(true) { transport.insert("no_grpc_header".to_string(), json!(true)); }
+    if extended_bool(&["noSSEHeader", "no_sse_header"]) == Some(true) { transport.insert("no_sse_header".to_string(), json!(true)); }
+    if let Some(value) = extended_int(&["scMaxBufferedPosts", "sc_max_buffered_posts"]) { transport.insert("sc_max_buffered_posts".to_string(), json!(value)); }
+
+    let mut xmux = serde_json::Map::new();
+    for (keys, output) in [
+        (&["maxConcurrency", "max_concurrency"][..], "max_concurrency"),
+        (&["maxConnections", "max_connections"][..], "max_connections"),
+        (&["cMaxReuseTimes", "c_max_reuse_times"][..], "c_max_reuse_times"),
+        (&["hMaxRequestTimes", "h_max_request_times"][..], "h_max_request_times"),
+        (&["hMaxReusableSecs", "h_max_reusable_secs"][..], "h_max_reusable_secs"),
+    ] {
+        if let Some(value) = extended_xmux(keys) { xmux.insert(output.to_string(), json!(value)); }
+    }
+    if let Some(value) = extended_xmux(&["hKeepAlivePeriod", "h_keep_alive_period"]).as_deref().and_then(parse_flexible_i64) {
+        xmux.insert("h_keep_alive_period".to_string(), json!(value));
+    }
+    if !xmux.is_empty() { transport.insert("xmux".to_string(), JsonValue::Object(xmux)); }
+    if let Some(value) = mode { transport.insert("mode".to_string(), json!(value)); }
+
+    JsonValue::Object(transport)
+}
+
+fn singbox_outbound(node: &SubscriptionNode, lx: bool) -> Result<JsonValue> {
     let d = &node.definition;
     let mut out = json!({"type": node.protocol, "tag": "proxy", "server": node.server, "server_port": node.port});
     match node.protocol.as_str() {
         "vless" => {
             out["uuid"] = json!(json_string_any(d, &["uuid", "id"]));
-            let flow = json_string_any(d, &["flow"]); if !flow.is_empty() { out["flow"] = json!(flow); }
+            let encryption = vless_encryption_from_definition(d);
+            if let Some(encryption) = encryption.as_deref() {
+                if !valid_vless_encryption_shape(encryption) {
+                    bail!("VLESS encryption string is malformed");
+                }
+                if !lx {
+                    bail!("VLESS encryption requires sing-box-lx");
+                }
+                out["encryption"] = json!(encryption);
+            }
+            let flow = json_string_any(d, &["flow"]);
+            let has_transport = !node.transport.trim().is_empty() && !node.transport.eq_ignore_ascii_case("tcp");
+            // Current LX supports Vision above the VLESS encryption layer. Without
+            // encryption, keep the LX mapper conservative and drop Vision whenever
+            // a transport is present instead of producing a core-rejected node.
+            if !flow.is_empty() && !(lx && has_transport && encryption.is_none()) { out["flow"] = json!(flow); }
+            let packet_encoding = json_string_any(d, &["packetEncoding", "packet_encoding", "packet-encoding"]);
+            if !packet_encoding.is_empty() { out["packet_encoding"] = json!(packet_encoding); }
             if let Some(tls) = tls_json(d, false) { out["tls"] = tls; }
         }
         "vmess" => {
             out["uuid"] = json!(json_string_any(d, &["uuid", "id"]));
             out["security"] = json!(json_string_any(d, &["cipher", "security", "scy"]).trim().to_string());
             out["alter_id"] = json!(json_string_any(d, &["alterId", "alter-id", "aid"]).parse::<u64>().unwrap_or(0));
+            let packet_encoding = json_string_any(d, &["packetEncoding", "packet_encoding", "packet-encoding"]);
+            if !packet_encoding.is_empty() { out["packet_encoding"] = json!(packet_encoding); }
             if let Some(tls) = tls_json(d, false) { out["tls"] = tls; }
         }
         "trojan" => {
@@ -1334,10 +1685,19 @@ fn singbox_outbound(node: &SubscriptionNode) -> Result<JsonValue> {
     }
 
     if let Some(transport) = d.get("transport").filter(|value| value.is_object()) {
-        out["transport"] = transport.clone();
+        let mut transport = transport.clone();
+        let transport_type = json_string_any(&transport, &["type"]).to_ascii_lowercase();
+        if matches!(transport_type.as_str(), "xhttp" | "splithttp") {
+            if !lx { bail!("XHTTP requires sing-box-lx"); }
+            if let Some(object) = transport.as_object_mut() { object.insert("type".to_string(), json!("xhttp")); }
+        }
+        out["transport"] = transport;
         return Ok(out);
     }
-    let network = json_string_any(d, &["network", "type"]);
+    let network = match json_string_any(d, &["network", "type"]).to_ascii_lowercase().as_str() {
+        "splithttp" => "xhttp".to_string(),
+        value => value.to_string(),
+    };
     if network == "ws" {
         let opts = d.get("ws-opts").or_else(|| d.get("ws_opts"));
         let path = opts.map(|v| json_string_any(v, &["path"])).filter(|v| !v.is_empty())
@@ -1364,12 +1724,15 @@ fn singbox_outbound(node: &SubscriptionNode) -> Result<JsonValue> {
         let host = json_string_any(d, &["host"]);
         out["transport"] = json!({"type":"httpupgrade", "path": path});
         if !host.is_empty() { out["transport"]["host"] = json!(host); }
+    } else if network == "xhttp" {
+        if !lx { bail!("XHTTP requires sing-box-lx"); }
+        out["transport"] = xhttp_transport(node);
     }
     Ok(out)
 }
 
-fn render_singbox_config(node: &SubscriptionNode, local_port: u16) -> Result<String> {
-    let outbound = singbox_outbound(node)?;
+fn render_singbox_config_for_target(node: &SubscriptionNode, local_port: u16, lx: bool) -> Result<String> {
+    let outbound = singbox_outbound(node, lx)?;
     let config = json!({
         "log": {"level": "info"},
         "inbounds": [{"type":"mixed", "tag":"mixed-in", "listen":"127.0.0.1", "listen_port":local_port}],
@@ -1377,6 +1740,14 @@ fn render_singbox_config(node: &SubscriptionNode, local_port: u16) -> Result<Str
         "route": {"rules":[{"inbound":["mixed-in"], "action":"sniff"}], "final":"proxy", "auto_detect_interface":true}
     });
     Ok(serde_json::to_string_pretty(&config)?)
+}
+
+fn render_singbox_config(node: &SubscriptionNode, local_port: u16) -> Result<String> {
+    render_singbox_config_for_target(node, local_port, false)
+}
+
+fn render_singbox_lx_config(node: &SubscriptionNode, local_port: u16) -> Result<String> {
+    render_singbox_config_for_target(node, local_port, true)
 }
 
 fn render_hysteria2_config(node: &SubscriptionNode, local_port: u16) -> Result<String> {
@@ -1509,13 +1880,16 @@ fn parse_manual_source(raw: &str) -> Result<ParsedManualSource> {
             }
             let outbound = (*proxy_outbounds[0]).clone();
             let node = node_from_manual_definition(outbound)?;
-            if node.targets.iter().all(|target| target != "sing-box") {
+            let standard = node.targets.iter().any(|target| target == "sing-box");
+            let lx = node.targets.iter().any(|target| target == "sing-box-lx");
+            if !standard && !lx {
                 bail!("sing-box JSON uses an unsupported transport");
             }
+            let exact_target = if lx && !standard { Some("sing-box-lx") } else { None };
             return Ok(ParsedManualSource {
                 node,
                 exact_content: Some(serde_json::to_string_pretty(&value)?),
-                exact_target: Some("sing-box"),
+                exact_target,
                 format: "json",
             });
         }
@@ -1569,7 +1943,7 @@ pub fn preview_manual_import(request: ManualImportPreviewRequest) -> Result<Json
 pub fn import_manual(request: ManualImportRequest) -> Result<JsonValue> {
     let parsed = parse_manual_source(&request.content)?;
     let target = request.target.trim().to_ascii_lowercase();
-    if !targets_for_protocol(&parsed.node.protocol, &parsed.node.transport).iter().any(|value| value == &target) {
+    if !targets_for_node(&parsed.node).iter().any(|value| value == &target) {
         bail!("configuration cannot be imported into this target");
     }
     if let Some(exact_target) = parsed.exact_target {
@@ -1586,6 +1960,7 @@ pub fn import_manual(request: ManualImportRequest) -> Result<JsonValue> {
     fs::create_dir_all(root.join("log"))?;
     let local_port = match target.as_str() {
         "sing-box" => next_local_port(2080),
+        "sing-box-lx" => next_local_port(1180),
         "hysteria2" => next_local_port(11590),
         "wireproxy" => next_local_port(1167),
         _ => bail!("unsupported import target"),
@@ -1601,6 +1976,16 @@ pub fn import_manual(request: ManualImportRequest) -> Result<JsonValue> {
                 write_json_atomic(&root.join("setting.json"), &json!({"enabled":false,"port":local_port}))?;
                 write_text_atomic(&root.join("log/sing-box.log"), "")?;
                 crate::programs::singbox::normalize_config_for_profile_server(&profile, &server_name)?;
+            }
+            "sing-box-lx" => {
+                let content = match parsed.exact_content.as_deref() {
+                    Some(content) => content.to_string(),
+                    None => render_singbox_lx_config(&parsed.node, local_port)?,
+                };
+                write_text_atomic(&root.join("config.json"), &content)?;
+                write_json_atomic(&root.join("setting.json"), &json!({"enabled":false,"port":local_port}))?;
+                write_text_atomic(&root.join("log/sing-box.log"), "")?;
+                crate::programs::singbox_lx::normalize_config_for_profile_server(&profile, &server_name)?;
             }
             "hysteria2" => {
                 let content = match parsed.exact_content.as_deref() {
@@ -1653,6 +2038,9 @@ fn local_port_for_link(link: &SubscriptionLink) -> u16 {
         ("sing-box", Some(root)) => fs::read_to_string(root.join("setting.json")).ok()
             .and_then(|raw| serde_json::from_str::<JsonValue>(&raw).ok())
             .map(|v| json_u16_any(&v, &["port"])).filter(|v| *v > 0).unwrap_or(2080),
+        ("sing-box-lx", Some(root)) => fs::read_to_string(root.join("setting.json")).ok()
+            .and_then(|raw| serde_json::from_str::<JsonValue>(&raw).ok())
+            .map(|v| json_u16_any(&v, &["port"])).filter(|v| *v > 0).unwrap_or(1180),
         ("hysteria2", Some(root)) => fs::read_to_string(root.join("setting.json")).ok()
             .and_then(|raw| serde_json::from_str::<JsonValue>(&raw).ok())
             .map(|v| json_u16_any(&v, &["socks5_port"])).filter(|v| *v > 0).unwrap_or(11590),
@@ -1666,7 +2054,7 @@ fn local_port_for_link(link: &SubscriptionLink) -> u16 {
 }
 
 fn write_link_config(link: &SubscriptionLink, node: &SubscriptionNode) -> Result<()> {
-    if !targets_for_protocol(&node.protocol, &node.transport).iter().any(|target| target == &link.target) {
+    if !targets_for_node(node).iter().any(|target| target == &link.target) {
         bail!("linked node is no longer compatible with target {}", link.target);
     }
     let root = target_server_root(&link.target, &link.profile, &link.server_name)?;
@@ -1674,6 +2062,7 @@ fn write_link_config(link: &SubscriptionLink, node: &SubscriptionNode) -> Result
     let port = local_port_for_link(link);
     let (path, content) = match link.target.as_str() {
         "sing-box" => (root.join("config.json"), render_singbox_config(node, port)?),
+        "sing-box-lx" => (root.join("config.json"), render_singbox_lx_config(node, port)?),
         "hysteria2" => (root.join("config.json"), render_hysteria2_config(node, port)?),
         "wireproxy" => (root.join("config.conf"), render_wireproxy_config(node, port)?),
         _ => bail!("unsupported subscription import target"),
@@ -1690,7 +2079,7 @@ pub fn import_node(subscription_id: &str, node_id: &str, request: ImportNodeRequ
         .ok_or_else(|| anyhow::anyhow!("subscription node not found"))?;
     if node.server.is_empty() || node.port == 0 { bail!("subscription node endpoint is incomplete"); }
     let target = request.target.trim().to_ascii_lowercase();
-    if !targets_for_protocol(&node.protocol, &node.transport).iter().any(|value| value == &target) {
+    if !targets_for_node(&node).iter().any(|value| value == &target) {
         bail!("node cannot be imported into this target");
     }
     let profile = request.profile.trim().to_string();
@@ -1704,6 +2093,7 @@ pub fn import_node(subscription_id: &str, node_id: &str, request: ImportNodeRequ
     fs::create_dir_all(root.join("log"))?;
     let local_port = match target.as_str() {
         "sing-box" => next_local_port(2080),
+        "sing-box-lx" => next_local_port(1180),
         "hysteria2" => next_local_port(11590),
         "wireproxy" => next_local_port(1167),
         _ => bail!("unsupported subscription import target"),
@@ -1712,6 +2102,11 @@ pub fn import_node(subscription_id: &str, node_id: &str, request: ImportNodeRequ
         match target.as_str() {
             "sing-box" => {
                 write_text_atomic(&root.join("config.json"), &render_singbox_config(&node, local_port)?)?;
+                write_json_atomic(&root.join("setting.json"), &json!({"enabled":false, "port":local_port}))?;
+                write_text_atomic(&root.join("log/sing-box.log"), "")?;
+            }
+            "sing-box-lx" => {
+                write_text_atomic(&root.join("config.json"), &render_singbox_lx_config(&node, local_port)?)?;
                 write_json_atomic(&root.join("setting.json"), &json!({"enabled":false, "port":local_port}))?;
                 write_text_atomic(&root.join("log/sing-box.log"), "")?;
             }
@@ -1747,6 +2142,108 @@ pub fn import_node(subscription_id: &str, node_id: &str, request: ImportNodeRequ
         return Err(error);
     }
     Ok(link)
+}
+
+fn target_profile_is_vpn(target: &str, profile: &str) -> bool {
+    let program = match target {
+        "sing-box" => "singbox",
+        "sing-box-lx" => "singbox-lx",
+        "hysteria2" => "hysteria2",
+        _ => return false,
+    };
+    fs::read_to_string(format!("/data/adb/modules/ZDT-D/working_folder/{program}/profile/{profile}/setting.json"))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<JsonValue>(&raw).ok())
+        .and_then(|value| value.get("mode").and_then(JsonValue::as_str).map(str::to_string))
+        .map(|mode| mode.eq_ignore_ascii_case("vpn"))
+        .unwrap_or(false)
+}
+
+fn unique_target_server_name(target: &str, profile: &str, raw: &str) -> Result<String> {
+    let base = safe_server_name(raw);
+    if !target_server_root(target, profile, &base)?.exists() { return Ok(base); }
+    for suffix in 2..=9999usize {
+        let suffix_text = format!("_{suffix}");
+        let keep = 56usize.saturating_sub(suffix_text.len());
+        let stem: String = base.chars().take(keep).collect();
+        let candidate = format!("{stem}{suffix_text}");
+        if !target_server_root(target, profile, &candidate)?.exists() { return Ok(candidate); }
+    }
+    bail!("unable to allocate a unique local server name")
+}
+
+pub fn import_nodes_bulk(subscription_id: &str, request: BulkImportNodesRequest) -> Result<BulkImportResult> {
+    ensure_id(subscription_id)?;
+    let _ = get(subscription_id)?;
+    let target = request.target.trim().to_ascii_lowercase();
+    let profile = request.profile.trim().to_string();
+    crate::programs::singbox::ensure_valid_profile_name(&profile)?;
+    // This validates the target/profile and, for the optional LX target,
+    // rejects imports while the component is absent.
+    ensure_target_accepts_new_server(&target, &profile)?;
+
+    let mut compatible: Vec<SubscriptionNode> = read_nodes(subscription_id).into_iter()
+        .filter(|node| node.server.len() > 0 && node.port > 0)
+        .filter(|node| targets_for_node(node).iter().any(|value| value == &target))
+        .collect();
+    compatible.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()).then(a.id.cmp(&b.id)));
+
+    if compatible.len() > 1 && target_profile_is_vpn(&target, &profile) {
+        bail!("bulk import requires a T2S profile because VPN mode supports only one server");
+    }
+
+    let existing_links = read_links().unwrap_or_default();
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+    let mut failed = 0usize;
+    let mut failures = Vec::new();
+
+    for node in &compatible {
+        let already_linked = existing_links.links.values().any(|link| {
+            link.subscription_id == subscription_id
+                && link.node_id == node.id
+                && link.target == target
+                && link.profile == profile
+                && target_server_root(&link.target, &link.profile, &link.server_name)
+                    .map(|root| root.is_dir())
+                    .unwrap_or(false)
+        });
+        if already_linked {
+            skipped += 1;
+            continue;
+        }
+
+        let server_name = match unique_target_server_name(&target, &profile, &node.name) {
+            Ok(value) => value,
+            Err(error) => {
+                failed += 1;
+                if failures.len() < 50 {
+                    failures.push(BulkImportFailure { node_id: node.id.clone(), name: node.name.clone(), error: format!("{error:#}") });
+                }
+                continue;
+            }
+        };
+        let request = ImportNodeRequest { target: target.clone(), profile: profile.clone(), server_name };
+        match import_node(subscription_id, &node.id, request) {
+            Ok(_) => imported += 1,
+            Err(error) => {
+                failed += 1;
+                if failures.len() < 50 {
+                    failures.push(BulkImportFailure { node_id: node.id.clone(), name: node.name.clone(), error: format!("{error:#}") });
+                }
+            }
+        }
+    }
+
+    Ok(BulkImportResult {
+        target,
+        profile,
+        compatible: compatible.len(),
+        imported,
+        skipped,
+        failed,
+        failures,
+    })
 }
 
 fn sync_imported_nodes(subscription_id: &str, nodes: &[SubscriptionNode]) {

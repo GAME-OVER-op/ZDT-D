@@ -134,6 +134,7 @@ fn known_binaries() -> &'static [ManagedBinary] {
         ManagedBinary { id: "dpitunnel", display_name: "DPITunnel", binary: "dpitunnel-cli", allow_freeze: true, allow_affinity: true },
         ManagedBinary { id: "operaproxy", display_name: "Opera Proxy", binary: "opera-proxy", allow_freeze: true, allow_affinity: true },
         ManagedBinary { id: "sing-box", display_name: "sing-box", binary: "sing-box", allow_freeze: true, allow_affinity: true },
+        ManagedBinary { id: "sing-box-lx", display_name: "sing-box-lx", binary: "sing-box-lx", allow_freeze: true, allow_affinity: true },
         ManagedBinary { id: "wireproxy", display_name: "WireProxy", binary: "wireproxy", allow_freeze: true, allow_affinity: true },
         ManagedBinary { id: "hysteria2", display_name: "hysteria2", binary: "hysteria2", allow_freeze: true, allow_affinity: true },
         ManagedBinary { id: "openvpn", display_name: "OpenVPN", binary: "openvpn", allow_freeze: true, allow_affinity: true },

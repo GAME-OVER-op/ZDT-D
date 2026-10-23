@@ -800,6 +800,11 @@ APatch：10700+</string>
     <string name="singbox_import_dialog_title">生成 sing-box 服务器</string>
     <string name="singbox_import_dialog_beta_warning">测试功能。如果使用不常见参数，请仔细检查结果。</string>
     <string name="singbox_import_dialog_desc">粘贴单行配置，例如 vless://、vmess://、trojan://、ss:// 或 socks://。系统会自动创建新服务器及其设置。</string>
+    <string name="singbox_lx_import_dialog_title">生成 sing-box-lx 服务器</string>
+    <string name="singbox_lx_import_dialog_desc">粘贴 VLESS、VMess、Trojan、Shadowsocks、SOCKS 链接或完整 JSON。XHTTP/splithttp 链接会作为 sing-box-lx 原生 XHTTP 传输导入。</string>
+    <string name="singbox_import_requires_lx_title">此链接需要 sing-box-lx</string>
+    <string name="singbox_import_requires_lx_message">该配置使用标准 sing-box 内核不支持的 XHTTP。请通过 sing-box-lx 工具导入。</string>
+    <string name="singbox_import_open_lx">打开 sing-box-lx</string>
     <string name="singbox_import_auto_port_hint">系统会自动分配一个空闲的 mixed-in 端口。建议端口：%1$d。</string>
     <string name="singbox_import_source_label">单行配置</string>
     <string name="singbox_import_source_support_hint">支持：vless、vmess、trojan、shadowsocks、socks。也接受完整 JSON。</string>
@@ -1214,6 +1219,17 @@ APatch：10700+</string>
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Telegram WS 代理</string>
     <string name="tg_ws_proxy_desc">Telegram MTProto → WebSocket 代理工具。</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">可选的扩展 sing-box 核心，支持 XHTTP、MASQUE/WARP、AmneziaWG 3.x 和额外的 VLESS 功能。</string>
+    <string name="sing_box_lx_install_required_title">需要 sing-box-lx</string>
+    <string name="sing_box_lx_install_required_message">此操作需要可选的 sing-box-lx 组件。请先在“附加工具”中安装，然后继续。</string>
+    <string name="sing_box_lx_open_optional_tools">打开附加工具</string>
+    <string name="sing_box_lx_error_status">无法检查 sing-box-lx 的安装状态。</string>
+    <string name="sing_box_lx_error_unsupported_abi">不支持的 CPU ABI：%1$s</string>
+    <string name="sing_box_lx_error_download">无法下载 sing-box-lx：%1$s</string>
+    <string name="sing_box_lx_error_package">sing-box-lx 软件包验证失败：%1$s</string>
+    <string name="sing_box_lx_error_install">无法安装 sing-box-lx：%1$s</string>
+    <string name="sing_box_lx_error_remove">无法删除 sing-box-lx：%1$s</string>
     <string name="apps_list_desc_tgwsproxy">Telegram MTProto → WebSocket 代理工具。</string>
 
     <string name="world_map_title">世界地图</string>
@@ -2605,4 +2621,72 @@ APatch：10700+</string>
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">请输入包含主机和端口的有效 HTTP、HTTPS、SOCKS5 或 SOCKS5H 代理 URL。</string>
     <string name="non_root_log_opera_upstream">Opera 上游代理：%1$s</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">需要 sing-box-lx</string>
+    <string name="subscription_lx_required_hint">此节点使用 XHTTP 或仅 sing-box-lx 支持的其他功能。</string>
+    <string name="subscription_lx_not_installed_hint">此节点需要 sing-box-lx。请安装可选组件后再导入。</string>
+    <string name="subscription_install_required_short">需要安装</string>
+    <string name="subscription_bulk_import_section">批量导入</string>
+    <string name="subscription_bulk_import_desc">将此订阅中所有兼容节点导入同一个配置。已关联的节点会被跳过。</string>
+    <string name="subscription_bulk_import_to">全部导入到 %1$s（%2$d）</string>
+    <string name="subscription_bulk_import_title">批量导入到 %1$s</string>
+    <string name="subscription_bulk_import_count">%1$d 个兼容节点</string>
+    <string name="subscription_bulk_import_naming_hint">服务器名称根据节点名称生成；冲突时会添加数字后缀。导入多个服务器时需要 T2S 配置。</string>
+    <string name="subscription_bulk_import_result">已导入 %1$d · 已跳过 %2$d · 失败 %3$d</string>
+    <string name="subscription_bulk_import_failed">批量导入失败</string>
+    <string name="subscription_target_choice">导入目标</string>
+    <string name="subscription_new_profile_name">新配置名称</string>
+    <string name="subscription_create_profile">创建配置</string>
+    <string name="subscription_profile_created">已创建配置 %1$s</string>
+    <string name="subscription_profile_create_failed">无法创建目标配置</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">通过 MASQUE（HTTP/3 或 HTTP/2 上的 CONNECT-IP）创建 WARP 节点。P-256 私钥在本设备上生成，不会发送给第三方。</string>
+    <string name="warp_masque_cache_loading">正在检查已保存的 WARP 注册…</string>
+    <string name="warp_masque_cache_ready">已保存的 MASQUE 注册可用</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">无法读取已保存的 MASQUE 注册。</string>
+    <string name="warp_masque_cache_missing">没有已保存的 MASQUE 注册。将注册新的 Cloudflare WARP 设备。</string>
+    <string name="warp_masque_server_name">服务器名称</string>
+    <string name="warp_masque_transport_fmt">传输：%1$s</string>
+    <string name="warp_masque_transport_auto">自动（HTTP/3 → HTTP/2）</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">Endpoint IP 或主机</string>
+    <string name="warp_masque_endpoint_hint">留空 = 注册返回的 endpoint（%1$s）</string>
+    <string name="warp_masque_endpoint_port">Endpoint 端口</string>
+    <string name="warp_masque_endpoint_port_hint">留空 = 注册返回的端口（%1$d）</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">默认：www.cloudflare.com。也可以填写当前网络可用的其他 SNI。</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">空闲超时（分钟）</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive（秒）</string>
+    <string name="warp_masque_optional_default">可选。留空 = sing-box-lx 默认值。</string>
+    <string name="warp_masque_keepalive_h2">固定 HTTP/2 时不使用。</string>
+    <string name="warp_masque_reregister">重新注册 WARP</string>
+    <string name="warp_masque_reregister_hint">不使用已保存的注册，生成新密钥并创建新的 Cloudflare WARP 设备。</string>
+    <string name="warp_masque_clear_cache">清除已保存的 MASQUE 注册</string>
+    <string name="warp_masque_create_cached">使用已保存注册创建</string>
+    <string name="warp_masque_register_create">注册并创建</string>
+    <string name="warp_masque_add_action">获取 WARP / MASQUE</string>
+    <string name="warp_masque_created_fmt">已创建 WARP MASQUE 服务器：%1$s</string>
+    <string name="warp_masque_error_name">请输入服务器名称。</string>
+    <string name="warp_masque_error_name_exists">已存在同名服务器。</string>
+    <string name="warp_masque_error_port">Endpoint 端口必须为 1 到 65535。</string>
+    <string name="warp_masque_error_mtu">MTU 必须为 576 到 16000。</string>
+    <string name="warp_masque_error_idle">空闲超时必须为 1 到 1440 分钟或留空。</string>
+    <string name="warp_masque_error_keepalive">Keep-alive 必须为 1 到 3600 秒或留空。</string>
+    <string name="warp_masque_error_config">无法创建 MASQUE 配置。</string>
+    <string name="warp_masque_error_registration">Cloudflare WARP MASQUE 注册失败。</string>
+    <string name="warp_masque_error_cache_save">注册成功，但无法安全保存到 root 模块。</string>
+    <string name="warp_masque_error_cache_clear">无法清除已保存的 MASQUE 注册。</string>
+    <string name="warp_masque_error_network">无法连接到 Cloudflare WARP 注册服务。请检查网络连接后重试。</string>
+    <string name="warp_masque_error_api_http">Cloudflare WARP 注册服务返回 HTTP %1$d。API 可能已发生变化。</string>
+    <string name="warp_masque_error_response">Cloudflare 返回了无效或不完整的 WARP MASQUE 响应。</string>
+    <string name="warp_masque_error_crypto">无法为 WARP MASQUE 生成本地 P-256 密钥。</string>
+    <string name="singbox_import_requires_lx_feature_message">此配置使用 %1$s，因此需要 sing-box-lx。请通过 sing-box-lx 工具导入。</string>
+    <string name="singbox_import_invalid_vless_encryption">VLESS 加密值格式无效。ML-KEM 必须使用 mlkem768x25519plus… 格式。</string>
+    <string name="singbox_lx_advanced_json_hint">sing-box-lx 的高级 JSON 字段会被保留。ZDT-D 仅管理本地 mixed inbound，并在缺失时添加安全的 DNS/路由默认值。</string>
 </resources>

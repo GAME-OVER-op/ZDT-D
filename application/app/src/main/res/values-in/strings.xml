@@ -800,6 +800,11 @@ Pasang kembali modul.</string>
     <string name="singbox_import_dialog_title">Hasilkan server sing-box</string>
     <string name="singbox_import_dialog_beta_warning">Fitur beta. Periksa hasil dengan saksama jika menggunakan parameter yang tidak umum.</string>
     <string name="singbox_import_dialog_desc">Tempel konfigurasi satu baris seperti vless://, vmess://, trojan://, ss://, atau socks://. Server baru dan pengaturannya akan dibuat otomatis.</string>
+    <string name="singbox_lx_import_dialog_title">Buat server sing-box-lx</string>
+    <string name="singbox_lx_import_dialog_desc">Tempel tautan VLESS, VMess, Trojan, Shadowsocks, atau SOCKS, atau JSON lengkap. Tautan XHTTP/splithttp diimpor sebagai transport XHTTP native sing-box-lx.</string>
+    <string name="singbox_import_requires_lx_title">Tautan ini memerlukan sing-box-lx</string>
+    <string name="singbox_import_requires_lx_message">Konfigurasi menggunakan XHTTP yang tidak didukung oleh inti sing-box standar. Impor melalui alat sing-box-lx.</string>
+    <string name="singbox_import_open_lx">Buka sing-box-lx</string>
     <string name="singbox_import_auto_port_hint">Port mixed-in yang kosong akan ditetapkan otomatis. Port yang disarankan: %1$d.</string>
     <string name="singbox_import_source_label">Konfigurasi satu baris</string>
     <string name="singbox_import_source_support_hint">Didukung: vless, vmess, trojan, shadowsocks, socks. JSON lengkap juga diterima.</string>
@@ -1214,6 +1219,17 @@ Perlindungan tidak berfungsi dalam mode hotspot. Jika hotspot diaktifkan dan sin
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Proxy WS Telegram</string>
     <string name="tg_ws_proxy_desc">Utilitas proxy Telegram MTProto → WebSocket.</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">Core sing-box tambahan opsional dengan XHTTP, MASQUE/WARP, AmneziaWG 3.x, dan kemampuan VLESS tambahan.</string>
+    <string name="sing_box_lx_install_required_title">sing-box-lx diperlukan</string>
+    <string name="sing_box_lx_install_required_message">Tindakan ini memerlukan komponen opsional sing-box-lx. Pasang dari Alat tambahan untuk melanjutkan.</string>
+    <string name="sing_box_lx_open_optional_tools">Buka alat tambahan</string>
+    <string name="sing_box_lx_error_status">Status pemasangan sing-box-lx tidak dapat diperiksa.</string>
+    <string name="sing_box_lx_error_unsupported_abi">ABI CPU tidak didukung: %1$s</string>
+    <string name="sing_box_lx_error_download">Gagal mengunduh sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_package">Verifikasi paket sing-box-lx gagal: %1$s</string>
+    <string name="sing_box_lx_error_install">Gagal memasang sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_remove">Gagal menghapus sing-box-lx: %1$s</string>
     <string name="apps_list_desc_tgwsproxy">Utilitas proxy Telegram MTProto → WebSocket.</string>
 
     <string name="world_map_title">Peta dunia</string>
@@ -2605,4 +2621,72 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">Masukkan URL proxy HTTP, HTTPS, SOCKS5, atau SOCKS5H yang valid dengan host dan port.</string>
     <string name="non_root_log_opera_upstream">Upstream Opera: %1$s</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">Memerlukan sing-box-lx</string>
+    <string name="subscription_lx_required_hint">Node ini memakai XHTTP atau fitur lain yang hanya tersedia di sing-box-lx.</string>
+    <string name="subscription_lx_not_installed_hint">Node ini memerlukan sing-box-lx. Pasang komponen opsional untuk mengimpornya.</string>
+    <string name="subscription_install_required_short">perlu dipasang</string>
+    <string name="subscription_bulk_import_section">Impor massal</string>
+    <string name="subscription_bulk_import_desc">Impor semua node yang kompatibel dari langganan ini ke satu profil. Node yang sudah tertaut akan dilewati.</string>
+    <string name="subscription_bulk_import_to">Impor semua ke %1$s (%2$d)</string>
+    <string name="subscription_bulk_import_title">Impor massal ke %1$s</string>
+    <string name="subscription_bulk_import_count">%1$d node kompatibel</string>
+    <string name="subscription_bulk_import_naming_hint">Nama server dibuat dari nama node; konflik diberi akhiran angka. Profil T2S diperlukan untuk mengimpor lebih dari satu server.</string>
+    <string name="subscription_bulk_import_result">Diimpor %1$d · dilewati %2$d · gagal %3$d</string>
+    <string name="subscription_bulk_import_failed">Impor massal gagal</string>
+    <string name="subscription_target_choice">Target impor</string>
+    <string name="subscription_new_profile_name">Nama profil baru</string>
+    <string name="subscription_create_profile">Buat profil</string>
+    <string name="subscription_profile_created">Profil %1$s dibuat</string>
+    <string name="subscription_profile_create_failed">Tidak dapat membuat profil target</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">Membuat node WARP melalui MASQUE (CONNECT-IP lewat HTTP/3 atau HTTP/2). Kunci privat P-256 dibuat di perangkat ini dan tidak pernah dikirim ke pihak ketiga.</string>
+    <string name="warp_masque_cache_loading">Memeriksa pendaftaran WARP tersimpan…</string>
+    <string name="warp_masque_cache_ready">Pendaftaran MASQUE tersimpan siap digunakan</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">Tidak dapat membaca pendaftaran MASQUE tersimpan.</string>
+    <string name="warp_masque_cache_missing">Belum ada pendaftaran MASQUE tersimpan. Perangkat Cloudflare WARP baru akan didaftarkan.</string>
+    <string name="warp_masque_server_name">Nama server</string>
+    <string name="warp_masque_transport_fmt">Transport: %1$s</string>
+    <string name="warp_masque_transport_auto">Otomatis (HTTP/3 → HTTP/2)</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">IP atau host endpoint</string>
+    <string name="warp_masque_endpoint_hint">Kosong = endpoint pendaftaran (%1$s)</string>
+    <string name="warp_masque_endpoint_port">Port endpoint</string>
+    <string name="warp_masque_endpoint_port_hint">Kosong = port pendaftaran (%1$d)</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">Default: www.cloudflare.com. Anda dapat memakai SNI lain yang bekerja di jaringan Anda.</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">Batas waktu idle, menit</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive, detik</string>
+    <string name="warp_masque_optional_default">Opsional. Kosong = default sing-box-lx.</string>
+    <string name="warp_masque_keepalive_h2">Tidak digunakan dengan HTTP/2 tetap.</string>
+    <string name="warp_masque_reregister">Daftarkan ulang WARP</string>
+    <string name="warp_masque_reregister_hint">Buat kunci baru dan perangkat Cloudflare WARP baru sebagai pengganti pendaftaran tersimpan.</string>
+    <string name="warp_masque_clear_cache">Hapus pendaftaran MASQUE tersimpan</string>
+    <string name="warp_masque_create_cached">Buat dari pendaftaran tersimpan</string>
+    <string name="warp_masque_register_create">Daftarkan dan buat</string>
+    <string name="warp_masque_add_action">Dapatkan WARP / MASQUE</string>
+    <string name="warp_masque_created_fmt">Server WARP MASQUE dibuat: %1$s</string>
+    <string name="warp_masque_error_name">Masukkan nama server.</string>
+    <string name="warp_masque_error_name_exists">Server dengan nama ini sudah ada.</string>
+    <string name="warp_masque_error_port">Port endpoint harus 1 hingga 65535.</string>
+    <string name="warp_masque_error_mtu">MTU harus 576 hingga 16000.</string>
+    <string name="warp_masque_error_idle">Batas waktu idle harus 1 hingga 1440 menit atau kosong.</string>
+    <string name="warp_masque_error_keepalive">Keep-alive harus 1 hingga 3600 detik atau kosong.</string>
+    <string name="warp_masque_error_config">Tidak dapat membuat konfigurasi MASQUE.</string>
+    <string name="warp_masque_error_registration">Pendaftaran Cloudflare WARP MASQUE gagal.</string>
+    <string name="warp_masque_error_cache_save">Pendaftaran berhasil, tetapi tidak dapat disimpan dengan aman di modul root.</string>
+    <string name="warp_masque_error_cache_clear">Tidak dapat menghapus pendaftaran MASQUE tersimpan.</string>
+    <string name="warp_masque_error_network">Tidak dapat menjangkau layanan pendaftaran Cloudflare WARP. Periksa koneksi lalu coba lagi.</string>
+    <string name="warp_masque_error_api_http">Layanan pendaftaran Cloudflare WARP mengembalikan HTTP %1$d. API mungkin telah berubah.</string>
+    <string name="warp_masque_error_response">Cloudflare mengembalikan respons WARP MASQUE yang tidak valid atau tidak lengkap.</string>
+    <string name="warp_masque_error_crypto">Tidak dapat membuat kunci P-256 lokal untuk WARP MASQUE.</string>
+    <string name="singbox_import_requires_lx_feature_message">Konfigurasi ini menggunakan %1$s yang memerlukan sing-box-lx. Impor melalui alat sing-box-lx.</string>
+    <string name="singbox_import_invalid_vless_encryption">Nilai enkripsi VLESS memiliki format yang salah. ML-KEM harus menggunakan format mlkem768x25519plus….</string>
+    <string name="singbox_lx_advanced_json_hint">Kolom JSON lanjutan sing-box-lx dipertahankan. ZDT-D hanya mengelola mixed inbound lokal dan menambahkan nilai default DNS/routing yang aman jika belum ada.</string>
 </resources>

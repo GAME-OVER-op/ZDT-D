@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.api.ApiModels
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentState
 import java.util.Locale
 
 @Composable
@@ -66,6 +67,7 @@ fun AppsListScreen(
   programs: List<ApiModels.Program>,
   daemonOnline: Boolean,
   tgWsProxy: TgWsProxyComponentState,
+  singBoxLx: SingBoxLxComponentState,
   onOpenProgram: (String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
   onOpenOptionalTools: () -> Unit,
@@ -153,7 +155,7 @@ fun AppsListScreen(
     item(key = "optional_tools_entry") {
       OptionalToolsEntryCard(
         compact = compactCards,
-        installedCount = if (tgWsProxy.installed) 1 else 0,
+        installedCount = (if (tgWsProxy.installed) 1 else 0) + (if (singBoxLx.installed) 1 else 0),
         onClick = onOpenOptionalTools,
       )
     }
@@ -294,7 +296,8 @@ private fun OptionalToolsEntryCard(
     onClick = onClick,
     modifier = Modifier
       .fillMaxWidth()
-      .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp),
+      .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
+      .tvFocusHighlight(RoundedCornerShape(18.dp)),
     shape = RoundedCornerShape(18.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -771,7 +774,8 @@ private fun ProgramCard(
     onClick = onClick,
     modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = horizontalPadding),
+      .padding(horizontal = horizontalPadding)
+      .tvFocusHighlight(shape),
     shape = shape,
     colors = CardDefaults.cardColors(containerColor = containerColor),
     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -922,6 +926,7 @@ internal fun programIconRes(id: String): Int? {
     "mihomo" -> R.drawable.ic_tool_mihomo
     "mieru" -> R.drawable.ic_tool_mieru
     "sing-box" -> R.drawable.ic_tool_sing_box
+    "sing-box-lx" -> R.drawable.ic_tool_sing_box
     "hysteria2" -> R.drawable.ic_tool_hysteria2
     else -> null
   }
@@ -946,6 +951,7 @@ internal fun programIcon(id: String): ImageVector {
     "mihomo" -> Icons.Outlined.AltRoute
     "mieru" -> Icons.Outlined.Extension
     "sing-box" -> Icons.Outlined.Extension
+    "sing-box-lx" -> Icons.Outlined.Extension
     "hysteria2" -> Icons.Outlined.Extension
     "tgwsproxy" -> Icons.Outlined.AddCircleOutline
     else -> Icons.Outlined.Extension

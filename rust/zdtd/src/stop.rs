@@ -163,6 +163,7 @@ fn stop_process_groups_parallel() -> Result<()> {
         "t2s",
         "opera-proxy",
         "sing-box",
+        "sing-box-lx",
         "hysteria2",
         "wireproxy",
         "tg-ws-proxy",

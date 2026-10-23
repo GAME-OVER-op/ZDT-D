@@ -800,6 +800,11 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="singbox_import_dialog_title">sing-box सर्वर जनरेट करें</string>
     <string name="singbox_import_dialog_beta_warning">बीटा सुविधा। असामान्य पैरामीटर उपयोग करने पर परिणाम ध्यान से जाँचें।</string>
     <string name="singbox_import_dialog_desc">vless://, vmess://, trojan://, ss:// या socks:// जैसी एक-पंक्ति कॉन्फ़िगरेशन पेस्ट करें। नया सर्वर और उसकी सेटिंग अपने-आप बन जाएँगी।</string>
+    <string name="singbox_lx_import_dialog_title">sing-box-lx सर्वर बनाएँ</string>
+    <string name="singbox_lx_import_dialog_desc">VLESS, VMess, Trojan, Shadowsocks या SOCKS लिंक, या पूरा JSON चिपकाएँ। XHTTP/splithttp लिंक sing-box-lx के मूल XHTTP ट्रांसपोर्ट के रूप में आयात होते हैं।</string>
+    <string name="singbox_import_requires_lx_title">इस लिंक के लिए sing-box-lx आवश्यक है</string>
+    <string name="singbox_import_requires_lx_message">यह कॉन्फ़िगरेशन XHTTP का उपयोग करता है, जिसे मानक sing-box कोर समर्थन नहीं करता। इसे sing-box-lx टूल से आयात करें।</string>
+    <string name="singbox_import_open_lx">sing-box-lx खोलें</string>
     <string name="singbox_import_auto_port_hint">खाली mixed-in पोर्ट अपने-आप दिया जाएगा। सुझाया गया पोर्ट: %1$d।</string>
     <string name="singbox_import_source_label">एक-पंक्ति कॉन्फ़िगरेशन</string>
     <string name="singbox_import_source_support_hint">समर्थित: vless, vmess, trojan, shadowsocks, socks। पूरा JSON भी स्वीकार किया जाता है।</string>
@@ -1214,6 +1219,17 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Telegram WS प्रॉक्सी</string>
     <string name="tg_ws_proxy_desc">Telegram MTProto → WebSocket प्रॉक्सी उपयोगिता।</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">XHTTP, MASQUE/WARP, AmneziaWG 3.x और अतिरिक्त VLESS क्षमताओं वाला वैकल्पिक विस्तारित sing-box कोर।</string>
+    <string name="sing_box_lx_install_required_title">sing-box-lx आवश्यक है</string>
+    <string name="sing_box_lx_install_required_message">इस क्रिया के लिए वैकल्पिक sing-box-lx घटक आवश्यक है। जारी रखने के लिए इसे अतिरिक्त टूल्स से इंस्टॉल करें।</string>
+    <string name="sing_box_lx_open_optional_tools">अतिरिक्त टूल्स खोलें</string>
+    <string name="sing_box_lx_error_status">sing-box-lx की स्थापना स्थिति जाँची नहीं जा सकी।</string>
+    <string name="sing_box_lx_error_unsupported_abi">असमर्थित CPU ABI: %1$s</string>
+    <string name="sing_box_lx_error_download">sing-box-lx डाउनलोड नहीं हो सका: %1$s</string>
+    <string name="sing_box_lx_error_package">sing-box-lx पैकेज सत्यापन विफल: %1$s</string>
+    <string name="sing_box_lx_error_install">sing-box-lx इंस्टॉल नहीं हो सका: %1$s</string>
+    <string name="sing_box_lx_error_remove">sing-box-lx हटाया नहीं जा सका: %1$s</string>
     <string name="apps_list_desc_tgwsproxy">Telegram MTProto → WebSocket प्रॉक्सी उपयोगिता।</string>
 
     <string name="world_map_title">विश्व मानचित्र</string>
@@ -2606,4 +2622,72 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">होस्ट और पोर्ट के साथ मान्य HTTP, HTTPS, SOCKS5 या SOCKS5H प्रॉक्सी URL दर्ज करें।</string>
     <string name="non_root_log_opera_upstream">Opera अपस्ट्रीम: %1$s</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">sing-box-lx आवश्यक</string>
+    <string name="subscription_lx_required_hint">यह नोड XHTTP या ऐसी सुविधा उपयोग करता है जो केवल sing-box-lx में उपलब्ध है।</string>
+    <string name="subscription_lx_not_installed_hint">इस नोड के लिए sing-box-lx चाहिए। आयात करने के लिए वैकल्पिक घटक इंस्टॉल करें।</string>
+    <string name="subscription_install_required_short">इंस्टॉल आवश्यक</string>
+    <string name="subscription_bulk_import_section">बल्क आयात</string>
+    <string name="subscription_bulk_import_desc">इस सदस्यता के सभी संगत नोड एक प्रोफ़ाइल में आयात करें। पहले से जुड़े नोड छोड़ दिए जाएंगे।</string>
+    <string name="subscription_bulk_import_to">सभी को %1$s में आयात करें (%2$d)</string>
+    <string name="subscription_bulk_import_title">%1$s में बल्क आयात</string>
+    <string name="subscription_bulk_import_count">%1$d संगत नोड</string>
+    <string name="subscription_bulk_import_naming_hint">सर्वर नाम नोड नामों से बनते हैं; टकराव पर संख्या जोड़ी जाती है। एक से अधिक सर्वर के लिए T2S प्रोफ़ाइल आवश्यक है।</string>
+    <string name="subscription_bulk_import_result">आयात %1$d · छोड़े %2$d · विफल %3$d</string>
+    <string name="subscription_bulk_import_failed">बल्क आयात विफल</string>
+    <string name="subscription_target_choice">आयात लक्ष्य</string>
+    <string name="subscription_new_profile_name">नए प्रोफ़ाइल का नाम</string>
+    <string name="subscription_create_profile">प्रोफ़ाइल बनाएं</string>
+    <string name="subscription_profile_created">प्रोफ़ाइल %1$s बनाई गई</string>
+    <string name="subscription_profile_create_failed">लक्ष्य प्रोफ़ाइल नहीं बन सका</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">MASQUE (HTTP/3 या HTTP/2 पर CONNECT-IP) के जरिए WARP नोड बनाता है। निजी P-256 कुंजी इसी डिवाइस पर बनती है और किसी तीसरे पक्ष को नहीं भेजी जाती।</string>
+    <string name="warp_masque_cache_loading">सहेजा गया WARP पंजीकरण जाँचा जा रहा है…</string>
+    <string name="warp_masque_cache_ready">सहेजा गया MASQUE पंजीकरण तैयार है</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">सहेजा गया MASQUE पंजीकरण पढ़ा नहीं जा सका।</string>
+    <string name="warp_masque_cache_missing">कोई सहेजा गया MASQUE पंजीकरण नहीं है। नया Cloudflare WARP डिवाइस पंजीकृत किया जाएगा।</string>
+    <string name="warp_masque_server_name">सर्वर नाम</string>
+    <string name="warp_masque_transport_fmt">ट्रांसपोर्ट: %1$s</string>
+    <string name="warp_masque_transport_auto">ऑटो (HTTP/3 → HTTP/2)</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">Endpoint IP या होस्ट</string>
+    <string name="warp_masque_endpoint_hint">खाली = पंजीकरण endpoint (%1$s)</string>
+    <string name="warp_masque_endpoint_port">Endpoint पोर्ट</string>
+    <string name="warp_masque_endpoint_port_hint">खाली = पंजीकरण पोर्ट (%1$d)</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">डिफ़ॉल्ट: www.cloudflare.com। आप अपने नेटवर्क पर काम करने वाला दूसरा SNI दे सकते हैं।</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">निष्क्रिय टाइमआउट, मिनट</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive, सेकंड</string>
+    <string name="warp_masque_optional_default">वैकल्पिक। खाली = sing-box-lx डिफ़ॉल्ट।</string>
+    <string name="warp_masque_keepalive_h2">स्थिर HTTP/2 के साथ उपयोग नहीं होता।</string>
+    <string name="warp_masque_reregister">WARP फिर से पंजीकृत करें</string>
+    <string name="warp_masque_reregister_hint">सहेजे गए पंजीकरण के बजाय नई कुंजियाँ और नया Cloudflare WARP डिवाइस बनाता है।</string>
+    <string name="warp_masque_clear_cache">सहेजा गया MASQUE पंजीकरण हटाएँ</string>
+    <string name="warp_masque_create_cached">सहेजे गए पंजीकरण से बनाएँ</string>
+    <string name="warp_masque_register_create">पंजीकृत करें और बनाएँ</string>
+    <string name="warp_masque_add_action">WARP / MASQUE प्राप्त करें</string>
+    <string name="warp_masque_created_fmt">WARP MASQUE सर्वर बनाया गया: %1$s</string>
+    <string name="warp_masque_error_name">सर्वर नाम दर्ज करें।</string>
+    <string name="warp_masque_error_name_exists">इस नाम का सर्वर पहले से मौजूद है।</string>
+    <string name="warp_masque_error_port">Endpoint पोर्ट 1 से 65535 के बीच होना चाहिए।</string>
+    <string name="warp_masque_error_mtu">MTU 576 से 16000 के बीच होना चाहिए।</string>
+    <string name="warp_masque_error_idle">निष्क्रिय टाइमआउट 1 से 1440 मिनट या खाली होना चाहिए।</string>
+    <string name="warp_masque_error_keepalive">Keep-alive 1 से 3600 सेकंड या खाली होना चाहिए।</string>
+    <string name="warp_masque_error_config">MASQUE कॉन्फ़िगरेशन नहीं बनाया जा सका।</string>
+    <string name="warp_masque_error_registration">Cloudflare WARP MASQUE पंजीकरण विफल हुआ।</string>
+    <string name="warp_masque_error_cache_save">पंजीकरण सफल हुआ, लेकिन root मॉड्यूल में सुरक्षित रूप से सहेजा नहीं जा सका।</string>
+    <string name="warp_masque_error_cache_clear">सहेजा गया MASQUE पंजीकरण हटाया नहीं जा सका।</string>
+    <string name="warp_masque_error_network">Cloudflare WARP पंजीकरण सेवा तक नहीं पहुँचा जा सका। कनेक्शन जाँचें और फिर प्रयास करें।</string>
+    <string name="warp_masque_error_api_http">Cloudflare WARP पंजीकरण सेवा ने HTTP %1$d लौटाया। API बदल सकता है।</string>
+    <string name="warp_masque_error_response">Cloudflare ने अमान्य या अधूरा WARP MASQUE उत्तर लौटाया।</string>
+    <string name="warp_masque_error_crypto">WARP MASQUE के लिए स्थानीय P-256 कुंजी बनाई नहीं जा सकी।</string>
+    <string name="singbox_import_requires_lx_feature_message">यह कॉन्फ़िगरेशन %1$s का उपयोग करता है, जिसके लिए sing-box-lx आवश्यक है। इसे sing-box-lx टूल से आयात करें।</string>
+    <string name="singbox_import_invalid_vless_encryption">VLESS एन्क्रिप्शन मान का प्रारूप गलत है। ML-KEM को mlkem768x25519plus… प्रारूप का उपयोग करना चाहिए।</string>
+    <string name="singbox_lx_advanced_json_hint">उन्नत sing-box-lx JSON फ़ील्ड सुरक्षित रखे जाते हैं। ZDT-D केवल स्थानीय mixed inbound को प्रबंधित करता है और अनुपस्थित होने पर सुरक्षित DNS/रूटिंग डिफ़ॉल्ट जोड़ता है।</string>
 </resources>

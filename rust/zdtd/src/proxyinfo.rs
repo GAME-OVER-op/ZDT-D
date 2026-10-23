@@ -1202,6 +1202,7 @@ pub fn collect_protected_port_sets() -> Result<(BTreeSet<u16>, BTreeSet<u16>)> {
     collect_operaproxy_ports(&mut local)?;
     collect_dnscrypt_d2s_ports(&mut local)?;
     collect_singbox_ports(&mut local)?;
+    collect_singbox_lx_ports(&mut local)?;
     collect_hysteria2_ports(&mut local)?;
     collect_wireproxy_ports(&mut local)?;
     collect_tor_ports(&mut local)?;
@@ -1386,6 +1387,38 @@ fn collect_singbox_ports(out: &mut BTreeSet<u16>) -> Result<()> {
                 if !is_hotspot_profile && setting.enabled && setting.port > 0 {
                     out.insert(setting.port);
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+
+fn collect_singbox_lx_ports(out: &mut BTreeSet<u16>) -> Result<()> {
+    let active_path = working_program_dir("singbox-lx").join("active.json");
+    if !active_path.is_file() { return Ok(()); }
+    let active: ProfilesActive = read_json_file(&active_path).unwrap_or_default();
+    let root = working_program_dir("singbox-lx").join("profile");
+    for (name, st) in active.profiles {
+        if !st.enabled { continue; }
+        let profile_dir = root.join(&name);
+        if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
+        let setting_path = profile_dir.join("setting.json");
+        if setting_path.is_file() {
+            let setting: SingboxProfileSetting = read_json_file(&setting_path).unwrap_or_default();
+            if setting.t2s_port > 0 { out.insert(setting.t2s_port); }
+            if setting.t2s_web_port > 0 { out.insert(setting.t2s_web_port); }
+        }
+        let server_root = profile_dir.join("server");
+        if let Ok(rd) = fs::read_dir(&server_root) {
+            for ent in rd.flatten() {
+                let server_dir = ent.path();
+                if !server_dir.is_dir() { continue; }
+                if server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
+                let setting_path = server_dir.join("setting.json");
+                if !setting_path.is_file() { continue; }
+                let setting: SingboxServerSetting = read_json_file(&setting_path).unwrap_or_default();
+                if setting.enabled && setting.port > 0 { out.insert(setting.port); }
             }
         }
     }

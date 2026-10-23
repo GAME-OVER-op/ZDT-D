@@ -1751,6 +1751,7 @@ internal fun CreateProfileCard(onAdd: () -> Unit) {
   Surface(
     modifier = Modifier
       .fillMaxWidth()
+      .tvFocusHighlight(shape)
       .clickable { onAdd() },
     shape = shape,
     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.66f),
@@ -2037,6 +2038,7 @@ private fun CreateProfileDialog(
           ) {
             OutlinedButton(
               onClick = onDismiss,
+              modifier = Modifier.tvFocusHighlight(RoundedCornerShape(100.dp)),
               shape = RoundedCornerShape(100.dp),
               border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.34f)),
               contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
@@ -2058,6 +2060,7 @@ private fun CreateProfileDialog(
                 }
               },
               enabled = name.isNotBlank(),
+              modifier = Modifier.tvFocusHighlight(RoundedCornerShape(100.dp), name.isNotBlank()),
               shape = RoundedCornerShape(100.dp),
               colors = ButtonDefaults.buttonColors(
                 containerColor = accent,

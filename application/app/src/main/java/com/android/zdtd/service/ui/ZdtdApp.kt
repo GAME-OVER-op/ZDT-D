@@ -2821,6 +2821,7 @@ private fun supportsProgramLogs(programId: String, profile: String?): Boolean {
       "byedpi",
       "dpitunnel",
       "sing-box",
+      "sing-box-lx",
       "hysteria2",
       "wireproxy",
       "myproxy",

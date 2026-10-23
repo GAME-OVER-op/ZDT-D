@@ -12,7 +12,7 @@ use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
     programs::{amneziawg, byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tgwsproxy, tun2socks, myvpn, mihomo, mieru},
-    programs::{singbox, wireproxy, hysteria2},
+    programs::{singbox, singbox_lx, wireproxy, hysteria2},
     stats,
     settings,
     shell,
@@ -115,6 +115,7 @@ pub fn start_full() -> Result<()> {
     let dpitunnel_handle = thread::spawn(dpitunnel::start_active_profiles);
     let byedpi_handle = thread::spawn(byedpi::start_active_profiles);
     let singbox_handle = thread::spawn(singbox::start_t2s_if_enabled);
+    let singbox_lx_handle = thread::spawn(singbox_lx::start_t2s_if_enabled);
     let hysteria2_handle = thread::spawn(hysteria2::start_t2s_if_enabled);
     wait_start_group(
         "dpi-stack",
@@ -122,6 +123,7 @@ pub fn start_full() -> Result<()> {
             ("dpitunnel", dpitunnel_handle),
             ("byedpi", byedpi_handle),
             ("sing-box", singbox_handle),
+            ("sing-box-lx", singbox_lx_handle),
             ("hysteria2", hysteria2_handle),
         ],
     );
@@ -155,16 +157,17 @@ pub fn start_full() -> Result<()> {
         || mihomo::has_profiles_requiring_netd()
         || mieru::has_profiles_requiring_netd()
         || singbox::has_enabled_vpn_profiles()
+        || singbox_lx::has_enabled_vpn_profiles()
         || hysteria2::has_enabled_vpn_profiles()
         || hotspot_vpn_selection.is_some();
     let mut vpn_profiles = Vec::new();
     match validate_vpn_claims_unique() {
         Ok(()) => {
-            // Table-driven start. Same engines, same order, same best-effort semantics as the
-            // eight hand-written match blocks this replaces. Order matters: vpn_netd::start_profiles()
+            // Table-driven start. Existing engine order/best-effort semantics are preserved,
+            // with the isolated optional sing-box-lx backend inserted next to standard sing-box. Order matters: vpn_netd::start_profiles()
             // consumes the accumulated list, so engines must be started in this exact sequence.
             // The log label and the user-facing Russian text are kept per engine, unchanged.
-            let netd_starters: [(&str, &str, fn() -> Result<Vec<crate::vpn_netd::VpnNetdProfile>>); 8] = [
+            let netd_starters: [(&str, &str, fn() -> Result<Vec<crate::vpn_netd::VpnNetdProfile>>); 9] = [
                 ("openvpn", "OpenVPN: ошибка запуска, запуск продолжен", openvpn::start_profiles_for_netd),
                 ("amneziawg", "AmneziaWG: ошибка запуска, запуск продолжен", amneziawg::start_profiles_for_netd),
                 ("tun2socks", "tun2socks: ошибка запуска, запуск продолжен", tun2socks::start_profiles_for_netd),
@@ -172,6 +175,7 @@ pub fn start_full() -> Result<()> {
                 ("mihomo", "mihomo: ошибка запуска, запуск продолжен", mihomo::start_profiles_for_netd),
                 ("mieru", "mieru: ошибка запуска, запуск продолжен", mieru::start_profiles_for_netd),
                 ("sing-box vpn", "sing-box: ошибка запуска, запуск продолжен", singbox::start_profiles_for_netd),
+                ("sing-box-lx vpn", "sing-box-lx: ошибка запуска, запуск продолжен", singbox_lx::start_profiles_for_netd),
                 ("hysteria2 vpn", "hysteria2: ошибка запуска, запуск продолжен", hysteria2::start_profiles_for_netd),
             ];
             for (log_label, user_message, start_profiles) in netd_starters {
@@ -407,6 +411,7 @@ fn can_adopt_existing_runtime() -> bool {
         || mihomo::has_profiles_requiring_netd()
         || mieru::has_profiles_requiring_netd()
         || singbox::has_enabled_vpn_profiles()
+        || singbox_lx::has_enabled_vpn_profiles()
         || hysteria2::has_enabled_vpn_profiles();
     if vpn_expected && !crate::vpn_netd::applied_snapshot_path().is_file() {
         log::info!("runtime adoption: VPN profiles are expected but vpn_netd/applied.json is missing");
@@ -457,6 +462,9 @@ fn enabled_runtime_processes_look_complete() -> bool {
     require_profile_program!("byedpi", r.byedpi.count);
     require_profile_program!("dpitunnel", r.dpitunnel.count);
     require_profile_program!("singbox", r.sing_box.count);
+    if singbox_lx::is_installed() {
+        require_profile_program!("singbox-lx", r.sing_box_lx.count);
+    }
     require_profile_program!("hysteria2", r.hysteria2.count);
     require_profile_program!("wireproxy", r.wireproxy.count);
     require_profile_program!("myproxy", r.myproxy.count);
@@ -479,6 +487,14 @@ fn enabled_runtime_processes_look_complete() -> bool {
         expected_any = true;
         if !vpn_netd_has_applied_owner("singbox") {
             log::info!("runtime adoption: enabled sing-box VPN profiles exist but vpn_netd snapshot has no singbox owner");
+            return false;
+        }
+    }
+
+    if singbox_lx::has_enabled_vpn_profiles() {
+        expected_any = true;
+        if !vpn_netd_has_applied_owner("singbox-lx") {
+            log::info!("runtime adoption: enabled sing-box-lx VPN profiles exist but vpn_netd snapshot has no singbox-lx owner");
             return false;
         }
     }
@@ -569,6 +585,7 @@ fn actual_runtime_has_services() -> bool {
             || r.byedpi.count > 0
             || r.dpitunnel.count > 0
             || r.sing_box.count > 0
+            || r.sing_box_lx.count > 0
             || r.hysteria2.count > 0
             || r.wireproxy.count > 0
             || r.myproxy.count > 0
@@ -592,6 +609,7 @@ fn actual_runtime_has_services() -> bool {
         || mihomo::is_running()
         || mieru::is_running()
         || hysteria2::is_running()
+        || singbox_lx::is_running()
         || vpn_netd_has_applied_owner("myvpn")
         || vpn_netd_has_applied_owner("hysteria2")
 }
@@ -600,6 +618,7 @@ fn runtime_uses_iptables_paths() -> bool {
     let app_routing = (operaproxy_enabled() && operaproxy_has_routed_app_outputs())
         || profile_program_has_routed_app_outputs("wireproxy")
         || profile_program_has_routed_app_outputs("singbox")
+        || profile_program_has_routed_app_outputs("singbox-lx")
         || profile_program_has_routed_app_outputs("hysteria2")
         || (tor_enabled() && tor_has_routed_app_outputs());
 
@@ -805,7 +824,7 @@ fn validate_start_plan_best_effort() {
     // NOTE: hysteria2::validate_start_plan() is deliberately NOT listed here. It was not
     // called before this refactor either; the list is kept identical so behavior does not
     // change. Pending maintainer decision on whether that omission is intentional.
-    let start_plans: [(&str, fn() -> Result<()>); 7] = [
+    let start_plans: [(&str, fn() -> Result<()>); 8] = [
         ("openvpn", openvpn::validate_start_plan),
         ("amneziawg", amneziawg::validate_start_plan),
         ("tun2socks", tun2socks::validate_start_plan),
@@ -813,6 +832,7 @@ fn validate_start_plan_best_effort() {
         ("mihomo", mihomo::validate_start_plan),
         ("mieru", mieru::validate_start_plan),
         ("sing-box", singbox::validate_start_plan),
+        ("sing-box-lx", singbox_lx::validate_start_plan),
     ];
     for (label, validate) in start_plans {
         if let Err(e) = validate() {
@@ -837,8 +857,8 @@ fn validate_vpn_claims_unique() -> Result<()> {
 
 fn validate_vpn_tun_claims_unique() -> Result<()> {
     let mut seen = BTreeMap::<String, String>::new();
-    // Same eight sources in the same order as the previous .chain() sequence.
-    let tun_claim_sources: [fn() -> Vec<(String, String)>; 8] = [
+    // Existing claim sources keep their order; sing-box-lx adds one isolated source.
+    let tun_claim_sources: [fn() -> Vec<(String, String)>; 9] = [
         openvpn::enabled_tun_claims,
         amneziawg::enabled_tun_claims,
         tun2socks::enabled_tun_claims,
@@ -846,6 +866,7 @@ fn validate_vpn_tun_claims_unique() -> Result<()> {
         mihomo::enabled_tun_claims,
         mieru::enabled_tun_claims,
         singbox::enabled_tun_claims,
+        singbox_lx::enabled_tun_claims,
         hysteria2::enabled_tun_claims,
     ];
     for (label, tun) in tun_claim_sources.into_iter().flat_map(|claims| claims())
@@ -858,15 +879,16 @@ fn validate_vpn_tun_claims_unique() -> Result<()> {
 }
 
 fn validate_vpn_cidr_claims_unique() -> Result<()> {
-    // Same seven sources in the same order as the previous .chain() sequence.
+    // Existing CIDR claim sources keep their order; sing-box-lx adds one isolated source.
     // NOTE: openvpn::enabled_cidr_claims() is intentionally absent, exactly as before.
-    let cidr_claim_sources: [fn() -> Vec<(String, String)>; 7] = [
+    let cidr_claim_sources: [fn() -> Vec<(String, String)>; 8] = [
         amneziawg::enabled_cidr_claims,
         tun2socks::enabled_cidr_claims,
         myvpn::enabled_cidr_claims,
         mihomo::enabled_cidr_claims,
         mieru::enabled_cidr_claims,
         singbox::enabled_cidr_claims,
+        singbox_lx::enabled_cidr_claims,
         hysteria2::enabled_cidr_claims,
     ];
     let claims = cidr_claim_sources
@@ -932,6 +954,7 @@ fn any_main_service_running() -> bool {
     let myvpn_expected = myvpn::has_enabled_profiles();
     let mihomo_expected = mihomo::has_enabled_profiles();
     let singbox_vpn_expected = singbox::has_enabled_vpn_profiles();
+    let singbox_lx_vpn_expected = singbox_lx::has_enabled_vpn_profiles();
     let hysteria2_vpn_expected = hysteria2::has_enabled_vpn_profiles();
     let tgwsproxy_expected = tgwsproxy_enabled();
 
@@ -944,6 +967,7 @@ fn any_main_service_running() -> bool {
         "byedpi",
         "dpitunnel",
         "singbox",
+        "singbox-lx",
         "wireproxy",
         "myproxy",
         "myprogram",
@@ -962,6 +986,7 @@ fn any_main_service_running() -> bool {
                 || r.byedpi.count > 0
                 || r.dpitunnel.count > 0
                 || r.sing_box.count > 0
+                || r.sing_box_lx.count > 0
                 || r.wireproxy.count > 0
                 || r.myproxy.count > 0
                 || r.myprogram.count > 0
@@ -976,6 +1001,7 @@ fn any_main_service_running() -> bool {
                 || (mihomo_expected && mihomo::is_running())
                 || (mieru::has_enabled_profiles() && mieru::is_running())
                 || (singbox_vpn_expected && singbox::is_running() && vpn_netd_has_applied_owner("singbox"))
+                || (singbox_lx_vpn_expected && singbox_lx::is_running() && vpn_netd_has_applied_owner("singbox-lx"))
                 || (hysteria2_vpn_expected && hysteria2::is_running() && vpn_netd_has_applied_owner("hysteria2"))
             {
                 return true;

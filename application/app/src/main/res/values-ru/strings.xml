@@ -798,6 +798,11 @@ APatch: 10700+</string>
     <string name="singbox_import_dialog_title">Генерация сервера sing-box</string>
     <string name="singbox_import_dialog_beta_warning">Бета-функция. Если используете редкие параметры, внимательно проверьте результат.</string>
     <string name="singbox_import_dialog_desc">Вставьте однострочный конфиг вида vless://, vmess://, trojan://, ss:// или socks://. Новый сервер и его настройки будут созданы автоматически.</string>
+    <string name="singbox_lx_import_dialog_title">Генерация сервера sing-box-lx</string>
+    <string name="singbox_lx_import_dialog_desc">Вставьте ссылку VLESS, VMess, Trojan, Shadowsocks или SOCKS либо полный JSON. Ссылки XHTTP/splithttp импортируются как нативный транспорт XHTTP sing-box-lx.</string>
+    <string name="singbox_import_requires_lx_title">Для этой ссылки нужен sing-box-lx</string>
+    <string name="singbox_import_requires_lx_message">Конфигурация использует XHTTP, который не поддерживается стандартным ядром sing-box. Импортируйте её через инструмент sing-box-lx.</string>
+    <string name="singbox_import_open_lx">Открыть sing-box-lx</string>
     <string name="singbox_import_auto_port_hint">Свободный mixed-in порт будет назначен автоматически. Предлагаемый порт: %1$d.</string>
     <string name="singbox_import_source_label">Однострочный конфиг</string>
     <string name="singbox_import_source_support_hint">Поддерживается: vless, vmess, trojan, shadowsocks, socks. Полный JSON тоже принимается.</string>
@@ -1212,6 +1217,17 @@ APatch: 10700+</string>
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Telegram WS Proxy</string>
     <string name="tg_ws_proxy_desc">Утилита Telegram MTProto → WebSocket proxy.</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">Дополнительное расширенное ядро sing-box с XHTTP, MASQUE/WARP, AmneziaWG 3.x и дополнительными возможностями VLESS.</string>
+    <string name="sing_box_lx_install_required_title">Требуется sing-box-lx</string>
+    <string name="sing_box_lx_install_required_message">Для этого действия нужен дополнительный компонент sing-box-lx. Установите его в разделе «Дополнительные инструменты», чтобы продолжить.</string>
+    <string name="sing_box_lx_open_optional_tools">Открыть дополнительные инструменты</string>
+    <string name="sing_box_lx_error_status">Не удалось проверить состояние установки sing-box-lx.</string>
+    <string name="sing_box_lx_error_unsupported_abi">Неподдерживаемая архитектура CPU: %1$s</string>
+    <string name="sing_box_lx_error_download">Не удалось скачать sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_package">Проверка пакета sing-box-lx не пройдена: %1$s</string>
+    <string name="sing_box_lx_error_install">Не удалось установить sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_remove">Не удалось удалить sing-box-lx: %1$s</string>
     <string name="apps_list_desc_tgwsproxy">Утилита Telegram MTProto → WebSocket proxy.</string>
 
     <string name="world_map_title">Карта мира</string>
@@ -2604,4 +2620,72 @@ APatch: 10700+</string>
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">Укажите корректный HTTP, HTTPS, SOCKS5 или SOCKS5H прокси с адресом и портом.</string>
     <string name="non_root_log_opera_upstream">Внешний прокси Opera: %1$s</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">Требуется sing-box-lx</string>
+    <string name="subscription_lx_required_hint">Этот узел использует XHTTP или другую возможность, доступную только в sing-box-lx.</string>
+    <string name="subscription_lx_not_installed_hint">Для этого узла нужен sing-box-lx. Установите дополнительный компонент для импорта.</string>
+    <string name="subscription_install_required_short">нужна установка</string>
+    <string name="subscription_bulk_import_section">Массовый импорт</string>
+    <string name="subscription_bulk_import_desc">Импортировать все совместимые узлы этой подписки в один профиль. Уже привязанные узлы будут пропущены.</string>
+    <string name="subscription_bulk_import_to">Импортировать все в %1$s (%2$d)</string>
+    <string name="subscription_bulk_import_title">Массовый импорт в %1$s</string>
+    <string name="subscription_bulk_import_count">Совместимых узлов: %1$d</string>
+    <string name="subscription_bulk_import_naming_hint">Имена серверов создаются из имён узлов; при совпадении добавляется номер. Для импорта нескольких серверов нужен профиль T2S.</string>
+    <string name="subscription_bulk_import_result">Импортировано %1$d · пропущено %2$d · ошибок %3$d</string>
+    <string name="subscription_bulk_import_failed">Не удалось выполнить массовый импорт</string>
+    <string name="subscription_target_choice">Куда импортировать</string>
+    <string name="subscription_new_profile_name">Имя нового профиля</string>
+    <string name="subscription_create_profile">Создать профиль</string>
+    <string name="subscription_profile_created">Профиль %1$s создан</string>
+    <string name="subscription_profile_create_failed">Не удалось создать профиль назначения</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">Создаёт узел WARP через MASQUE (CONNECT-IP поверх HTTP/3 или HTTP/2). Приватный ключ P-256 генерируется на этом устройстве и не передаётся сторонним сервисам.</string>
+    <string name="warp_masque_cache_loading">Проверка сохранённой регистрации WARP…</string>
+    <string name="warp_masque_cache_ready">Сохранённая регистрация MASQUE готова</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">Не удалось прочитать сохранённую регистрацию MASQUE.</string>
+    <string name="warp_masque_cache_missing">Регистрация MASQUE не сохранена. Будет зарегистрировано новое устройство Cloudflare WARP.</string>
+    <string name="warp_masque_server_name">Имя сервера</string>
+    <string name="warp_masque_transport_fmt">Транспорт: %1$s</string>
+    <string name="warp_masque_transport_auto">Авто (HTTP/3 → HTTP/2)</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">IP или хост endpoint</string>
+    <string name="warp_masque_endpoint_hint">Пусто = endpoint регистрации (%1$s)</string>
+    <string name="warp_masque_endpoint_port">Порт endpoint</string>
+    <string name="warp_masque_endpoint_port_hint">Пусто = порт регистрации (%1$d)</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">По умолчанию: www.cloudflare.com. Можно указать другой SNI, работающий в вашей сети.</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">Таймаут простоя, минуты</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive, секунды</string>
+    <string name="warp_masque_optional_default">Необязательно. Пусто = значение sing-box-lx по умолчанию.</string>
+    <string name="warp_masque_keepalive_h2">Не используется при фиксированном HTTP/2.</string>
+    <string name="warp_masque_reregister">Перерегистрировать WARP</string>
+    <string name="warp_masque_reregister_hint">Сгенерировать новые ключи и создать новое устройство Cloudflare WARP вместо сохранённой регистрации.</string>
+    <string name="warp_masque_clear_cache">Удалить сохранённую регистрацию MASQUE</string>
+    <string name="warp_masque_create_cached">Создать из сохранённой регистрации</string>
+    <string name="warp_masque_register_create">Зарегистрировать и создать</string>
+    <string name="warp_masque_add_action">Получить WARP / MASQUE</string>
+    <string name="warp_masque_created_fmt">Сервер WARP MASQUE создан: %1$s</string>
+    <string name="warp_masque_error_name">Укажите имя сервера.</string>
+    <string name="warp_masque_error_name_exists">Сервер с таким именем уже существует.</string>
+    <string name="warp_masque_error_port">Порт endpoint должен быть от 1 до 65535.</string>
+    <string name="warp_masque_error_mtu">MTU должен быть от 576 до 16000.</string>
+    <string name="warp_masque_error_idle">Таймаут простоя должен быть от 1 до 1440 минут или пустым.</string>
+    <string name="warp_masque_error_keepalive">Keep-alive должен быть от 1 до 3600 секунд или пустым.</string>
+    <string name="warp_masque_error_config">Не удалось создать конфигурацию MASQUE.</string>
+    <string name="warp_masque_error_registration">Не удалось зарегистрировать Cloudflare WARP MASQUE.</string>
+    <string name="warp_masque_error_cache_save">Регистрация успешна, но не удалось безопасно сохранить её в root-модуле.</string>
+    <string name="warp_masque_error_cache_clear">Не удалось удалить сохранённую регистрацию MASQUE.</string>
+    <string name="warp_masque_error_network">Не удалось подключиться к службе регистрации Cloudflare WARP. Проверьте соединение и повторите попытку.</string>
+    <string name="warp_masque_error_api_http">Служба регистрации Cloudflare WARP вернула HTTP %1$d. Возможно, API изменился.</string>
+    <string name="warp_masque_error_response">Cloudflare вернул некорректный или неполный ответ WARP MASQUE.</string>
+    <string name="warp_masque_error_crypto">Не удалось создать локальный ключ P-256 для WARP MASQUE.</string>
+    <string name="singbox_import_requires_lx_feature_message">Эта конфигурация использует %1$s, для чего требуется sing-box-lx. Импортируйте её через инструмент sing-box-lx.</string>
+    <string name="singbox_import_invalid_vless_encryption">Значение шифрования VLESS имеет неверный формат. ML-KEM должен использовать формат mlkem768x25519plus….</string>
+    <string name="singbox_lx_advanced_json_hint">Расширенные поля JSON sing-box-lx сохраняются. ZDT-D управляет только локальным mixed-входом и добавляет безопасные DNS/маршрутные значения по умолчанию, если они отсутствуют.</string>
 </resources>

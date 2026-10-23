@@ -81,6 +81,10 @@ fun AppsHost(
     uiStateFlow.map { it.tgWsProxy }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState())
 
+  val singBoxLx by remember(uiStateFlow) {
+    uiStateFlow.map { it.singBoxLx }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = com.android.zdtd.service.singboxlx.SingBoxLxComponentState())
+
   val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
   LaunchedEffect(Unit) {
@@ -102,6 +106,20 @@ fun AppsHost(
     AppsRoute.Subscriptions -> 1
     is AppsRoute.Program -> 1
     is AppsRoute.Profile -> 2
+  }
+
+  val lxRouteRequested = when (route) {
+    is AppsRoute.Program -> route.programId == "sing-box-lx"
+    is AppsRoute.Profile -> route.programId == "sing-box-lx"
+    else -> false
+  }
+
+  if (lxRouteRequested && !singBoxLx.installed) {
+    SingBoxLxInstallRequiredDialog(
+      onDismiss = onOpenOptionalTools,
+      onOpenOptionalTools = onOpenOptionalTools,
+    )
+    return
   }
 
   AnimatedContent(
@@ -127,6 +145,7 @@ fun AppsHost(
         programs = programs,
         daemonOnline = daemonOnline,
         tgWsProxy = tgWsProxy,
+        singBoxLx = singBoxLx,
         onOpenProgram = onOpenProgram,
         onOpenAnalysisTools = onOpenAnalysisTools,
         onOpenOptionalTools = onOpenOptionalTools,
@@ -188,7 +207,8 @@ fun AppsHost(
         }
       }
       AppsRoute.OptionalTools -> OptionalToolsScreen(
-        state = tgWsProxy,
+        tgWsProxyState = tgWsProxy,
+        singBoxLxState = singBoxLx,
         actions = actions,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
@@ -221,6 +241,8 @@ fun AppsHost(
       AppsRoute.Subscriptions -> SubscriptionsScreen(
         actions = actions,
         snackHost = snackHost,
+        singBoxLxInstalled = singBoxLx.installed,
+        onOpenOptionalTools = onOpenOptionalTools,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )
@@ -287,6 +309,22 @@ fun AppsHost(
           actions = actions,
           snackHost = snackHost,
           tproxyEnabled = tproxyEnabled,
+          singBoxLxInstalled = singBoxLx.installed,
+          onOpenProgram = onOpenProgram,
+          onOpenOptionalTools = onOpenOptionalTools,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
+        )
+        "sing-box-lx" -> SingBoxProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          programId = "sing-box-lx",
+          actions = actions,
+          snackHost = snackHost,
+          tproxyEnabled = tproxyEnabled,
+          singBoxLxInstalled = singBoxLx.installed,
+          onOpenProgram = onOpenProgram,
+          onOpenOptionalTools = onOpenOptionalTools,
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomContentPadding,
         )

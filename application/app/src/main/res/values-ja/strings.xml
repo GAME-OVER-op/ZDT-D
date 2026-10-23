@@ -800,6 +800,11 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="singbox_import_dialog_title">sing-boxサーバーを生成</string>
     <string name="singbox_import_dialog_beta_warning">ベータ機能です。一般的でないパラメーターを使用する場合は結果を慎重に確認してください。</string>
     <string name="singbox_import_dialog_desc">vless://、vmess://、trojan://、ss://、socks:// などの1行設定を貼り付けます。新しいサーバーと設定が自動作成されます。</string>
+    <string name="singbox_lx_import_dialog_title">sing-box-lx サーバーを生成</string>
+    <string name="singbox_lx_import_dialog_desc">VLESS、VMess、Trojan、Shadowsocks、SOCKS のリンク、または完全な JSON を貼り付けます。XHTTP/splithttp リンクは sing-box-lx のネイティブ XHTTP トランスポートとしてインポートされます。</string>
+    <string name="singbox_import_requires_lx_title">このリンクには sing-box-lx が必要です</string>
+    <string name="singbox_import_requires_lx_message">この設定は標準の sing-box コアが対応していない XHTTP を使用しています。sing-box-lx ツールからインポートしてください。</string>
+    <string name="singbox_import_open_lx">sing-box-lx を開く</string>
     <string name="singbox_import_auto_port_hint">空いているmixed-inポートが自動的に割り当てられます。推奨ポート: %1$d。</string>
     <string name="singbox_import_source_label">1行設定</string>
     <string name="singbox_import_source_support_hint">対応: vless、vmess、trojan、shadowsocks、socks。完全なJSONも使用できます。</string>
@@ -1214,6 +1219,17 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Telegram WSプロキシ</string>
     <string name="tg_ws_proxy_desc">Telegram MTProto → WebSocketプロキシユーティリティ。</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">XHTTP、MASQUE/WARP、AmneziaWG 3.x、追加のVLESS機能に対応するオプションの拡張sing-boxコアです。</string>
+    <string name="sing_box_lx_install_required_title">sing-box-lx が必要です</string>
+    <string name="sing_box_lx_install_required_message">この操作にはオプションの sing-box-lx コンポーネントが必要です。続行するには「追加ツール」からインストールしてください。</string>
+    <string name="sing_box_lx_open_optional_tools">追加ツールを開く</string>
+    <string name="sing_box_lx_error_status">sing-box-lx のインストール状態を確認できませんでした。</string>
+    <string name="sing_box_lx_error_unsupported_abi">未対応のCPU ABI: %1$s</string>
+    <string name="sing_box_lx_error_download">sing-box-lxをダウンロードできませんでした: %1$s</string>
+    <string name="sing_box_lx_error_package">sing-box-lxパッケージの検証に失敗しました: %1$s</string>
+    <string name="sing_box_lx_error_install">sing-box-lxをインストールできませんでした: %1$s</string>
+    <string name="sing_box_lx_error_remove">sing-box-lxを削除できませんでした: %1$s</string>
     <string name="apps_list_desc_tgwsproxy">Telegram MTProto → WebSocketプロキシユーティリティ。</string>
 
     <string name="world_map_title">世界地図</string>
@@ -2605,4 +2621,72 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">ホストとポートを含む有効な HTTP、HTTPS、SOCKS5、SOCKS5H プロキシ URL を入力してください。</string>
     <string name="non_root_log_opera_upstream">Opera アップストリーム: %1$s</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">sing-box-lx が必要</string>
+    <string name="subscription_lx_required_hint">このノードは XHTTP または sing-box-lx のみで利用できる機能を使用します。</string>
+    <string name="subscription_lx_not_installed_hint">このノードには sing-box-lx が必要です。インポートするには追加コンポーネントをインストールしてください。</string>
+    <string name="subscription_install_required_short">インストールが必要</string>
+    <string name="subscription_bulk_import_section">一括インポート</string>
+    <string name="subscription_bulk_import_desc">この購読の互換ノードをすべて1つのプロファイルへインポートします。すでに関連付け済みのノードはスキップします。</string>
+    <string name="subscription_bulk_import_to">すべて %1$s へインポート（%2$d）</string>
+    <string name="subscription_bulk_import_title">%1$s へ一括インポート</string>
+    <string name="subscription_bulk_import_count">互換ノード %1$d 件</string>
+    <string name="subscription_bulk_import_naming_hint">サーバー名はノード名から生成され、重複時は番号が付きます。複数サーバーのインポートには T2S プロファイルが必要です。</string>
+    <string name="subscription_bulk_import_result">インポート %1$d · スキップ %2$d · 失敗 %3$d</string>
+    <string name="subscription_bulk_import_failed">一括インポートに失敗しました</string>
+    <string name="subscription_target_choice">インポート先</string>
+    <string name="subscription_new_profile_name">新しいプロファイル名</string>
+    <string name="subscription_create_profile">プロファイルを作成</string>
+    <string name="subscription_profile_created">プロファイル %1$s を作成しました</string>
+    <string name="subscription_profile_create_failed">インポート先プロファイルを作成できませんでした</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">MASQUE（HTTP/3 または HTTP/2 上の CONNECT-IP）で WARP ノードを作成します。P-256 秘密鍵はこの端末で生成され、第三者には送信されません。</string>
+    <string name="warp_masque_cache_loading">保存済み WARP 登録を確認中…</string>
+    <string name="warp_masque_cache_ready">保存済み MASQUE 登録を使用できます</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">保存済み MASQUE 登録を読み取れませんでした。</string>
+    <string name="warp_masque_cache_missing">保存済み MASQUE 登録がありません。新しい Cloudflare WARP デバイスを登録します。</string>
+    <string name="warp_masque_server_name">サーバー名</string>
+    <string name="warp_masque_transport_fmt">トランスポート: %1$s</string>
+    <string name="warp_masque_transport_auto">自動 (HTTP/3 → HTTP/2)</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">Endpoint IP またはホスト</string>
+    <string name="warp_masque_endpoint_hint">空欄 = 登録時の endpoint (%1$s)</string>
+    <string name="warp_masque_endpoint_port">Endpoint ポート</string>
+    <string name="warp_masque_endpoint_port_hint">空欄 = 登録時のポート (%1$d)</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">既定: www.cloudflare.com。ネットワークで利用できる別の SNI も指定できます。</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">アイドルタイムアウト（分）</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive（秒）</string>
+    <string name="warp_masque_optional_default">任意。空欄 = sing-box-lx の既定値。</string>
+    <string name="warp_masque_keepalive_h2">固定 HTTP/2 では使用されません。</string>
+    <string name="warp_masque_reregister">WARP を再登録</string>
+    <string name="warp_masque_reregister_hint">保存済み登録を使わず、新しい鍵と Cloudflare WARP デバイスを作成します。</string>
+    <string name="warp_masque_clear_cache">保存済み MASQUE 登録を削除</string>
+    <string name="warp_masque_create_cached">保存済み登録から作成</string>
+    <string name="warp_masque_register_create">登録して作成</string>
+    <string name="warp_masque_add_action">WARP / MASQUE を取得</string>
+    <string name="warp_masque_created_fmt">WARP MASQUE サーバーを作成しました: %1$s</string>
+    <string name="warp_masque_error_name">サーバー名を入力してください。</string>
+    <string name="warp_masque_error_name_exists">同じ名前のサーバーが既に存在します。</string>
+    <string name="warp_masque_error_port">Endpoint ポートは 1～65535 の範囲で指定してください。</string>
+    <string name="warp_masque_error_mtu">MTU は 576～16000 の範囲で指定してください。</string>
+    <string name="warp_masque_error_idle">アイドルタイムアウトは 1～1440 分、または空欄にしてください。</string>
+    <string name="warp_masque_error_keepalive">Keep-alive は 1～3600 秒、または空欄にしてください。</string>
+    <string name="warp_masque_error_config">MASQUE 設定を作成できませんでした。</string>
+    <string name="warp_masque_error_registration">Cloudflare WARP MASQUE の登録に失敗しました。</string>
+    <string name="warp_masque_error_cache_save">登録には成功しましたが、root モジュールへ安全に保存できませんでした。</string>
+    <string name="warp_masque_error_cache_clear">保存済み MASQUE 登録を削除できませんでした。</string>
+    <string name="warp_masque_error_network">Cloudflare WARP の登録サービスに接続できませんでした。接続を確認して再試行してください。</string>
+    <string name="warp_masque_error_api_http">Cloudflare WARP の登録サービスが HTTP %1$d を返しました。API が変更された可能性があります。</string>
+    <string name="warp_masque_error_response">Cloudflare から無効または不完全な WARP MASQUE 応答が返されました。</string>
+    <string name="warp_masque_error_crypto">WARP MASQUE 用のローカル P-256 キーを生成できませんでした。</string>
+    <string name="singbox_import_requires_lx_feature_message">この構成は %1$s を使用しているため、sing-box-lx が必要です。sing-box-lx ツールからインポートしてください。</string>
+    <string name="singbox_import_invalid_vless_encryption">VLESS encryption の値の形式が正しくありません。ML-KEM は mlkem768x25519plus… 形式を使用する必要があります。</string>
+    <string name="singbox_lx_advanced_json_hint">sing-box-lx の高度な JSON フィールドは保持されます。ZDT-D はローカル mixed inbound のみを管理し、不足している場合に安全な DNS/ルーティング既定値を追加します。</string>
 </resources>

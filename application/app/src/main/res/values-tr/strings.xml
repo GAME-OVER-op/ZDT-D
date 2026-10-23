@@ -800,6 +800,11 @@ Modülü yeniden yükleyin.</string>
     <string name="singbox_import_dialog_title">sing-box sunucusu oluştur</string>
     <string name="singbox_import_dialog_beta_warning">Beta özellik. Yaygın olmayan parametreler kullanıyorsanız sonucu dikkatlice inceleyin.</string>
     <string name="singbox_import_dialog_desc">vless://, vmess://, trojan://, ss:// veya socks:// gibi tek satırlık bir yapılandırma yapıştırın. Yeni sunucu ve ayarları otomatik olarak oluşturulur.</string>
+    <string name="singbox_lx_import_dialog_title">sing-box-lx sunucusu oluştur</string>
+    <string name="singbox_lx_import_dialog_desc">Bir VLESS, VMess, Trojan, Shadowsocks veya SOCKS bağlantısı ya da tam JSON yapıştırın. XHTTP/splithttp bağlantıları yerel sing-box-lx XHTTP aktarımı olarak içe aktarılır.</string>
+    <string name="singbox_import_requires_lx_title">Bu bağlantı sing-box-lx gerektiriyor</string>
+    <string name="singbox_import_requires_lx_message">Yapılandırma, standart sing-box çekirdeğinin desteklemediği XHTTP kullanıyor. sing-box-lx aracından içe aktarın.</string>
+    <string name="singbox_import_open_lx">sing-box-lx aç</string>
     <string name="singbox_import_auto_port_hint">Boş bir mixed-in bağlantı noktası otomatik olarak atanır. Önerilen bağlantı noktası: %1$d.</string>
     <string name="singbox_import_source_label">Tek satırlık yapılandırma</string>
     <string name="singbox_import_source_support_hint">Desteklenenler: vless, vmess, trojan, shadowsocks, socks. Tam JSON da kabul edilir.</string>
@@ -1214,6 +1219,17 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Telegram WS Proxy</string>
     <string name="tg_ws_proxy_desc">Telegram MTProto → WebSocket proxy aracı.</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">XHTTP, MASQUE/WARP, AmneziaWG 3.x ve ek VLESS özellikleri içeren isteğe bağlı genişletilmiş sing-box çekirdeği.</string>
+    <string name="sing_box_lx_install_required_title">sing-box-lx gerekli</string>
+    <string name="sing_box_lx_install_required_message">Bu işlem için isteğe bağlı sing-box-lx bileşeni gerekir. Devam etmek için Ek araçlar bölümünden kurun.</string>
+    <string name="sing_box_lx_open_optional_tools">Ek araçları aç</string>
+    <string name="sing_box_lx_error_status">sing-box-lx kurulum durumu denetlenemedi.</string>
+    <string name="sing_box_lx_error_unsupported_abi">Desteklenmeyen CPU ABI: %1$s</string>
+    <string name="sing_box_lx_error_download">sing-box-lx indirilemedi: %1$s</string>
+    <string name="sing_box_lx_error_package">sing-box-lx paket doğrulaması başarısız: %1$s</string>
+    <string name="sing_box_lx_error_install">sing-box-lx kurulamadı: %1$s</string>
+    <string name="sing_box_lx_error_remove">sing-box-lx kaldırılamadı: %1$s</string>
     <string name="apps_list_desc_tgwsproxy">Telegram MTProto → WebSocket proxy aracı.</string>
 
     <string name="world_map_title">Dünya haritası</string>
@@ -2605,4 +2621,72 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">Ana bilgisayar ve bağlantı noktası içeren geçerli bir HTTP, HTTPS, SOCKS5 veya SOCKS5H proxy URL’si girin.</string>
     <string name="non_root_log_opera_upstream">Opera üst proxy: %1$s</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">sing-box-lx gerekli</string>
+    <string name="subscription_lx_required_hint">Bu düğüm XHTTP veya yalnızca sing-box-lx içinde bulunan başka bir özellik kullanıyor.</string>
+    <string name="subscription_lx_not_installed_hint">Bu düğüm sing-box-lx gerektiriyor. İçe aktarmak için isteğe bağlı bileşeni kurun.</string>
+    <string name="subscription_install_required_short">kurulum gerekli</string>
+    <string name="subscription_bulk_import_section">Toplu içe aktarma</string>
+    <string name="subscription_bulk_import_desc">Bu abonelikteki tüm uyumlu düğümleri tek profile aktarır. Zaten bağlı düğümler atlanır.</string>
+    <string name="subscription_bulk_import_to">Tümünü %1$s içine aktar (%2$d)</string>
+    <string name="subscription_bulk_import_title">%1$s içine toplu aktarım</string>
+    <string name="subscription_bulk_import_count">%1$d uyumlu düğüm</string>
+    <string name="subscription_bulk_import_naming_hint">Sunucu adları düğüm adlarından oluşturulur; çakışmalara sayısal ek eklenir. Birden fazla sunucu için T2S profili gerekir.</string>
+    <string name="subscription_bulk_import_result">Aktarıldı %1$d · atlandı %2$d · başarısız %3$d</string>
+    <string name="subscription_bulk_import_failed">Toplu içe aktarma başarısız</string>
+    <string name="subscription_target_choice">İçe aktarma hedefi</string>
+    <string name="subscription_new_profile_name">Yeni profil adı</string>
+    <string name="subscription_create_profile">Profil oluştur</string>
+    <string name="subscription_profile_created">%1$s profili oluşturuldu</string>
+    <string name="subscription_profile_create_failed">Hedef profil oluşturulamadı</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">MASQUE üzerinden bir WARP düğümü oluşturur (HTTP/3 veya HTTP/2 üzerinde CONNECT-IP). Özel P-256 anahtarı bu cihazda üretilir ve üçüncü taraflara gönderilmez.</string>
+    <string name="warp_masque_cache_loading">Kayıtlı WARP kaydı denetleniyor…</string>
+    <string name="warp_masque_cache_ready">Kayıtlı MASQUE kaydı hazır</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">Kayıtlı MASQUE kaydı okunamadı.</string>
+    <string name="warp_masque_cache_missing">Kayıtlı MASQUE kaydı yok. Yeni bir Cloudflare WARP cihazı kaydedilecek.</string>
+    <string name="warp_masque_server_name">Sunucu adı</string>
+    <string name="warp_masque_transport_fmt">Taşıma: %1$s</string>
+    <string name="warp_masque_transport_auto">Otomatik (HTTP/3 → HTTP/2)</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">Endpoint IP veya ana bilgisayar</string>
+    <string name="warp_masque_endpoint_hint">Boş = kayıt endpoint’i (%1$s)</string>
+    <string name="warp_masque_endpoint_port">Endpoint portu</string>
+    <string name="warp_masque_endpoint_port_hint">Boş = kayıt portu (%1$d)</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">Varsayılan: www.cloudflare.com. Ağınızda çalışan başka bir SNI belirtebilirsiniz.</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">Boşta kalma zaman aşımı, dakika</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive, saniye</string>
+    <string name="warp_masque_optional_default">İsteğe bağlı. Boş = sing-box-lx varsayılanı.</string>
+    <string name="warp_masque_keepalive_h2">Sabit HTTP/2 ile kullanılmaz.</string>
+    <string name="warp_masque_reregister">WARP’ı yeniden kaydet</string>
+    <string name="warp_masque_reregister_hint">Kayıtlı kaydı kullanmak yerine yeni anahtarlar ve yeni bir Cloudflare WARP cihazı oluşturur.</string>
+    <string name="warp_masque_clear_cache">Kayıtlı MASQUE kaydını temizle</string>
+    <string name="warp_masque_create_cached">Kayıtlı kayıttan oluştur</string>
+    <string name="warp_masque_register_create">Kaydet ve oluştur</string>
+    <string name="warp_masque_add_action">WARP / MASQUE al</string>
+    <string name="warp_masque_created_fmt">WARP MASQUE sunucusu oluşturuldu: %1$s</string>
+    <string name="warp_masque_error_name">Bir sunucu adı girin.</string>
+    <string name="warp_masque_error_name_exists">Bu adda bir sunucu zaten var.</string>
+    <string name="warp_masque_error_port">Endpoint portu 1 ile 65535 arasında olmalıdır.</string>
+    <string name="warp_masque_error_mtu">MTU 576 ile 16000 arasında olmalıdır.</string>
+    <string name="warp_masque_error_idle">Boşta kalma zaman aşımı 1-1440 dakika arasında veya boş olmalıdır.</string>
+    <string name="warp_masque_error_keepalive">Keep-alive 1-3600 saniye arasında veya boş olmalıdır.</string>
+    <string name="warp_masque_error_config">MASQUE yapılandırması oluşturulamadı.</string>
+    <string name="warp_masque_error_registration">Cloudflare WARP MASQUE kaydı başarısız oldu.</string>
+    <string name="warp_masque_error_cache_save">Kayıt başarılı oldu ancak root modülüne güvenli biçimde kaydedilemedi.</string>
+    <string name="warp_masque_error_cache_clear">Kayıtlı MASQUE kaydı temizlenemedi.</string>
+    <string name="warp_masque_error_network">Cloudflare WARP kayıt hizmetine ulaşılamadı. Bağlantıyı kontrol edip tekrar deneyin.</string>
+    <string name="warp_masque_error_api_http">Cloudflare WARP kayıt hizmeti HTTP %1$d döndürdü. API değişmiş olabilir.</string>
+    <string name="warp_masque_error_response">Cloudflare geçersiz veya eksik bir WARP MASQUE yanıtı döndürdü.</string>
+    <string name="warp_masque_error_crypto">WARP MASQUE için yerel P-256 anahtarı oluşturulamadı.</string>
+    <string name="singbox_import_requires_lx_feature_message">Bu yapılandırma %1$s kullanıyor ve sing-box-lx gerektiriyor. sing-box-lx aracı üzerinden içe aktarın.</string>
+    <string name="singbox_import_invalid_vless_encryption">VLESS şifreleme değeri hatalı biçimde. ML-KEM, mlkem768x25519plus… biçimini kullanmalıdır.</string>
+    <string name="singbox_lx_advanced_json_hint">Gelişmiş sing-box-lx JSON alanları korunur. ZDT-D yalnızca yerel mixed inbound öğesini yönetir ve eksik olduğunda güvenli DNS/yönlendirme varsayılanlarını ekler.</string>
 </resources>

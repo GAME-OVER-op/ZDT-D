@@ -114,26 +114,32 @@ fn collect_reserved_ports() -> BTreeSet<u16> {
 /// This is intended for *conflict checks* by programs that manage their own ports
 /// outside of the standard `*/port.json` profile layout (e.g. sing-box).
 pub fn collect_used_ports_for_conflict_check() -> Result<BTreeSet<u16>> {
-    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, false, false)
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, false, false, false)
 }
 
 pub fn collect_used_ports_for_conflict_check_excluding(
     exclude_singbox: bool,
     exclude_wireproxy: bool,
 ) -> Result<BTreeSet<u16>> {
-    collect_used_ports_for_conflict_check_excluding_programs(exclude_singbox, exclude_wireproxy, false, false, false, false, false)
+    collect_used_ports_for_conflict_check_excluding_programs(exclude_singbox, exclude_wireproxy, false, false, false, false, false, false)
 }
 
 pub fn collect_used_ports_for_conflict_check_excluding_mihomo() -> Result<BTreeSet<u16>> {
-    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, true, false, false)
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, true, false, false, false)
 }
 
 pub fn collect_used_ports_for_conflict_check_excluding_mieru() -> Result<BTreeSet<u16>> {
-    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, true, false)
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, true, false, false)
 }
 
 pub fn collect_used_ports_for_conflict_check_excluding_hysteria2() -> Result<BTreeSet<u16>> {
-    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, false, true)
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, false, true, false)
+}
+
+/// Same global conflict scan, but excludes only sing-box-lx's own profile ports.
+/// The regular sing-box remains included so both cores can safely run together.
+pub fn collect_used_ports_for_conflict_check_excluding_singbox_lx() -> Result<BTreeSet<u16>> {
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, false, false, true)
 }
 
 pub fn collect_used_ports_for_conflict_check_excluding_programs(
@@ -144,6 +150,7 @@ pub fn collect_used_ports_for_conflict_check_excluding_programs(
     exclude_mihomo: bool,
     exclude_mieru: bool,
     exclude_hysteria2: bool,
+    exclude_singbox_lx: bool,
 ) -> Result<BTreeSet<u16>> {
     let mut used = collect_reserved_ports();
 
@@ -155,6 +162,9 @@ pub fn collect_used_ports_for_conflict_check_excluding_programs(
     }
     if !exclude_singbox {
         used.extend(collect_defined_singbox_ports());
+    }
+    if !exclude_singbox_lx {
+        used.extend(collect_defined_singbox_lx_ports());
     }
     if !exclude_wireproxy {
         used.extend(collect_defined_wireproxy_ports());
@@ -236,9 +246,9 @@ fn singbox_mode_is_vpn(mode: &str) -> bool {
     )
 }
 
-fn collect_defined_singbox_ports() -> BTreeSet<u16> {
+fn collect_defined_singbox_ports_from(program: &str) -> BTreeSet<u16> {
     let mut used = BTreeSet::new();
-    let root = working_program_dir("singbox").join("profile");
+    let root = working_program_dir(program).join("profile");
     if let Ok(rd) = fs::read_dir(&root) {
         for ent in rd.flatten() {
             let profile_dir = ent.path();
@@ -285,6 +295,15 @@ fn collect_defined_singbox_ports() -> BTreeSet<u16> {
         }
     }
     used
+}
+
+
+fn collect_defined_singbox_ports() -> BTreeSet<u16> {
+    collect_defined_singbox_ports_from("singbox")
+}
+
+fn collect_defined_singbox_lx_ports() -> BTreeSet<u16> {
+    collect_defined_singbox_ports_from("singbox-lx")
 }
 
 
@@ -382,6 +401,7 @@ pub fn normalize_ports() -> Result<()> {
     let reserved = collect_reserved_ports();
     let mut used = reserved.clone();
     used.extend(collect_defined_singbox_ports());
+    used.extend(collect_defined_singbox_lx_ports());
     used.extend(collect_defined_hysteria2_ports());
     used.extend(collect_defined_wireproxy_ports());
     used.extend(collect_defined_tor_ports());
@@ -448,6 +468,7 @@ pub fn suggest_port_for_new_profile(program: &str) -> Result<u16> {
     let mut used = collect_reserved_ports();
 
     used.extend(collect_defined_singbox_ports());
+    used.extend(collect_defined_singbox_lx_ports());
     used.extend(collect_defined_hysteria2_ports());
     used.extend(collect_defined_wireproxy_ports());
     used.extend(collect_defined_tor_ports());

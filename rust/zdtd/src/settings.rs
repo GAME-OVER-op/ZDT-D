@@ -402,6 +402,7 @@ ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules
         ("nfqws", "active.json", PROFILES_DEFAULT_JSON),
         ("nfqws2", "active.json", PROFILES_DEFAULT_JSON),
         ("singbox", "active.json", PROFILES_DEFAULT_JSON),
+        ("singbox-lx", "active.json", PROFILES_DEFAULT_JSON),
         ("hysteria2", "active.json", PROFILES_DEFAULT_JSON),
         ("wireproxy", "active.json", PROFILES_DEFAULT_JSON),
         ("myproxy", "active.json", PROFILES_DEFAULT_JSON),

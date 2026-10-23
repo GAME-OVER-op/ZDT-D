@@ -650,6 +650,13 @@ private fun buildProgramLogsListScript(target: ProgramLogTarget): String {
       "sing-box" -> {
         val base = "/data/adb/modules/ZDT-D/working_folder/singbox/profile/$profile"
         addStatic("t2s.log", "$base/log/t2s.log")
+        addStatic("tun2socks.log", "$base/log/tun2socks.log")
+        addFindExact("$base/server", 3, "sing-box.log")
+      }
+      "sing-box-lx" -> {
+        val base = "/data/adb/modules/ZDT-D/working_folder/singbox-lx/profile/$profile"
+        addStatic("t2s.log", "$base/log/t2s.log")
+        addStatic("tun2socks.log", "$base/log/tun2socks.log")
         addFindExact("$base/server", 3, "sing-box.log")
       }
       "hysteria2" -> {

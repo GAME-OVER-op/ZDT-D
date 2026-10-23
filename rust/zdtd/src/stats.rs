@@ -35,6 +35,7 @@ pub struct StatusReport {
     pub d2s: UsageAgg,
     pub dpitunnel: UsageAgg,
     pub sing_box: UsageAgg,
+    pub sing_box_lx: UsageAgg,
     pub hysteria2: UsageAgg,
     pub wireproxy: UsageAgg,
     pub myproxy: UsageAgg,
@@ -74,6 +75,7 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(pidof("t2s"));
     pids.extend(pidof("opera-proxy"));
     pids.extend(singbox_pids());
+    pids.extend(singbox_lx_pids());
     pids.extend(hysteria2_pids());
     pids.extend(wireproxy_pids());
     pids.extend(pidof("tg-ws-proxy"));
@@ -103,7 +105,7 @@ pub fn collect_status() -> Result<StatusReport> {
 /// Every pid lookup below costs at least one `pidof` process, and falls back to `pgrep -f` plus
 /// `ps -A` when nothing matches, so probing all engines when only a few are enabled is the most
 /// expensive part of startup. Accepted ids are the pid-group names used below: "nfqws",
-/// "nfqws2", "byedpi", "dnscrypt", "d2s", "dpitunnel", "singbox", "hysteria2", "wireproxy", "myproxy",
+/// "nfqws2", "byedpi", "dnscrypt", "d2s", "dpitunnel", "singbox", "singbox-lx", "hysteria2", "wireproxy", "myproxy",
 /// "myprogram", "openvpn", "amneziawg", "tun2socks", "mihomo", "mieru", "tgwsproxy",
 /// "tun2proxy", "tor", "t2s", "operaproxy".
 ///
@@ -150,6 +152,7 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
     }
     let opera_proxy_pids = if want("operaproxy") { pidof("opera-proxy") } else { Vec::new() };
     let singbox_pids = if want("singbox") { singbox_pids() } else { Vec::new() };
+    let singbox_lx_pids = if want("singbox-lx") { singbox_lx_pids() } else { Vec::new() };
     let hysteria2_pids = if want("hysteria2") { hysteria2_pids() } else { Vec::new() };
     let wireproxy_pids = if want("wireproxy") { wireproxy_pids() } else { Vec::new() };
     let myproxy_pids = if want("myproxy") { myproxy_t2s_pids() } else { Vec::new() };
@@ -200,6 +203,7 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
         &d2s_pids,
         &dpitunnel_pids,
         &singbox_pids,
+        &singbox_lx_pids,
         &hysteria2_pids,
         &wireproxy_pids,
         &myproxy_pids,
@@ -233,6 +237,7 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
         d2s: agg_from_map(&d2s_pids, &usage),
         dpitunnel: agg_from_map(&dpitunnel_pids, &usage),
         sing_box: agg_from_map(&singbox_pids, &usage),
+        sing_box_lx: agg_from_map(&singbox_lx_pids, &usage),
         hysteria2: agg_from_map(&hysteria2_pids, &usage),
         wireproxy: agg_from_map(&wireproxy_pids, &usage),
         myproxy: agg_from_map(&myproxy_pids, &usage),
@@ -642,6 +647,10 @@ fn singbox_pids() -> Vec<u32> {
 
     let out = shell::capture_quiet("ps -A").unwrap_or_default();
     for line in out.lines() {
+        // Keep the optional LX fork isolated from the bundled sing-box bucket.
+        if line.contains("sing-box-lx") || line.contains("working_folder/singbox-lx") {
+            continue;
+        }
         if !(line.contains("sing-box")
             || line.contains("/bin/sing-box")
             || line.contains("working_folder/singbox"))
@@ -657,6 +666,27 @@ fn singbox_pids() -> Vec<u32> {
         }
     }
 
+    pids.sort_unstable();
+    pids.dedup();
+    pids
+}
+
+fn singbox_lx_pids() -> Vec<u32> {
+    let mut pids = pidof_any(&["sing-box-lx", "singbox-lx"]);
+    if pids.is_empty() {
+        let out = shell::capture_quiet("ps -A").unwrap_or_default();
+        for line in out.lines() {
+            if !(line.contains("sing-box-lx") || line.contains("working_folder/singbox-lx")) {
+                continue;
+            }
+            for tok in line.split_whitespace() {
+                if let Ok(pid) = tok.parse::<u32>() {
+                    pids.push(pid);
+                    break;
+                }
+            }
+        }
+    }
     pids.sort_unstable();
     pids.dedup();
     pids

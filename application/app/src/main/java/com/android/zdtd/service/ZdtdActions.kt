@@ -161,6 +161,8 @@ interface ZdtdActions {
   fun refreshOptionalTools()
   fun installTgWsProxy()
   fun removeTgWsProxy()
+  fun installSingBoxLx()
+  fun removeSingBoxLx()
   fun clearLogs()
 
   /**
@@ -193,6 +195,12 @@ interface ZdtdActions {
 
   /** Delete a sing-box server inside a specific profile. */
   fun deleteSingBoxServer(profile: String, server: String, onDone: (Boolean) -> Unit = {})
+
+  /** Create a server for either the standard sing-box or optional sing-box-lx backend. */
+  fun createSingBoxServer(programId: String, profile: String, server: String, onDone: (String?) -> Unit = {})
+
+  /** Delete a server for either the standard sing-box or optional sing-box-lx backend. */
+  fun deleteSingBoxServer(programId: String, profile: String, server: String, onDone: (Boolean) -> Unit = {})
 
 
   /** Create a hysteria2 server inside a specific profile. */

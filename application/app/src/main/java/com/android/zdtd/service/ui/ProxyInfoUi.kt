@@ -413,6 +413,7 @@ fun ProxyInfoAppsDialog(
   fun programLabel(programId: String): String = when (programId) {
     "operaproxy" -> programOperaLabel
     "sing-box" -> programSingboxLabel
+    "sing-box-lx" -> "sing-box-lx"
     "hysteria2" -> programHysteria2Label
     "dpitunnel" -> programDpitunnelLabel
     "byedpi" -> programByedpiLabel

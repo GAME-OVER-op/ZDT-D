@@ -800,6 +800,11 @@ APatch: ‏10700+</string>
     <string name="singbox_import_dialog_title">إنشاء خادم sing-box</string>
     <string name="singbox_import_dialog_beta_warning">ميزة تجريبية. راجع النتيجة بعناية إذا كنت تستخدم معلمات غير شائعة.</string>
     <string name="singbox_import_dialog_desc">الصق إعدادًا بسطر واحد مثل vless:// أو vmess:// أو trojan:// أو ss:// أو socks://. سيُنشأ خادم جديد وإعداداته تلقائيًا.</string>
+    <string name="singbox_lx_import_dialog_title">إنشاء خادم sing-box-lx</string>
+    <string name="singbox_lx_import_dialog_desc">الصق رابط VLESS أو VMess أو Trojan أو Shadowsocks أو SOCKS، أو JSON كاملاً. تُستورد روابط XHTTP/splithttp كنقل XHTTP أصلي في sing-box-lx.</string>
+    <string name="singbox_import_requires_lx_title">هذا الرابط يتطلب sing-box-lx</string>
+    <string name="singbox_import_requires_lx_message">يستخدم الإعداد XHTTP، وهو غير مدعوم في نواة sing-box القياسية. استورده من أداة sing-box-lx.</string>
+    <string name="singbox_import_open_lx">فتح sing-box-lx</string>
     <string name="singbox_import_auto_port_hint">سيُخصَّص منفذ mixed-in متاح تلقائيًا. المنفذ المقترح: %1$d.</string>
     <string name="singbox_import_source_label">إعداد بسطر واحد</string>
     <string name="singbox_import_source_support_hint">المدعوم: vless وvmess وtrojan وshadowsocks وsocks. يُقبل JSON الكامل أيضًا.</string>
@@ -1214,6 +1219,17 @@ APatch: ‏10700+</string>
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">وكيل Telegram WS</string>
     <string name="tg_ws_proxy_desc">أداة وكيل Telegram MTProto ← WebSocket.</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">نواة sing-box موسعة اختيارية تدعم XHTTP وMASQUE/WARP وAmneziaWG 3.x وميزات VLESS إضافية.</string>
+    <string name="sing_box_lx_install_required_title">يلزم sing-box-lx</string>
+    <string name="sing_box_lx_install_required_message">يتطلب هذا الإجراء مكوّن sing-box-lx الاختياري. ثبّته من الأدوات الإضافية للمتابعة.</string>
+    <string name="sing_box_lx_open_optional_tools">فتح الأدوات الإضافية</string>
+    <string name="sing_box_lx_error_status">تعذر التحقق من حالة تثبيت sing-box-lx.</string>
+    <string name="sing_box_lx_error_unsupported_abi">بنية CPU ABI غير مدعومة: %1$s</string>
+    <string name="sing_box_lx_error_download">تعذر تنزيل sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_package">فشل التحقق من حزمة sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_install">تعذر تثبيت sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_remove">تعذر حذف sing-box-lx: %1$s</string>
     <string name="apps_list_desc_tgwsproxy">أداة وكيل Telegram MTProto ← WebSocket.</string>
 
     <string name="world_map_title">خريطة العالم</string>
@@ -2610,4 +2626,72 @@ APatch: ‏10700+</string>
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">أدخل عنوان وكيل HTTP أو HTTPS أو SOCKS5 أو SOCKS5H صالحًا مع المضيف والمنفذ.</string>
     <string name="non_root_log_opera_upstream">وكيل Opera الخارجي: %1$s</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">يتطلب sing-box-lx</string>
+    <string name="subscription_lx_required_hint">تستخدم هذه العقدة XHTTP أو ميزة أخرى متاحة فقط في sing-box-lx.</string>
+    <string name="subscription_lx_not_installed_hint">تتطلب هذه العقدة sing-box-lx. ثبّت المكوّن الاختياري للاستيراد.</string>
+    <string name="subscription_install_required_short">يتطلب التثبيت</string>
+    <string name="subscription_bulk_import_section">استيراد جماعي</string>
+    <string name="subscription_bulk_import_desc">استيراد كل العقد المتوافقة من هذا الاشتراك إلى ملف واحد. سيتم تخطي العقد المرتبطة مسبقًا.</string>
+    <string name="subscription_bulk_import_to">استيراد الكل إلى %1$s (%2$d)</string>
+    <string name="subscription_bulk_import_title">استيراد جماعي إلى %1$s</string>
+    <string name="subscription_bulk_import_count">%1$d عقد متوافقة</string>
+    <string name="subscription_bulk_import_naming_hint">تُنشأ أسماء الخوادم من أسماء العقد وتُضاف لاحقة رقمية عند التعارض. يلزم ملف T2S لاستيراد عدة خوادم.</string>
+    <string name="subscription_bulk_import_result">تم الاستيراد %1$d · تم التخطي %2$d · فشل %3$d</string>
+    <string name="subscription_bulk_import_failed">فشل الاستيراد الجماعي</string>
+    <string name="subscription_target_choice">هدف الاستيراد</string>
+    <string name="subscription_new_profile_name">اسم الملف الجديد</string>
+    <string name="subscription_create_profile">إنشاء ملف</string>
+    <string name="subscription_profile_created">تم إنشاء الملف %1$s</string>
+    <string name="subscription_profile_create_failed">تعذر إنشاء ملف الهدف</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">ينشئ عقدة WARP عبر MASQUE ‏(CONNECT-IP فوق HTTP/3 أو HTTP/2). يتم إنشاء مفتاح P-256 الخاص على هذا الجهاز ولا يتم إرساله إلى جهات خارجية.</string>
+    <string name="warp_masque_cache_loading">جارٍ التحقق من تسجيل WARP المحفوظ…</string>
+    <string name="warp_masque_cache_ready">تسجيل MASQUE المحفوظ جاهز</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">تعذر قراءة تسجيل MASQUE المحفوظ.</string>
+    <string name="warp_masque_cache_missing">لا يوجد تسجيل MASQUE محفوظ. سيتم تسجيل جهاز Cloudflare WARP جديد.</string>
+    <string name="warp_masque_server_name">اسم الخادم</string>
+    <string name="warp_masque_transport_fmt">النقل: %1$s</string>
+    <string name="warp_masque_transport_auto">تلقائي (HTTP/3 → HTTP/2)</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">عنوان IP أو مضيف Endpoint</string>
+    <string name="warp_masque_endpoint_hint">فارغ = Endpoint التسجيل (%1$s)</string>
+    <string name="warp_masque_endpoint_port">منفذ Endpoint</string>
+    <string name="warp_masque_endpoint_port_hint">فارغ = منفذ التسجيل (%1$d)</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">الافتراضي: www.cloudflare.com. يمكنك تحديد SNI آخر يعمل على شبكتك.</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">مهلة الخمول، بالدقائق</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive، بالثواني</string>
+    <string name="warp_masque_optional_default">اختياري. فارغ = القيمة الافتراضية لـ sing-box-lx.</string>
+    <string name="warp_masque_keepalive_h2">لا يُستخدم مع HTTP/2 الثابت.</string>
+    <string name="warp_masque_reregister">إعادة تسجيل WARP</string>
+    <string name="warp_masque_reregister_hint">إنشاء مفاتيح جديدة وجهاز Cloudflare WARP جديد بدلاً من استخدام التسجيل المحفوظ.</string>
+    <string name="warp_masque_clear_cache">مسح تسجيل MASQUE المحفوظ</string>
+    <string name="warp_masque_create_cached">إنشاء من التسجيل المحفوظ</string>
+    <string name="warp_masque_register_create">تسجيل وإنشاء</string>
+    <string name="warp_masque_add_action">الحصول على WARP / MASQUE</string>
+    <string name="warp_masque_created_fmt">تم إنشاء خادم WARP MASQUE: %1$s</string>
+    <string name="warp_masque_error_name">أدخل اسم الخادم.</string>
+    <string name="warp_masque_error_name_exists">يوجد خادم بهذا الاسم بالفعل.</string>
+    <string name="warp_masque_error_port">يجب أن يكون منفذ Endpoint بين 1 و65535.</string>
+    <string name="warp_masque_error_mtu">يجب أن تكون MTU بين 576 و16000.</string>
+    <string name="warp_masque_error_idle">يجب أن تكون مهلة الخمول بين 1 و1440 دقيقة أو فارغة.</string>
+    <string name="warp_masque_error_keepalive">يجب أن يكون Keep-alive بين 1 و3600 ثانية أو فارغًا.</string>
+    <string name="warp_masque_error_config">تعذر إنشاء إعداد MASQUE.</string>
+    <string name="warp_masque_error_registration">فشل تسجيل Cloudflare WARP MASQUE.</string>
+    <string name="warp_masque_error_cache_save">نجح التسجيل، لكن تعذر حفظه بأمان في وحدة root.</string>
+    <string name="warp_masque_error_cache_clear">تعذر مسح تسجيل MASQUE المحفوظ.</string>
+    <string name="warp_masque_error_network">تعذر الوصول إلى خدمة تسجيل Cloudflare WARP. تحقق من الاتصال وحاول مرة أخرى.</string>
+    <string name="warp_masque_error_api_http">أعادت خدمة تسجيل Cloudflare WARP الحالة HTTP %1$d. ربما تغيّرت واجهة API.</string>
+    <string name="warp_masque_error_response">أعاد Cloudflare استجابة WARP MASQUE غير صالحة أو غير مكتملة.</string>
+    <string name="warp_masque_error_crypto">تعذر إنشاء مفتاح P-256 محلي لـ WARP MASQUE.</string>
+    <string name="singbox_import_requires_lx_feature_message">يستخدم هذا الإعداد %1$s، وهو يتطلب sing-box-lx. استورده من خلال أداة sing-box-lx.</string>
+    <string name="singbox_import_invalid_vless_encryption">قيمة تشفير VLESS بتنسيق غير صالح. يجب أن يستخدم ML-KEM تنسيق mlkem768x25519plus….</string>
+    <string name="singbox_lx_advanced_json_hint">يتم الاحتفاظ بحقول JSON المتقدمة الخاصة بـ sing-box-lx. يدير ZDT-D فقط مدخل mixed المحلي ويضيف إعدادات DNS والتوجيه الآمنة عند غيابها.</string>
 </resources>

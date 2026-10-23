@@ -19,6 +19,7 @@ internal fun toolDisplayName(id: String, rawName: String? = null): String {
     "mieru" -> normalizedRaw?.takeUnless { it.equals("mieru", ignoreCase = true) } ?: "mieru"
     "amneziawg" -> normalizedRaw?.takeUnless { it.equals("amneziawg", ignoreCase = true) } ?: "AmneziaWG"
     "tgwsproxy" -> normalizedRaw?.takeUnless { it.equals("tgwsproxy", ignoreCase = true) } ?: "Telegram WS Proxy"
+    "sing-box-lx" -> "sing-box-lx"
     else -> normalizedRaw ?: id
   }
 }
@@ -33,6 +34,7 @@ internal fun toolDescription(id: String): String {
     "byedpi" -> stringResource(R.string.apps_list_desc_byedpi)
     "dpitunnel" -> stringResource(R.string.apps_list_desc_dpitunnel)
     "sing-box" -> stringResource(R.string.apps_list_desc_singbox)
+    "sing-box-lx" -> stringResource(R.string.sing_box_lx_desc)
     "wireproxy" -> stringResource(R.string.apps_list_desc_wireproxy)
     "tor" -> stringResource(R.string.apps_list_desc_tor)
     "myproxy" -> stringResource(R.string.apps_list_desc_myproxy)

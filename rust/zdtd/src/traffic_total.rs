@@ -647,6 +647,7 @@ fn normalize_port_vec(ports: Vec<u16>) -> Vec<u16> {
 fn build_local_port_registry(root: &Path) -> HashMap<u16, TrafficBackendPort> {
     let mut out = HashMap::new();
     collect_singbox_ports(root, &mut out);
+    collect_singbox_lx_ports(root, &mut out);
     collect_hysteria2_ports(root, &mut out);
     collect_wireproxy_ports(root, &mut out);
     collect_operaproxy_ports(root, &mut out);
@@ -693,6 +694,25 @@ fn collect_singbox_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>
             if !server_dir.is_dir() { continue; }
             let server = file_name_string(&server_dir);
             collect_simple_json_port(server_dir.join("setting.json"), "singbox", Some(profile.clone()), server, &["port", "listen_port"], out);
+        }
+    }
+}
+
+
+fn collect_singbox_lx_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    let profile_root = root.join("singbox-lx/profile");
+    let Ok(profiles) = fs::read_dir(&profile_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = file_name_string(&profile_dir) else { continue; };
+        let server_root = profile_dir.join("server");
+        let Ok(servers) = fs::read_dir(&server_root) else { continue; };
+        for server_ent in servers.flatten() {
+            let server_dir = server_ent.path();
+            if !server_dir.is_dir() { continue; }
+            let server = file_name_string(&server_dir);
+            collect_simple_json_port(server_dir.join("setting.json"), "sing-box-lx", Some(profile.clone()), server, &["port", "listen_port"], out);
         }
     }
 }
@@ -1435,6 +1455,7 @@ fn resolve_vpn_proxy_endpoint(owner_program: &str, profile: &str, registry: &Has
         "mihomo" => profile_setting_endpoint(root, "mihomo", profile, "mixed_port", registry),
         "mieru" => profile_setting_endpoint(root, "mieru", profile, "socks5_port", registry),
         "singbox" | "sing-box" => singbox_vpn_endpoint(root, profile, registry),
+        "singbox-lx" | "sing-box-lx" => singbox_lx_vpn_endpoint(root, profile, registry),
         "hysteria2" => hysteria2_vpn_endpoint(root, profile, registry),
         _ => None,
     }
@@ -1471,6 +1492,28 @@ fn singbox_vpn_endpoint(root: &Path, profile: &str, registry: &HashMap<u16, Traf
             label: format!("sing-box/{profile}:{}", port),
             host: Some("127.0.0.1".to_string()),
             program_id: Some("sing-box".to_string()),
+            profile: Some(profile.to_string()),
+            server: file_name_string(&dir),
+            ..Default::default()
+        }));
+    }
+    None
+}
+fn singbox_lx_vpn_endpoint(root: &Path, profile: &str, registry: &HashMap<u16, TrafficBackendPort>) -> Option<TrafficBackendPort> {
+    let server_root = root.join("singbox-lx/profile").join(profile).join("server");
+    let entries = fs::read_dir(server_root).ok()?;
+    for ent in entries.flatten() {
+        let dir = ent.path();
+        if !dir.is_dir() { continue; }
+        let raw = fs::read_to_string(dir.join("setting.json")).ok()?;
+        let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+        if !crate::jsonfs::json_enabled(v.get("enabled")) { continue; }
+        let Some(port) = v.get("port").and_then(json_u16) else { continue; };
+        return Some(registry.get(&port).cloned().unwrap_or_else(|| TrafficBackendPort {
+            port,
+            label: format!("sing-box-lx/{profile}:{}", port),
+            host: Some("127.0.0.1".to_string()),
+            program_id: Some("sing-box-lx".to_string()),
             profile: Some(profile.to_string()),
             server: file_name_string(&dir),
             ..Default::default()
@@ -1541,6 +1584,7 @@ fn parse_proxy_host_port(proxy: &str) -> Option<(String, u16)> {
 fn normalize_program_id(raw: &str) -> String {
     match raw.trim().to_ascii_lowercase().as_str() {
         "singbox" => "sing-box".to_string(),
+        "singbox-lx" | "singbox_lx" | "sing-box-lx" => "sing-box-lx".to_string(),
         other => other.to_string(),
     }
 }

@@ -135,7 +135,11 @@ fun EnabledCard(title: String, checked: Boolean, onCheckedChange: (Boolean) -> U
         Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
           EnabledCardText(title = title, stateText = stateText, stateColor = stateColor)
           Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Switch(
+              checked = checked,
+              onCheckedChange = onCheckedChange,
+              modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+            )
           }
         }
       } else {
@@ -175,12 +179,18 @@ fun ProfileStatusCard(
       title = { Text(stringResource(R.string.delete_profile_title)) },
       text = { Text("$programId / $profileName") },
       confirmButton = {
-        Button(onClick = { askDelete = false; onDelete() }) {
+        Button(
+          onClick = { askDelete = false; onDelete() },
+          modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+        ) {
           Text(stringResource(R.string.action_delete))
         }
       },
       dismissButton = {
-        OutlinedButton(onClick = { askDelete = false }) {
+        OutlinedButton(
+          onClick = { askDelete = false },
+          modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+        ) {
           Text(stringResource(R.string.action_cancel))
         }
       },
@@ -230,6 +240,7 @@ fun ProfileStatusCard(
 
   Card(
     onClick = onOpen,
+    modifier = Modifier.tvFocusHighlight(shape),
     shape = shape,
     colors = CardDefaults.cardColors(containerColor = baseColor),
     border = BorderStroke(1.dp, accentColor.copy(alpha = if (checked) 0.42f else 0.24f)),
@@ -282,9 +293,16 @@ fun ProfileStatusCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
           ) {
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Switch(
+              checked = checked,
+              onCheckedChange = onCheckedChange,
+              modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+            )
             if (deletable) {
-              IconButton(onClick = { askDelete = true }) {
+              IconButton(
+                onClick = { askDelete = true },
+                modifier = Modifier.tvFocusHighlight(RoundedCornerShape(16.dp)),
+              ) {
                 Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
               }
             } else {
@@ -310,9 +328,16 @@ fun ProfileStatusCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Switch(
+              checked = checked,
+              onCheckedChange = onCheckedChange,
+              modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+            )
             if (deletable) {
-              IconButton(onClick = { askDelete = true }) {
+              IconButton(
+                onClick = { askDelete = true },
+                modifier = Modifier.tvFocusHighlight(RoundedCornerShape(16.dp)),
+              ) {
                 Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
               }
             }

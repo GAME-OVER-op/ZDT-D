@@ -356,6 +356,7 @@ internal fun AppPickerSheet(
   fun programLabel(programId: String): String = when (programId) {
     "operaproxy" -> programOperaLabel
     "sing-box" -> programSingboxLabel
+    "sing-box-lx" -> "sing-box-lx"
     "hysteria2" -> programHysteria2Label
     "dpitunnel" -> programDpitunnelLabel
     "byedpi" -> programByedpiLabel
@@ -375,7 +376,7 @@ internal fun AppPickerSheet(
   }
 
   fun programGroup(programId: String): String? = when (programId) {
-    "operaproxy", "sing-box", "hysteria2", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg" -> "tunnel"
+    "operaproxy", "sing-box", "sing-box-lx", "hysteria2", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg" -> "tunnel"
     "nfqws", "nfqws2" -> "zapret"
     else -> null
   }
@@ -405,7 +406,9 @@ internal fun AppPickerSheet(
     fun normalize(id: String): String = id.trim().lowercase(Locale.ROOT).replace("_", "-")
     val l = normalize(left)
     val r = normalize(right)
-    return l == r || (l == "singbox" && r == "sing-box") || (l == "sing-box" && r == "singbox")
+    return l == r ||
+      (l == "singbox" && r == "sing-box") || (l == "sing-box" && r == "singbox") ||
+      (l in setOf("singbox-lx", "sing-box-lx") && r in setOf("singbox-lx", "sing-box-lx"))
   }
 
   fun isAssignmentEnabled(entry: ApiModels.AppAssignmentEntry): Boolean {

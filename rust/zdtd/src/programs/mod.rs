@@ -7,6 +7,7 @@ pub mod dpitunnel;
 pub mod dnscrypt;
 pub mod operaproxy;
 pub mod singbox;
+pub mod singbox_lx;
 pub mod hysteria2;
 pub mod wireproxy;
 pub mod tor;

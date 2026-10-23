@@ -800,6 +800,11 @@ Installieren Sie das Modul erneut.</string>
     <string name="singbox_import_dialog_title">sing-box-Server generieren</string>
     <string name="singbox_import_dialog_beta_warning">Beta-Funktion. Prüfen Sie das Ergebnis sorgfältig, wenn Sie ungewöhnliche Parameter verwenden.</string>
     <string name="singbox_import_dialog_desc">Fügen Sie eine einzeilige Konfiguration wie vless://, vmess://, trojan://, ss:// oder socks:// ein. Ein neuer Server und seine Einstellungen werden automatisch erstellt.</string>
+    <string name="singbox_lx_import_dialog_title">sing-box-lx-Server erzeugen</string>
+    <string name="singbox_lx_import_dialog_desc">Füge einen VLESS-, VMess-, Trojan-, Shadowsocks- oder SOCKS-Link oder vollständiges JSON ein. XHTTP/splithttp-Links werden als nativer XHTTP-Transport von sing-box-lx importiert.</string>
+    <string name="singbox_import_requires_lx_title">Dieser Link benötigt sing-box-lx</string>
+    <string name="singbox_import_requires_lx_message">Die Konfiguration verwendet XHTTP, das vom Standard-sing-box-Kern nicht unterstützt wird. Importiere sie mit dem Werkzeug sing-box-lx.</string>
+    <string name="singbox_import_open_lx">sing-box-lx öffnen</string>
     <string name="singbox_import_auto_port_hint">Ein freier mixed-in-Port wird automatisch zugewiesen. Empfohlener Port: %1$d.</string>
     <string name="singbox_import_source_label">Einzeilige Konfiguration</string>
     <string name="singbox_import_source_support_hint">Unterstützt: vless, vmess, trojan, shadowsocks, socks. Vollständiges JSON wird ebenfalls akzeptiert.</string>
@@ -1214,6 +1219,17 @@ Der Schutz funktioniert nicht im Hotspot-Modus. Wenn der Hotspot aktiviert und s
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Telegram-WS-Proxy</string>
     <string name="tg_ws_proxy_desc">Werkzeug für Telegram-MTProto-zu-WebSocket-Proxy.</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">Optionaler erweiterter sing-box-Kern mit XHTTP, MASQUE/WARP, AmneziaWG 3.x und zusätzlichen VLESS-Funktionen.</string>
+    <string name="sing_box_lx_install_required_title">sing-box-lx erforderlich</string>
+    <string name="sing_box_lx_install_required_message">Für diese Aktion wird die optionale Komponente sing-box-lx benötigt. Installiere sie unter „Zusätzliche Tools“, um fortzufahren.</string>
+    <string name="sing_box_lx_open_optional_tools">Zusätzliche Tools öffnen</string>
+    <string name="sing_box_lx_error_status">Der Installationsstatus von sing-box-lx konnte nicht geprüft werden.</string>
+    <string name="sing_box_lx_error_unsupported_abi">Nicht unterstützte CPU-ABI: %1$s</string>
+    <string name="sing_box_lx_error_download">sing-box-lx konnte nicht heruntergeladen werden: %1$s</string>
+    <string name="sing_box_lx_error_package">Die Paketprüfung von sing-box-lx ist fehlgeschlagen: %1$s</string>
+    <string name="sing_box_lx_error_install">sing-box-lx konnte nicht installiert werden: %1$s</string>
+    <string name="sing_box_lx_error_remove">sing-box-lx konnte nicht entfernt werden: %1$s</string>
     <string name="apps_list_desc_tgwsproxy">Werkzeug für Telegram-MTProto-zu-WebSocket-Proxy.</string>
 
     <string name="world_map_title">Weltkarte</string>
@@ -2606,4 +2622,72 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">Gib eine gültige HTTP-, HTTPS-, SOCKS5- oder SOCKS5H-Proxy-URL mit Host und Port ein.</string>
     <string name="non_root_log_opera_upstream">Opera-Upstream: %1$s</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">sing-box-lx erforderlich</string>
+    <string name="subscription_lx_required_hint">Dieser Knoten nutzt XHTTP oder eine andere Funktion, die nur in sing-box-lx verfügbar ist.</string>
+    <string name="subscription_lx_not_installed_hint">Dieser Knoten benötigt sing-box-lx. Installiere die optionale Komponente für den Import.</string>
+    <string name="subscription_install_required_short">Installation erforderlich</string>
+    <string name="subscription_bulk_import_section">Massenimport</string>
+    <string name="subscription_bulk_import_desc">Alle kompatiblen Knoten dieses Abos in ein Profil importieren. Bereits verknüpfte Knoten werden übersprungen.</string>
+    <string name="subscription_bulk_import_to">Alle nach %1$s importieren (%2$d)</string>
+    <string name="subscription_bulk_import_title">Massenimport nach %1$s</string>
+    <string name="subscription_bulk_import_count">%1$d kompatible Knoten</string>
+    <string name="subscription_bulk_import_naming_hint">Servernamen werden aus Knotennamen erzeugt; bei Konflikten wird eine Nummer angehängt. Für mehrere Server ist ein T2S-Profil erforderlich.</string>
+    <string name="subscription_bulk_import_result">Importiert %1$d · übersprungen %2$d · fehlgeschlagen %3$d</string>
+    <string name="subscription_bulk_import_failed">Massenimport fehlgeschlagen</string>
+    <string name="subscription_target_choice">Importziel</string>
+    <string name="subscription_new_profile_name">Name des neuen Profils</string>
+    <string name="subscription_create_profile">Profil erstellen</string>
+    <string name="subscription_profile_created">Profil %1$s erstellt</string>
+    <string name="subscription_profile_create_failed">Zielprofil konnte nicht erstellt werden</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">Erstellt einen WARP-Knoten über MASQUE (CONNECT-IP über HTTP/3 oder HTTP/2). Der private P-256-Schlüssel wird auf diesem Gerät erzeugt und nicht an Drittanbieter gesendet.</string>
+    <string name="warp_masque_cache_loading">Gespeicherte WARP-Registrierung wird geprüft…</string>
+    <string name="warp_masque_cache_ready">Gespeicherte MASQUE-Registrierung ist bereit</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">Gespeicherte MASQUE-Registrierung konnte nicht gelesen werden.</string>
+    <string name="warp_masque_cache_missing">Keine gespeicherte MASQUE-Registrierung. Ein neues Cloudflare-WARP-Gerät wird registriert.</string>
+    <string name="warp_masque_server_name">Servername</string>
+    <string name="warp_masque_transport_fmt">Transport: %1$s</string>
+    <string name="warp_masque_transport_auto">Auto (HTTP/3 → HTTP/2)</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">Endpoint-IP oder Host</string>
+    <string name="warp_masque_endpoint_hint">Leer = Registrierungs-Endpoint (%1$s)</string>
+    <string name="warp_masque_endpoint_port">Endpoint-Port</string>
+    <string name="warp_masque_endpoint_port_hint">Leer = Registrierungsport (%1$d)</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">Standard: www.cloudflare.com. Es kann ein anderes in Ihrem Netz funktionierendes SNI gesetzt werden.</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">Leerlauf-Timeout, Minuten</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive, Sekunden</string>
+    <string name="warp_masque_optional_default">Optional. Leer = sing-box-lx-Standard.</string>
+    <string name="warp_masque_keepalive_h2">Bei festem HTTP/2 nicht verwendet.</string>
+    <string name="warp_masque_reregister">WARP neu registrieren</string>
+    <string name="warp_masque_reregister_hint">Neue Schlüssel erzeugen und ein neues Cloudflare-WARP-Gerät statt der gespeicherten Registrierung erstellen.</string>
+    <string name="warp_masque_clear_cache">Gespeicherte MASQUE-Registrierung löschen</string>
+    <string name="warp_masque_create_cached">Aus gespeicherter Registrierung erstellen</string>
+    <string name="warp_masque_register_create">Registrieren und erstellen</string>
+    <string name="warp_masque_add_action">WARP / MASQUE beziehen</string>
+    <string name="warp_masque_created_fmt">WARP-MASQUE-Server erstellt: %1$s</string>
+    <string name="warp_masque_error_name">Servernamen eingeben.</string>
+    <string name="warp_masque_error_name_exists">Ein Server mit diesem Namen existiert bereits.</string>
+    <string name="warp_masque_error_port">Endpoint-Port muss zwischen 1 und 65535 liegen.</string>
+    <string name="warp_masque_error_mtu">MTU muss zwischen 576 und 16000 liegen.</string>
+    <string name="warp_masque_error_idle">Leerlauf-Timeout muss 1 bis 1440 Minuten betragen oder leer sein.</string>
+    <string name="warp_masque_error_keepalive">Keep-alive muss 1 bis 3600 Sekunden betragen oder leer sein.</string>
+    <string name="warp_masque_error_config">MASQUE-Konfiguration konnte nicht erstellt werden.</string>
+    <string name="warp_masque_error_registration">Cloudflare WARP MASQUE konnte nicht registriert werden.</string>
+    <string name="warp_masque_error_cache_save">Registrierung erfolgreich, konnte aber nicht sicher im Root-Modul gespeichert werden.</string>
+    <string name="warp_masque_error_cache_clear">Gespeicherte MASQUE-Registrierung konnte nicht gelöscht werden.</string>
+    <string name="warp_masque_error_network">Der Cloudflare-WARP-Registrierungsdienst ist nicht erreichbar. Prüfe die Verbindung und versuche es erneut.</string>
+    <string name="warp_masque_error_api_http">Der Cloudflare-WARP-Registrierungsdienst hat HTTP %1$d zurückgegeben. Möglicherweise hat sich die API geändert.</string>
+    <string name="warp_masque_error_response">Cloudflare hat eine ungültige oder unvollständige WARP-MASQUE-Antwort zurückgegeben.</string>
+    <string name="warp_masque_error_crypto">Der lokale P-256-Schlüssel für WARP MASQUE konnte nicht erzeugt werden.</string>
+    <string name="singbox_import_requires_lx_feature_message">Diese Konfiguration verwendet %1$s und benötigt daher sing-box-lx. Importiere sie über das Werkzeug sing-box-lx.</string>
+    <string name="singbox_import_invalid_vless_encryption">Der VLESS-Verschlüsselungswert ist ungültig. ML-KEM muss das Format mlkem768x25519plus… verwenden.</string>
+    <string name="singbox_lx_advanced_json_hint">Erweiterte sing-box-lx-JSON-Felder bleiben erhalten. ZDT-D verwaltet nur den lokalen mixed-Inbound und ergänzt sichere DNS-/Routing-Standardwerte, wenn sie fehlen.</string>
 </resources>

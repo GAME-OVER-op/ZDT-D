@@ -1725,6 +1725,195 @@ fn normalize_and_write_singbox_profile_setting(profile: &str, v: serde_json::Val
     Ok(normalized)
 }
 
+
+fn singbox_lx_active_path() -> PathBuf {
+    program_root("singbox-lx").join("active.json")
+}
+
+fn singbox_lx_profiles_root() -> PathBuf {
+    program_root("singbox-lx").join("profile")
+}
+
+fn singbox_lx_deleted_root() -> PathBuf {
+    program_root("singbox-lx").join(".deleted")
+}
+
+fn singbox_lx_deleted_profiles_root() -> PathBuf {
+    singbox_lx_deleted_root().join("profiles")
+}
+
+fn singbox_lx_deleted_servers_root(profile: &str) -> PathBuf {
+    singbox_lx_deleted_root().join("servers").join(profile)
+}
+
+fn singbox_lx_profile_root(profile: &str) -> PathBuf {
+    singbox_lx_profiles_root().join(profile)
+}
+
+fn singbox_lx_server_root(profile: &str, server: &str) -> PathBuf {
+    singbox_lx_profile_root(profile).join("server").join(server)
+}
+
+fn default_singbox_lx_profile_setting_value(t2s_port: u16, t2s_web_port: u16) -> serde_json::Value {
+    json!({
+        "mode": "t2s",
+        "t2s_port": t2s_port,
+        "t2s_web_port": t2s_web_port,
+        "tun": "sblxtun0",
+        "dns": ["8.8.8.8"],
+        "tun2socks_loglevel": "info",
+        "proto_mode": "tcp_udp",
+        "endpoint_resolve": true
+    })
+}
+
+fn default_singbox_lx_server_setting_value(port: u16) -> serde_json::Value {
+    json!({"enabled": false, "port": port})
+}
+
+fn ensure_singbox_lx_profile_layout(profile: &str) -> Result<()> {
+    let root = singbox_lx_profile_root(profile);
+    fs::create_dir_all(root.join("app/uid"))?;
+    fs::create_dir_all(root.join("app/out"))?;
+    fs::create_dir_all(root.join("log"))?;
+    fs::create_dir_all(root.join("server"))?;
+    for rel in ["app/uid/user_program", "app/out/user_program", "log/t2s.log", "log/tun2socks.log"] {
+        let p = root.join(rel);
+        if !p.exists() { write_text_atomic(&p, "")?; }
+    }
+    Ok(())
+}
+
+fn singbox_lx_profile_create_spec() -> ProfileCreateSpec {
+    ProfileCreateSpec {
+        active_path: singbox_lx_active_path,
+        ensure_layout: ensure_singbox_lx_profile_layout,
+        profile_root: singbox_lx_profile_root,
+        suggest_ports: suggest_singbox_lx_profile_ports,
+        default_setting: default_singbox_lx_profile_setting_value,
+    }
+}
+
+fn collect_existing_singbox_lx_ports() -> BTreeSet<u16> {
+    ProfilePortScan {
+        profiles_root: singbox_lx_profiles_root(),
+        mode_is_vpn: Some(singbox_raw_mode_is_vpn),
+        skip_hidden: true,
+        server_port: ServerPortSource::SettingKey("port"),
+        exclude_profile: None,
+        exclude_server: None,
+    }.collect()
+}
+
+fn suggest_singbox_lx_profile_ports() -> Result<(u16, u16)> {
+    let mut used = crate::ports::collect_used_ports_for_conflict_check().unwrap_or_default();
+    used.extend(collect_existing_singbox_lx_ports());
+    let t2s = next_free_port_from_used(12355, &used)?;
+    used.insert(t2s);
+    let web = next_free_port_from_used(8011, &used)?;
+    Ok((t2s, web))
+}
+
+fn suggest_singbox_lx_server_port() -> Result<u16> {
+    let mut used = crate::ports::collect_used_ports_for_conflict_check().unwrap_or_default();
+    used.extend(collect_existing_singbox_lx_ports());
+    next_free_port_from_used(1180, &used)
+}
+
+fn create_singbox_lx_profile_named(requested: &str) -> Result<String> {
+    create_profile_named_generic(requested, &singbox_lx_profile_create_spec())
+}
+
+fn create_singbox_lx_profile_next() -> Result<String> {
+    create_profile_next_generic(&singbox_lx_profile_create_spec())
+}
+
+fn create_singbox_lx_server_named(profile: &str, requested: &str) -> Result<String> {
+    ensure_valid_singbox_profile_name(profile)?;
+    let name = requested.trim();
+    ensure_valid_singbox_profile_name(name)?;
+    ensure_singbox_lx_profile_layout(profile)?;
+    if singbox_lx_profile_mode_is_vpn(profile) && !singbox_lx_server_names(profile)?.is_empty() {
+        anyhow::bail!("singbox_lx_vpn_requires_single_server: VPN mode supports only one server");
+    }
+    let root = singbox_lx_server_root(profile, name);
+    if root.exists() { anyhow::bail!("server already exists"); }
+    fs::create_dir_all(root.join("log"))?;
+    write_text_atomic(&root.join("config.json"), "")?;
+    write_text_atomic(&root.join("log/sing-box.log"), "")?;
+    let port = suggest_singbox_lx_server_port()?;
+    write_json_pretty(&root.join("setting.json"), &default_singbox_lx_server_setting_value(port))?;
+    Ok(name.to_string())
+}
+
+fn create_singbox_lx_server_next(profile: &str) -> Result<String> {
+    ensure_valid_singbox_profile_name(profile)?;
+    let root = singbox_lx_profile_root(profile).join("server");
+    fs::create_dir_all(&root)?;
+    let mut max_n = 0u32;
+    if let Ok(rd) = fs::read_dir(&root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue; };
+            if name.starts_with('.') { continue; }
+            if let Some(rest) = name.strip_prefix("server") {
+                if let Ok(n) = rest.parse::<u32>() { max_n = max_n.max(n); }
+            }
+        }
+    }
+    let next = format!("server{}", max_n + 1);
+    create_singbox_lx_server_named(profile, &next)?;
+    Ok(next)
+}
+
+fn singbox_lx_profile_setting_or_default(profile: &str) -> serde_json::Value {
+    read_json::<serde_json::Value>(&singbox_lx_profile_root(profile).join("setting.json"))
+        .unwrap_or_else(|_| default_singbox_lx_profile_setting_value(12355, 8011))
+}
+
+fn singbox_lx_profile_mode_is_vpn(profile: &str) -> bool {
+    crate::programs::singbox_lx::normalize_setting_value(singbox_lx_profile_setting_or_default(profile))
+        .map(|setting| setting.mode.is_vpn())
+        .unwrap_or(false)
+}
+
+fn singbox_lx_server_names(profile: &str) -> Result<Vec<String>> {
+    let root = singbox_lx_profile_root(profile).join("server");
+    fs::create_dir_all(&root)?;
+    let mut out = Vec::new();
+    if let Ok(rd) = fs::read_dir(&root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue; };
+            if name.starts_with('.') { continue; }
+            ensure_valid_singbox_profile_name(name)?;
+            out.push(name.to_string());
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+fn ensure_singbox_lx_vpn_single_server(profile: &str) -> Result<String> {
+    let names = singbox_lx_server_names(profile)?;
+    if names.len() != 1 {
+        anyhow::bail!("singbox_lx_vpn_requires_single_server: VPN mode supports only one server");
+    }
+    Ok(names[0].clone())
+}
+
+fn normalize_and_write_singbox_lx_profile_setting(profile: &str, v: serde_json::Value) -> Result<serde_json::Value> {
+    let setting = crate::programs::singbox_lx::normalize_setting_value(v)?;
+    if setting.mode.is_vpn() && singbox_lx_server_names(profile)?.len() > 1 {
+        anyhow::bail!("singbox_lx_vpn_requires_single_server: VPN mode supports only one server");
+    }
+    let normalized = serde_json::to_value(&setting)?;
+    write_json_pretty(&singbox_lx_profile_root(profile).join("setting.json"), &normalized)?;
+    Ok(normalized)
+}
+
 fn normalize_myproxy_proxy_json(v: serde_json::Value) -> Result<serde_json::Value> {
     let proxy: crate::programs::myproxy::ProxyConfig = serde_json::from_value(v)
         .map_err(|e| anyhow::anyhow!("bad proxy.json: {e}"))?;
@@ -2367,6 +2556,7 @@ fn validate_cross_vpn_tun_claim(program_id: &str, profile: &str, tun: &str) -> R
         .chain(crate::programs::mihomo::enabled_tun_claims().into_iter())
         .chain(crate::programs::mieru::enabled_tun_claims().into_iter())
         .chain(crate::programs::singbox::enabled_tun_claims().into_iter())
+        .chain(crate::programs::singbox_lx::enabled_tun_claims().into_iter())
         .chain(crate::programs::hysteria2::enabled_tun_claims().into_iter())
     {
         if other_label != this_label && other_tun == tun {
@@ -2557,7 +2747,7 @@ fn app_domain(program_id: &str) -> Option<&'static str> {
         // Intentional exceptions are the ZDT-D launch marker and blockedquic: the
         // marker is ignored by package conflict parsing, and blockedquic has no app
         // routing domain so QUIC blocking may coexist with VPN/netd routing.
-        "vpn-netd" | "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "sing-box" | "wireguard" => Some("exclusive_network"),
+        "vpn-netd" | "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "sing-box" | "sing-box-lx" | "wireguard" => Some("exclusive_network"),
         "operaproxy" | "wireproxy" | "myproxy" | "myprogram" | "tor" | "dpitunnel" | "byedpi" | "hysteria2" => Some("tunnel"),
         "nfqws" | "nfqws2" => Some("zapret"),
         // blockedquic only conflicts with proxyInfo protection; it must not block VPN/tunnel app lists.
@@ -2673,6 +2863,23 @@ fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
                 "user",
                 path.join("app/uid/user_program"),
                 format!("/api/programs/sing-box/profiles/{profile}/apps/user"),
+            );
+        }
+    }
+
+    let singbox_lx_root = singbox_lx_profiles_root();
+    if let Ok(rd) = fs::read_dir(&singbox_lx_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            push_assignment_file(
+                &mut out,
+                "sing-box-lx",
+                Some(profile.clone()),
+                "user",
+                path.join("app/uid/user_program"),
+                format!("/api/programs/sing-box-lx/profiles/{profile}/apps/user"),
             );
         }
     }
@@ -3139,6 +3346,22 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
         }));
     }
 
+    // Optional sing-box-lx appears in the main list only after the binary is installed.
+    if crate::programs::singbox_lx::is_installed() {
+        let active: ProfilesActive = read_json(&singbox_lx_active_path()).unwrap_or_default();
+        let mut profiles = Vec::new();
+        for (name, st) in active.profiles {
+            profiles.push(json!({"name": name, "enabled": st.enabled}));
+        }
+        profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        out.push(json!({
+            "id": "sing-box-lx",
+            "name": "sing-box-lx",
+            "type": "singbox_lx_profiles",
+            "profiles": profiles
+        }));
+    }
+
     // hysteria2 (profile-based, SOCKS5 backend)
     {
         let active: ProfilesActive = read_json(&hysteria2_active_path()).unwrap_or_default();
@@ -3362,6 +3585,18 @@ fn handle_subscriptions_subroutes(stream: TcpStream, method: &str, path: &str, b
         }
         ("GET", ["api", "subscriptions", id, "nodes"]) => {
             match crate::programs::mihomo_subscription::nodes_view(id) {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "subscriptions", id, "nodes", "import-bulk"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::BulkImportNodesRequest = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let result = crate::programs::mihomo_subscription::import_nodes_bulk(id, req)?;
+                Ok(json!({"ok": true, "result": result}))
+            })();
+            match res {
                 Ok(v) => write_json(stream, 200, v),
                 Err(e) => write_err(stream, e),
             }
@@ -5144,6 +5379,376 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
         }
 
 
+        // --- sing-box-lx WARP / MASQUE registration cache
+        ("GET", ["api", "programs", "sing-box-lx", "warp", "masque", "account"]) => {
+            let res = crate::programs::singbox_lx::read_masque_account();
+            match res {
+                Ok(account) => write_json(stream, 200, json!({"ok": true, "account": account})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "sing-box-lx", "warp", "masque", "account"]) => {
+            let res = (|| -> Result<()> {
+                if !crate::programs::singbox_lx::is_installed() {
+                    anyhow::bail!("sing-box-lx optional component is not installed");
+                }
+                let account: crate::programs::singbox_lx::MasqueAccountRecord = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad MASQUE account JSON: {e}"))?;
+                crate::programs::singbox_lx::write_masque_account(&account)
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "sing-box-lx", "warp", "masque", "account"]) => {
+            match crate::programs::singbox_lx::clear_masque_account() {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        // --- sing-box-lx profile/server API
+        ("GET", ["api", "programs", "sing-box-lx", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let active: ProfilesActive = read_json(&singbox_lx_active_path()).unwrap_or_default();
+                let mut profiles = Vec::new();
+                for (name, st) in active.profiles {
+                    profiles.push(json!({"name": name, "enabled": st.enabled}));
+                }
+                profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "profiles": profiles}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "sing-box-lx", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct Req { #[serde(default)] name: Option<String> }
+                let req: Req = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let profile = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_singbox_lx_profile_named(name)?,
+                    None => create_singbox_lx_profile_next()?,
+                };
+                Ok(json!({"ok": true, "profile": profile}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "sing-box-lx", "profiles", profile, "enabled"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = singbox_lx_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                let st = active.profiles.get_mut(*profile)
+                    .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
+                st.enabled = req.enabled;
+                write_json_pretty(&p, &active)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "sing-box-lx", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                let p = singbox_lx_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                if active.profiles.remove(*profile).is_none() {
+                    anyhow::bail!("profile not found");
+                }
+                write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
+                let src = singbox_lx_profile_root(profile);
+                if src.exists() {
+                    let deleted_dir = singbox_lx_deleted_profiles_root();
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                crate::programs::mihomo_subscription::remove_links_for_profile("sing-box-lx", profile);
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "sing-box-lx", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_singbox_lx_profile_layout(profile)?;
+                let p = singbox_lx_profile_root(profile).join("setting.json");
+                if !p.exists() {
+                    let (t2s_port, t2s_web_port) = suggest_singbox_lx_profile_ports()?;
+                    write_json_pretty(&p, &default_singbox_lx_profile_setting_value(t2s_port, t2s_web_port))?;
+                }
+                let v: serde_json::Value = read_json(&p)?;
+                let setting = crate::programs::singbox_lx::normalize_setting_value(v)?;
+                let normalized = serde_json::to_value(&setting)?;
+                write_json_pretty(&p, &normalized)?;
+                Ok(json!({"ok": true, "data": normalized}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "sing-box-lx", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_singbox_lx_profile_layout(profile)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                normalize_and_write_singbox_lx_profile_setting(profile, v)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "sing-box-lx", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<String> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_singbox_lx_profile_layout(profile)?;
+                let p = singbox_lx_profile_root(profile).join("app/uid/user_program");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "sing-box-lx", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_singbox_lx_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let api_path = format!("/api/programs/sing-box-lx/profiles/{}/apps/user", profile);
+                validate_program_apps_content(&req.content, &api_path, "sing-box-lx", "common")?;
+                let p = singbox_lx_profile_root(profile).join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "sing-box-lx", Some(profile), "common")?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "sing-box-lx", "profiles", profile, "servers"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_singbox_lx_profile_layout(profile)?;
+                let root = singbox_lx_profile_root(profile).join("server");
+                let mut servers = Vec::new();
+                if let Ok(rd) = fs::read_dir(&root) {
+                    for ent in rd.flatten() {
+                        let path = ent.path();
+                        if !path.is_dir() { continue; }
+                        let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue; };
+                        if name.starts_with('.') { continue; }
+                        let setting_path = path.join("setting.json");
+                        let data: serde_json::Value = read_json(&setting_path).unwrap_or_else(|_| default_singbox_lx_server_setting_value(1180));
+                        let subscription_link = crate::programs::mihomo_subscription::link_for_target("sing-box-lx", profile, name);
+                        servers.push(json!({"name": name, "setting": data, "subscription_link": subscription_link}));
+                    }
+                }
+                servers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "servers": servers}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "sing-box-lx", "profiles", profile, "servers"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct Req { #[serde(default)] name: Option<String> }
+                ensure_valid_singbox_profile_name(profile)?;
+                let req: Req = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let server = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_singbox_lx_server_named(profile, name)?,
+                    None => create_singbox_lx_server_next(profile)?,
+                };
+                Ok(json!({"ok": true, "server": server}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "sing-box-lx", "profiles", profile, "servers", server]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_valid_singbox_profile_name(server)?;
+                let src = singbox_lx_server_root(profile, server);
+                if !src.exists() {
+                    anyhow::bail!("server not found");
+                }
+                let deleted_dir = singbox_lx_deleted_servers_root(profile);
+                fs::create_dir_all(&deleted_dir).ok();
+                let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                let dst = deleted_dir.join(format!("{server}.{ts}"));
+                let _ = fs::rename(&src, &dst);
+                crate::programs::mihomo_subscription::remove_link_for_target("sing-box-lx", profile, server);
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "sing-box-lx", "profiles", profile, "servers", server, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_valid_singbox_profile_name(server)?;
+                ensure_singbox_lx_profile_layout(profile)?;
+                let root = singbox_lx_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let p = root.join("setting.json");
+                if !p.exists() {
+                    let port = suggest_singbox_lx_server_port()?;
+                    write_json_pretty(&p, &default_singbox_lx_server_setting_value(port))?;
+                }
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "sing-box-lx", "profiles", profile, "servers", server, "setting"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_valid_singbox_profile_name(server)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let existing_path = singbox_lx_server_root(profile, server).join("setting.json");
+                let existing: serde_json::Value = read_json(&existing_path).unwrap_or_else(|_| default_singbox_lx_server_setting_value(1180));
+                let enabled = crate::jsonfs::json_enabled_opt(v.get("enabled"))
+                    .or_else(|| crate::jsonfs::json_enabled_opt(existing.get("enabled")))
+                    .unwrap_or(false);
+                let mode_vpn = singbox_lx_profile_mode_is_vpn(profile);
+                if mode_vpn {
+                    let only = ensure_singbox_lx_vpn_single_server(profile)?;
+                    if only.as_str() != *server {
+                        anyhow::bail!("singbox_lx_vpn_requires_single_server: VPN-режим sing-box-lx поддерживает только один сервер.");
+                    }
+                }
+                let port = v.get("port")
+                    .and_then(|x| x.as_u64())
+                    .and_then(|x| u16::try_from(x).ok())
+                    .or_else(|| existing.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()))
+                    .unwrap_or(1180);
+                if !mode_vpn && port == 0 {
+                    anyhow::bail!("invalid port");
+                }
+                let selected_sni = v.get("sni")
+                    .and_then(|x| x.as_str())
+                    .map(str::trim)
+                    .filter(|x| !x.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| existing.get("sni")
+                        .and_then(|x| x.as_str())
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty())
+                        .map(str::to_string));
+                let source_options = if v.get("sni_options").is_some() {
+                    v.get("sni_options")
+                } else {
+                    existing.get("sni_options")
+                };
+                let mut sni_options = Vec::<String>::new();
+                if let Some(values) = source_options.and_then(|x| x.as_array()) {
+                    for value in values {
+                        let Some(value) = value.as_str().map(str::trim).filter(|x| !x.is_empty()) else { continue; };
+                        if !sni_options.iter().any(|existing| existing.as_str() == value) {
+                            sni_options.push(value.to_string());
+                        }
+                    }
+                }
+                let selected_sni = match (selected_sni, sni_options.is_empty()) {
+                    (Some(value), false) if sni_options.iter().any(|item| item == &value) => Some(value),
+                    (_, false) => sni_options.first().cloned(),
+                    (value, true) => value,
+                };
+
+                let root = singbox_lx_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let p = root.join("setting.json");
+                let mut normalized = json!({"enabled": enabled, "port": if port == 0 { 1180 } else { port }});
+                if let Some(value) = selected_sni {
+                    normalized["sni"] = json!(value);
+                }
+                if !sni_options.is_empty() {
+                    normalized["sni_options"] = json!(sni_options);
+                }
+                write_json_pretty(&p, &normalized)?;
+                crate::programs::singbox_lx::normalize_config_for_profile_server(profile, server)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "sing-box-lx", "profiles", profile, "servers", server, "config"]) => {
+            let res = (|| -> Result<String> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_valid_singbox_profile_name(server)?;
+                let root = singbox_lx_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let p = root.join("config.json");
+                if !p.exists() {
+                    write_text_atomic(&p, "")?;
+                }
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "sing-box-lx", "profiles", profile, "servers", server, "config"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_valid_singbox_profile_name(server)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let root = singbox_lx_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let p = root.join("config.json");
+                write_text_atomic(&p, &req.content)?;
+                if !req.content.trim().is_empty() {
+                    crate::programs::singbox_lx::normalize_config_for_profile_server(profile, server)?;
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+
         // --- wireproxy profile/server API
         ("GET", ["api", "programs", "wireproxy", "profiles"]) => {
             let res = (|| -> Result<serde_json::Value> {
@@ -6678,6 +7283,9 @@ fn collect_construction_proxy_endpoint_candidates() -> Result<Vec<ConstructionPr
     let root = working_root();
     let mut out = Vec::<ConstructionProxyEndpointCandidate>::new();
     collect_construction_singbox_candidates(&root, &mut out);
+    if crate::programs::singbox_lx::is_installed() {
+        collect_construction_singbox_lx_candidates(&root, &mut out);
+    }
     collect_construction_wireproxy_candidates(&root, &mut out);
     collect_construction_myproxy_candidates(&root, &mut out);
     collect_construction_profile_setting_candidate(&root, "mihomo", "mixed_port", "mixed", &mihomo_active_path(), &mut out);
@@ -6786,6 +7394,28 @@ fn collect_construction_singbox_candidates(root: &Path, out: &mut Vec<Constructi
             let port = setting.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
             let server_enabled = crate::jsonfs::json_enabled(setting.get("enabled"));
             push_construction_candidate(out, "sing-box", Some(profile.clone()), Some(server), port, "socks5", profile_enabled && server_enabled, Some(profile_dir.join("app/uid/user_program")));
+        }
+    }
+}
+fn collect_construction_singbox_lx_candidates(root: &Path, out: &mut Vec<ConstructionProxyEndpointCandidate>) {
+    let active: ProfilesActive = read_json(&singbox_lx_active_path()).unwrap_or_default();
+    let profiles_root = root.join("singbox-lx/profile");
+    let Ok(profiles) = fs::read_dir(&profiles_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+        let profile_enabled = active.profiles.get(&profile).map(|st| st.enabled).unwrap_or(false);
+        let server_root = profile_dir.join("server");
+        let Ok(servers) = fs::read_dir(&server_root) else { continue; };
+        for server_ent in servers.flatten() {
+            let server_dir = server_ent.path();
+            if !server_dir.is_dir() { continue; }
+            let Some(server) = server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            let setting: serde_json::Value = read_json(&server_dir.join("setting.json")).unwrap_or_else(|_| json!({}));
+            let port = setting.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+            let server_enabled = crate::jsonfs::json_enabled(setting.get("enabled"));
+            push_construction_candidate(out, "sing-box-lx", Some(profile.clone()), Some(server), port, "socks5", profile_enabled && server_enabled, Some(profile_dir.join("app/uid/user_program")));
         }
     }
 }
@@ -6931,6 +7561,7 @@ fn release_construction_proxy_endpoint(req: ConstructionReleaseEndpointReq) -> R
 fn normalize_construction_program_id(raw: &str) -> String {
     match raw.trim().to_ascii_lowercase().as_str() {
         "singbox" | "sing-box" => "sing-box".to_string(),
+        "singbox-lx" | "sing-box-lx" | "sing_box_lx" | "singbox_lx" => "sing-box-lx".to_string(),
         other => other.to_string(),
     }
 }
@@ -7409,6 +8040,11 @@ match (method.as_str(), path.as_str()) {
                     match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
                         Some(p) => create_singbox_profile_named(p)?,
                         None => create_singbox_profile_next()?,
+                    }
+                } else if program == "sing-box-lx" {
+                    match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                        Some(p) => create_singbox_lx_profile_named(p)?,
+                        None => create_singbox_lx_profile_next()?,
                     }
                 } else if program == "wireproxy" {
                     match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {

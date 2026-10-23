@@ -127,6 +127,7 @@ private data class ManualImportDraft(
   val target: String = "",
   val profiles: List<String> = emptyList(),
   val selectedProfile: String = "",
+  val newProfileName: String = "",
   val serverName: String = "",
   val previewing: Boolean = false,
   val loadingProfiles: Boolean = false,
@@ -160,7 +161,18 @@ private data class SubscriptionImportDraft(
   val target: String,
   val profiles: List<String> = emptyList(),
   val selectedProfile: String = "",
+  val newProfileName: String = "",
   val serverName: String = "",
+  val loadingProfiles: Boolean = true,
+)
+
+private data class SubscriptionBulkImportDraft(
+  val subscriptionId: String,
+  val target: String,
+  val compatibleCount: Int,
+  val profiles: List<String> = emptyList(),
+  val selectedProfile: String = "",
+  val newProfileName: String = "",
   val loadingProfiles: Boolean = true,
 )
 
@@ -361,6 +373,8 @@ private fun formatEpoch(seconds: Long): String = if (seconds <= 0L) "—" else D
 fun SubscriptionsScreen(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  singBoxLxInstalled: Boolean,
+  onOpenOptionalTools: () -> Unit,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
@@ -378,7 +392,13 @@ fun SubscriptionsScreen(
   var nodesLoading by remember { mutableStateOf(false) }
   var importDraft by remember { mutableStateOf<SubscriptionImportDraft?>(null) }
   var importSaving by remember { mutableStateOf(false) }
+  var importCreatingProfile by remember { mutableStateOf(false) }
+  var bulkDraft by remember { mutableStateOf<SubscriptionBulkImportDraft?>(null) }
+  var bulkSaving by remember { mutableStateOf(false) }
+  var bulkCreatingProfile by remember { mutableStateOf(false) }
   var manualDraft by remember { mutableStateOf<ManualImportDraft?>(null) }
+  var manualCreatingProfile by remember { mutableStateOf(false) }
+  var showLxInstallRequired by remember { mutableStateOf(false) }
   var nodeExport by remember { mutableStateOf<SubscriptionNodeExportUi?>(null) }
 
   fun snack(text: String) { scope.launch { snackHost.showSnackbar(text) } }
@@ -412,7 +432,25 @@ fun SubscriptionsScreen(
     }
   }
 
+  fun ensureTargetAvailable(target: String): Boolean {
+    if (target == "sing-box-lx" && !singBoxLxInstalled) {
+      showLxInstallRequired = true
+      return false
+    }
+    return true
+  }
+
+  fun createTargetProfile(target: String, requested: String, onCreated: (String?) -> Unit) {
+    val name = requested.trim()
+    if (name.isBlank() || !ensureTargetAvailable(target)) {
+      onCreated(null)
+      return
+    }
+    actions.createNamedProfile(target, name, onCreated)
+  }
+
   fun beginImport(subscriptionId: String, node: SubscriptionNodeUi, target: String) {
+    if (!ensureTargetAvailable(target)) return
     importDraft = SubscriptionImportDraft(
       subscriptionId = subscriptionId,
       node = node,
@@ -422,6 +460,39 @@ fun SubscriptionsScreen(
     scope.launch {
       val profiles = loadTargetProfiles(actions, target)
       importDraft = importDraft?.takeIf { it.node.id == node.id && it.target == target }?.copy(
+        profiles = profiles,
+        selectedProfile = profiles.firstOrNull().orEmpty(),
+        loadingProfiles = false,
+      )
+    }
+  }
+
+  fun beginBulkImport(subscriptionId: String, data: SubscriptionNodesUi, target: String) {
+    if (!ensureTargetAvailable(target)) return
+    val compatibleCount = data.nodes.count { target in it.targets }
+    if (compatibleCount <= 0) return
+    bulkDraft = SubscriptionBulkImportDraft(
+      subscriptionId = subscriptionId,
+      target = target,
+      compatibleCount = compatibleCount,
+    )
+    scope.launch {
+      val profiles = loadTargetProfiles(actions, target)
+      bulkDraft = bulkDraft?.takeIf { it.subscriptionId == subscriptionId && it.target == target }?.copy(
+        profiles = profiles,
+        selectedProfile = profiles.firstOrNull().orEmpty(),
+        loadingProfiles = false,
+      )
+    }
+  }
+
+  fun selectManualTarget(target: String) {
+    val current = manualDraft ?: return
+    if (!ensureTargetAvailable(target)) return
+    manualDraft = current.copy(target = target, profiles = emptyList(), selectedProfile = "", loadingProfiles = true, error = "")
+    scope.launch {
+      val profiles = loadTargetProfiles(actions, target)
+      manualDraft = manualDraft?.takeIf { it.node?.id == current.node?.id && it.target == target }?.copy(
         profiles = profiles,
         selectedProfile = profiles.firstOrNull().orEmpty(),
         loadingProfiles = false,
@@ -443,22 +514,27 @@ fun SubscriptionsScreen(
         manualDraft = draft.copy(error = context.getString(R.string.subscription_manual_unrecognized))
         return@postJsonResult
       }
+      val lxMissing = target == "sing-box-lx" && !singBoxLxInstalled
       manualDraft = draft.copy(
         node = node,
         format = result.optString("format"),
         target = target,
         serverName = node.name,
         previewing = false,
-        loadingProfiles = true,
+        loadingProfiles = !lxMissing,
         error = "",
       )
-      scope.launch {
-        val profiles = loadTargetProfiles(actions, target)
-        manualDraft = manualDraft?.takeIf { it.node?.id == node.id && it.target == target }?.copy(
-          profiles = profiles,
-          selectedProfile = profiles.firstOrNull().orEmpty(),
-          loadingProfiles = false,
-        )
+      if (lxMissing) {
+        showLxInstallRequired = true
+      } else {
+        scope.launch {
+          val profiles = loadTargetProfiles(actions, target)
+          manualDraft = manualDraft?.takeIf { it.node?.id == node.id && it.target == target }?.copy(
+            profiles = profiles,
+            selectedProfile = profiles.firstOrNull().orEmpty(),
+            loadingProfiles = false,
+          )
+        }
       }
     }
   }
@@ -482,7 +558,29 @@ fun SubscriptionsScreen(
   manualDraft?.let { draft ->
     ManualSubscriptionImportDialog(
       draft = draft,
+      creatingProfile = manualCreatingProfile,
+      singBoxLxInstalled = singBoxLxInstalled,
       onChange = { manualDraft = it },
+      onTargetChange = ::selectManualTarget,
+      onCreateProfile = { requested ->
+        manualDraft?.let { current ->
+          manualCreatingProfile = true
+          createTargetProfile(current.target, requested) { created ->
+            manualCreatingProfile = false
+            if (created == null) {
+              snack(context.getString(R.string.subscription_profile_create_failed))
+            } else {
+              scope.launch {
+                val profiles = loadTargetProfiles(actions, current.target)
+                manualDraft = manualDraft?.takeIf { it.target == current.target }?.copy(
+                  profiles = profiles, selectedProfile = created, newProfileName = "", loadingProfiles = false,
+                )
+                snack(context.getString(R.string.subscription_profile_created, created))
+              }
+            }
+          }
+        }
+      },
       onPaste = {
         val text = runCatching {
           val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -493,7 +591,7 @@ fun SubscriptionsScreen(
       onPreview = ::previewManualImport,
       onImport = {
         val current = manualDraft
-        if (current != null) {
+        if (current != null && ensureTargetAvailable(current.target)) {
           manualDraft = current.copy(saving = true, error = "")
           val payload = JSONObject()
             .put("content", current.source)
@@ -520,7 +618,9 @@ fun SubscriptionsScreen(
       data = nodesData,
       loading = nodesLoading,
       onDismiss = { if (!importSaving) nodesFor = null },
+      singBoxLxInstalled = singBoxLxInstalled,
       onImport = { node, target -> beginImport(subscription.id, node, target) },
+      onBulkImport = { target -> beginBulkImport(subscription.id, nodesData, target) },
       onCopy = { node -> openNodeConfig(subscription, node) },
       onDetach = { link ->
         actions.deleteJsonPath("/api/subscription-links/${URLEncoder.encode(link.id, "UTF-8")}") { ok ->
@@ -551,25 +651,107 @@ fun SubscriptionsScreen(
     SubscriptionImportDialog(
       draft = draft,
       saving = importSaving,
+      creatingProfile = importCreatingProfile,
       onChange = { importDraft = it },
-      onDismiss = { if (!importSaving) importDraft = null },
-      onSave = {
-        importSaving = true
-        val path = "/api/subscriptions/${URLEncoder.encode(it.subscriptionId, "UTF-8")}/nodes/${URLEncoder.encode(it.node.id, "UTF-8")}/import"
-        val payload = JSONObject()
-          .put("target", it.target)
-          .put("profile", it.selectedProfile)
-          .put("server_name", it.serverName)
-        actions.postJsonData(path, payload) { ok ->
-          importSaving = false
-          if (ok) {
-            importDraft = null
-            nodesFor?.let(::openNodes)
-            snack(context.getString(R.string.subscription_import_success))
-          } else {
-            snack(context.getString(R.string.subscription_import_failed))
+      onCreateProfile = { requested ->
+        importDraft?.let { current ->
+          importCreatingProfile = true
+          createTargetProfile(current.target, requested) { created ->
+            importCreatingProfile = false
+            if (created == null) {
+              snack(context.getString(R.string.subscription_profile_create_failed))
+            } else {
+              scope.launch {
+                val profiles = loadTargetProfiles(actions, current.target)
+                importDraft = importDraft?.takeIf { it.target == current.target }?.copy(
+                  profiles = profiles, selectedProfile = created, newProfileName = "", loadingProfiles = false,
+                )
+                snack(context.getString(R.string.subscription_profile_created, created))
+              }
+            }
           }
         }
+      },
+      onDismiss = { if (!importSaving && !importCreatingProfile) importDraft = null },
+      onSave = { current ->
+        if (ensureTargetAvailable(current.target)) {
+          importSaving = true
+          val path = "/api/subscriptions/${URLEncoder.encode(current.subscriptionId, "UTF-8")}/nodes/${URLEncoder.encode(current.node.id, "UTF-8")}/import"
+          val payload = JSONObject()
+            .put("target", current.target)
+            .put("profile", current.selectedProfile)
+            .put("server_name", current.serverName)
+          actions.postJsonData(path, payload) { ok ->
+            importSaving = false
+            if (ok) {
+              importDraft = null
+              nodesFor?.let(::openNodes)
+              snack(context.getString(R.string.subscription_import_success))
+            } else {
+              snack(context.getString(R.string.subscription_import_failed))
+            }
+          }
+        }
+      },
+    )
+  }
+
+  bulkDraft?.let { draft ->
+    SubscriptionBulkImportDialog(
+      draft = draft,
+      saving = bulkSaving,
+      creatingProfile = bulkCreatingProfile,
+      onChange = { bulkDraft = it },
+      onCreateProfile = { requested ->
+        bulkDraft?.let { current ->
+          bulkCreatingProfile = true
+          createTargetProfile(current.target, requested) { created ->
+            bulkCreatingProfile = false
+            if (created == null) {
+              snack(context.getString(R.string.subscription_profile_create_failed))
+            } else {
+              scope.launch {
+                val profiles = loadTargetProfiles(actions, current.target)
+                bulkDraft = bulkDraft?.takeIf { it.target == current.target }?.copy(
+                  profiles = profiles, selectedProfile = created, newProfileName = "", loadingProfiles = false,
+                )
+                snack(context.getString(R.string.subscription_profile_created, created))
+              }
+            }
+          }
+        }
+      },
+      onDismiss = { if (!bulkSaving && !bulkCreatingProfile) bulkDraft = null },
+      onSave = { current ->
+        if (ensureTargetAvailable(current.target)) {
+          bulkSaving = true
+          val path = "/api/subscriptions/${URLEncoder.encode(current.subscriptionId, "UTF-8")}/nodes/import-bulk"
+          val payload = JSONObject().put("target", current.target).put("profile", current.selectedProfile)
+          actions.postJsonResult(path, payload) { response ->
+            bulkSaving = false
+            val result = response?.optJSONObject("result")
+            if (result == null) {
+              snack(context.getString(R.string.subscription_bulk_import_failed))
+            } else {
+              val imported = result.optInt("imported")
+              val skipped = result.optInt("skipped")
+              val failed = result.optInt("failed")
+              bulkDraft = null
+              nodesFor?.let(::openNodes)
+              snack(context.getString(R.string.subscription_bulk_import_result, imported, skipped, failed))
+            }
+          }
+        }
+      },
+    )
+  }
+
+  if (showLxInstallRequired) {
+    SingBoxLxInstallRequiredDialog(
+      onDismiss = { showLxInstallRequired = false },
+      onOpenOptionalTools = {
+        showLxInstallRequired = false
+        onOpenOptionalTools()
       },
     )
   }
@@ -861,7 +1043,9 @@ private fun SubscriptionNodesDialog(
   data: SubscriptionNodesUi,
   loading: Boolean,
   onDismiss: () -> Unit,
+  singBoxLxInstalled: Boolean,
   onImport: (SubscriptionNodeUi, String) -> Unit,
+  onBulkImport: (String) -> Unit,
   onCopy: (SubscriptionNodeUi) -> Unit,
   onDetach: (SubscriptionLinkUi) -> Unit,
 ) {
@@ -909,6 +1093,43 @@ private fun SubscriptionNodesDialog(
               }
             }
           }
+          val bulkTargets = data.nodes.flatMap { it.targets }.distinct().sortedWith(compareBy<String> {
+            when (it) {
+              "sing-box" -> 0
+              "sing-box-lx" -> 1
+              "hysteria2" -> 2
+              "wireproxy" -> 3
+              else -> 9
+            }
+          }.thenBy { it })
+          if (bulkTargets.isNotEmpty()) {
+            item(key = "bulk-import") {
+              Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.32f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)),
+              ) {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                  Text(stringResource(R.string.subscription_bulk_import_section), fontWeight = FontWeight.Bold)
+                  Text(
+                    stringResource(R.string.subscription_bulk_import_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+                  )
+                  bulkTargets.forEach { target ->
+                    val count = data.nodes.count { target in it.targets }
+                    OutlinedButton(
+                      onClick = { onBulkImport(target) },
+                      modifier = Modifier.fillMaxWidth().tvFocusHighlight(MaterialTheme.shapes.large),
+                    ) {
+                      val label = stringResource(R.string.subscription_bulk_import_to, subscriptionTargetLabel(target), count)
+                      Text(if (target == "sing-box-lx" && !singBoxLxInstalled) "$label · ${stringResource(R.string.subscription_install_required_short)}" else label)
+                    }
+                  }
+                }
+              }
+            }
+          }
           if (data.nodes.isEmpty()) {
             item { Text(stringResource(R.string.subscription_nodes_empty)) }
           }
@@ -936,6 +1157,22 @@ private fun SubscriptionNodesDialog(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
                   )
                 }
+                val lxOnly = "sing-box-lx" in node.targets && "sing-box" !in node.targets
+                if (lxOnly) {
+                  Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.56f),
+                  ) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 6.dp)) {
+                      Text(stringResource(R.string.subscription_lx_required_badge), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                      Text(
+                        stringResource(if (singBoxLxInstalled) R.string.subscription_lx_required_hint else R.string.subscription_lx_not_installed_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+                      )
+                    }
+                  }
+                }
                 links.forEach { link ->
                   Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f)) {
                     Row(
@@ -952,8 +1189,12 @@ private fun SubscriptionNodesDialog(
                   }
                 }
                 node.targets.forEach { target ->
-                  OutlinedButton(onClick = { onImport(node, target) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.subscription_add_to_target, subscriptionTargetLabel(target)))
+                  OutlinedButton(
+                    onClick = { onImport(node, target) },
+                    modifier = Modifier.fillMaxWidth().tvFocusHighlight(MaterialTheme.shapes.large),
+                  ) {
+                    val label = stringResource(R.string.subscription_add_to_target, subscriptionTargetLabel(target))
+                    Text(if (target == "sing-box-lx" && !singBoxLxInstalled) "$label · ${stringResource(R.string.subscription_install_required_short)}" else label)
                   }
                 }
                 OutlinedButton(onClick = { onCopy(node) }, modifier = Modifier.fillMaxWidth()) {
@@ -981,13 +1222,17 @@ private fun SubscriptionNodesDialog(
 @Composable
 private fun ManualSubscriptionImportDialog(
   draft: ManualImportDraft,
+  creatingProfile: Boolean,
+  singBoxLxInstalled: Boolean,
   onChange: (ManualImportDraft) -> Unit,
+  onTargetChange: (String) -> Unit,
+  onCreateProfile: (String) -> Unit,
   onPaste: () -> Unit,
   onPreview: () -> Unit,
   onImport: () -> Unit,
   onDismiss: () -> Unit,
 ) {
-  val busy = draft.previewing || draft.saving
+  val busy = draft.previewing || draft.saving || creatingProfile
   val valid = draft.node != null && draft.selectedProfile.isNotBlank() && draft.serverName.isNotBlank() && !draft.loadingProfiles
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -1019,12 +1264,12 @@ private fun ManualSubscriptionImportDialog(
         }
         item {
           Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onPaste, enabled = !busy, modifier = Modifier.weight(1f)) {
+            OutlinedButton(onClick = onPaste, enabled = !busy, modifier = Modifier.weight(1f).tvFocusHighlight(MaterialTheme.shapes.large, !busy)) {
               Icon(Icons.Filled.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
               Spacer(Modifier.width(5.dp))
               Text(stringResource(R.string.subscription_paste))
             }
-            Button(onClick = onPreview, enabled = draft.source.isNotBlank() && !busy, modifier = Modifier.weight(1f)) {
+            Button(onClick = onPreview, enabled = draft.source.isNotBlank() && !busy, modifier = Modifier.weight(1f).tvFocusHighlight(MaterialTheme.shapes.large, draft.source.isNotBlank() && !busy)) {
               if (draft.previewing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
               else Text(stringResource(R.string.subscription_recognize))
             }
@@ -1049,7 +1294,22 @@ private fun ManualSubscriptionImportDialog(
                   color = MaterialTheme.colorScheme.primary,
                 )
                 if (node.server.isNotBlank()) Text("${node.server}:${node.port}", style = MaterialTheme.typography.bodySmall)
-                Text(stringResource(R.string.subscription_manual_target, subscriptionTargetLabel(draft.target)), style = MaterialTheme.typography.bodySmall)
+              }
+            }
+          }
+          item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+              Text(stringResource(R.string.subscription_target_choice), style = MaterialTheme.typography.labelLarge)
+              node.targets.forEach { target ->
+                FilterChip(
+                  selected = target == draft.target,
+                  onClick = { onTargetChange(target) },
+                  label = {
+                    val label = subscriptionTargetLabel(target)
+                    Text(if (target == "sing-box-lx" && !singBoxLxInstalled) "$label · ${stringResource(R.string.subscription_install_required_short)}" else label)
+                  },
+                  modifier = Modifier.fillMaxWidth().tvFocusHighlight(MaterialTheme.shapes.large),
+                )
               }
             }
           }
@@ -1064,8 +1324,28 @@ private fun ManualSubscriptionImportDialog(
                 selected = profile == draft.selectedProfile,
                 onClick = { onChange(draft.copy(selectedProfile = profile)) },
                 label = { Text(profile) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().tvFocusHighlight(MaterialTheme.shapes.large),
               )
+            }
+          }
+          item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+              OutlinedTextField(
+                value = draft.newProfileName,
+                onValueChange = { onChange(draft.copy(newProfileName = it)) },
+                label = { Text(stringResource(R.string.subscription_new_profile_name)) },
+                singleLine = true,
+                enabled = !busy,
+                modifier = Modifier.weight(1f),
+              )
+              OutlinedButton(
+                onClick = { onCreateProfile(draft.newProfileName) },
+                enabled = draft.newProfileName.isNotBlank() && !busy,
+                modifier = Modifier.tvFocusHighlight(MaterialTheme.shapes.large),
+              ) {
+                if (creatingProfile) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Text(stringResource(R.string.subscription_create_profile))
+              }
             }
           }
           item {
@@ -1082,12 +1362,12 @@ private fun ManualSubscriptionImportDialog(
       }
     },
     confirmButton = {
-      Button(onClick = onImport, enabled = valid && !busy) {
+      Button(onClick = onImport, enabled = valid && !busy, modifier = Modifier.tvFocusHighlight(MaterialTheme.shapes.large, valid && !busy)) {
         if (draft.saving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
         else Text(stringResource(R.string.subscription_import_action))
       }
     },
-    dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.action_cancel)) } },
+    dismissButton = { TextButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.tvFocusHighlight(MaterialTheme.shapes.large, !busy)) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
 
@@ -1139,10 +1419,13 @@ private fun SubscriptionNodeExportDialog(
 private fun SubscriptionImportDialog(
   draft: SubscriptionImportDraft,
   saving: Boolean,
+  creatingProfile: Boolean,
   onChange: (SubscriptionImportDraft) -> Unit,
+  onCreateProfile: (String) -> Unit,
   onDismiss: () -> Unit,
   onSave: (SubscriptionImportDraft) -> Unit,
 ) {
+  val busy = saving || creatingProfile
   val valid = !draft.loadingProfiles && draft.selectedProfile.isNotBlank() && draft.serverName.isNotBlank()
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -1162,9 +1445,27 @@ private fun SubscriptionImportDialog(
                 selected = profile == draft.selectedProfile,
                 onClick = { onChange(draft.copy(selectedProfile = profile)) },
                 label = { Text(profile) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().tvFocusHighlight(MaterialTheme.shapes.large),
               )
             }
+          }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+          OutlinedTextField(
+            value = draft.newProfileName,
+            onValueChange = { onChange(draft.copy(newProfileName = it)) },
+            label = { Text(stringResource(R.string.subscription_new_profile_name)) },
+            singleLine = true,
+            enabled = !busy,
+            modifier = Modifier.weight(1f),
+          )
+          OutlinedButton(
+            onClick = { onCreateProfile(draft.newProfileName) },
+            enabled = draft.newProfileName.isNotBlank() && !busy,
+            modifier = Modifier.tvFocusHighlight(MaterialTheme.shapes.large),
+          ) {
+            if (creatingProfile) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            else Text(stringResource(R.string.subscription_create_profile))
           }
         }
         OutlinedTextField(
@@ -1173,17 +1474,99 @@ private fun SubscriptionImportDialog(
           label = { Text(stringResource(R.string.subscription_local_server_name)) },
           supportingText = { Text(stringResource(R.string.subscription_server_name_hint)) },
           singleLine = true,
-          enabled = !saving,
+          enabled = !busy,
           modifier = Modifier.fillMaxWidth(),
         )
       }
     },
     confirmButton = {
-      Button(onClick = { onSave(draft) }, enabled = valid && !saving) {
+      Button(onClick = { onSave(draft) }, enabled = valid && !busy, modifier = Modifier.tvFocusHighlight(MaterialTheme.shapes.large)) {
         if (saving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(stringResource(R.string.subscription_import_action))
       }
     },
-    dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(R.string.action_cancel)) } },
+    dismissButton = { TextButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.tvFocusHighlight(MaterialTheme.shapes.large)) { Text(stringResource(R.string.action_cancel)) } },
+  )
+}
+
+@Composable
+private fun SubscriptionBulkImportDialog(
+  draft: SubscriptionBulkImportDraft,
+  saving: Boolean,
+  creatingProfile: Boolean,
+  onChange: (SubscriptionBulkImportDraft) -> Unit,
+  onCreateProfile: (String) -> Unit,
+  onDismiss: () -> Unit,
+  onSave: (SubscriptionBulkImportDraft) -> Unit,
+) {
+  val busy = saving || creatingProfile
+  val valid = !draft.loadingProfiles && draft.selectedProfile.isNotBlank()
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.subscription_bulk_import_title, subscriptionTargetLabel(draft.target))) },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+          stringResource(R.string.subscription_bulk_import_count, draft.compatibleCount),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+        )
+        Text(stringResource(R.string.subscription_choose_profile), style = MaterialTheme.typography.labelLarge)
+        if (draft.loadingProfiles) {
+          CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+        } else if (draft.profiles.isEmpty()) {
+          Text(stringResource(R.string.subscription_no_target_profiles), color = MaterialTheme.colorScheme.error)
+        } else {
+          LazyColumn(Modifier.fillMaxWidth().heightIn(max = 180.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            items(draft.profiles, key = { it }) { profile ->
+              FilterChip(
+                selected = profile == draft.selectedProfile,
+                onClick = { onChange(draft.copy(selectedProfile = profile)) },
+                label = { Text(profile) },
+                modifier = Modifier.fillMaxWidth().tvFocusHighlight(MaterialTheme.shapes.large),
+              )
+            }
+          }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+          OutlinedTextField(
+            value = draft.newProfileName,
+            onValueChange = { onChange(draft.copy(newProfileName = it)) },
+            label = { Text(stringResource(R.string.subscription_new_profile_name)) },
+            singleLine = true,
+            enabled = !busy,
+            modifier = Modifier.weight(1f),
+          )
+          OutlinedButton(
+            onClick = { onCreateProfile(draft.newProfileName) },
+            enabled = draft.newProfileName.isNotBlank() && !busy,
+            modifier = Modifier.tvFocusHighlight(MaterialTheme.shapes.large),
+          ) {
+            if (creatingProfile) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            else Text(stringResource(R.string.subscription_create_profile))
+          }
+        }
+        Text(
+          stringResource(R.string.subscription_bulk_import_naming_hint),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+        )
+      }
+    },
+    confirmButton = {
+      Button(
+        onClick = { onSave(draft) },
+        enabled = valid && !busy,
+        modifier = Modifier.tvFocusHighlight(MaterialTheme.shapes.large),
+      ) {
+        if (saving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+        else Text(stringResource(R.string.subscription_import_action))
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.tvFocusHighlight(MaterialTheme.shapes.large)) {
+        Text(stringResource(R.string.action_cancel))
+      }
+    },
   )
 }
 

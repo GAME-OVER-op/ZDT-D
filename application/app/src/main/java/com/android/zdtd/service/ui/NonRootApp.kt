@@ -105,6 +105,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -3039,7 +3040,7 @@ private fun NonRootFailureGlyph(
 }
 
 internal fun Modifier.nonRootFocusHighlight(
-  shape: RoundedCornerShape,
+  shape: Shape,
   enabled: Boolean = true,
 ): Modifier = composed {
   var focused by remember { mutableStateOf(false) }

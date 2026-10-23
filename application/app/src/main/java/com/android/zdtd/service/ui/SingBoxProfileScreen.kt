@@ -114,16 +114,17 @@ private fun normalizeSingBoxDns(values: List<String>): List<String> = values
   .distinct()
   .ifEmpty { listOf("8.8.8.8") }
 
-private fun normalizeSingBoxTunName(value: String?): String {
+private fun normalizeSingBoxTunName(value: String?, fallbackTun: String = "sbtun0"): String {
+  val safeFallback = fallbackTun.trim().ifBlank { "sbtun0" }.take(15)
   val cleaned = value
     ?.trim()
     ?.filter { it.isLetterOrDigit() || it == '_' }
     ?.take(15)
     .orEmpty()
-  if (cleaned.isBlank()) return "sbtun0"
+  if (cleaned.isBlank()) return safeFallback
   val lower = cleaned.lowercase()
   return when (lower) {
-    "wlan0", "rmnet0", "eth0", "lo", "tunl0" -> "sbtun0"
+    "wlan0", "rmnet0", "eth0", "lo", "tunl0" -> safeFallback
     else -> cleaned
   }
 }
@@ -150,7 +151,16 @@ private data class SingBoxProfileSettingUi(
   val isT2s: Boolean get() = mode != SINGBOX_MODE_VPN
 }
 
-private fun defaultSingBoxProfileSettingUi(): SingBoxProfileSettingUi = SingBoxProfileSettingUi()
+private fun defaultSingBoxProfileSettingUi(
+  defaultTun: String = "sbtun0",
+  defaultT2sPort: Int = 12345,
+  defaultT2sWebPort: Int = 8001,
+): SingBoxProfileSettingUi =
+  SingBoxProfileSettingUi(
+    t2sPort = defaultT2sPort,
+    t2sWebPort = defaultT2sWebPort,
+    tun = normalizeSingBoxTunName(defaultTun, defaultTun),
+  )
 
 private data class SingBoxServerUi(
   val name: String,
@@ -174,7 +184,12 @@ private data class SingBoxPortRegistry(
   val labelsByPort: Map<Int, List<String>> = emptyMap(),
 )
 
-private fun parseSingBoxProfileSettingUi(obj: JSONObject?): SingBoxProfileSettingUi {
+private fun parseSingBoxProfileSettingUi(
+  obj: JSONObject?,
+  defaultTun: String = "sbtun0",
+  defaultT2sPort: Int = 12345,
+  defaultT2sWebPort: Int = 8001,
+): SingBoxProfileSettingUi {
   val rawDns = buildList<String> {
     val arr = obj?.optJSONArray("dns")
     if (arr != null) {
@@ -193,9 +208,9 @@ private fun parseSingBoxProfileSettingUi(obj: JSONObject?): SingBoxProfileSettin
 
   return SingBoxProfileSettingUi(
     mode = normalizeSingBoxMode(obj?.optString("mode", SINGBOX_MODE_T2S)),
-    t2sPort = obj?.optInt("t2s_port", 0)?.takeIf { it in 1..65535 } ?: 12345,
-    t2sWebPort = obj?.optInt("t2s_web_port", 0)?.takeIf { it in 1..65535 } ?: 8001,
-    tun = normalizeSingBoxTunName(obj?.optString("tun", "sbtun0")),
+    t2sPort = obj?.optInt("t2s_port", 0)?.takeIf { it in 1..65535 } ?: defaultT2sPort,
+    t2sWebPort = obj?.optInt("t2s_web_port", 0)?.takeIf { it in 1..65535 } ?: defaultT2sWebPort,
+    tun = normalizeSingBoxTunName(obj?.optString("tun", defaultTun), defaultTun),
     dns = normalizeSingBoxDns(rawDns),
     tun2socksLogLevel = normalizeSingBoxTun2socksLogLevel(obj?.optString("tun2socks_loglevel", "info")),
     protoMode = normalizeSingBoxProtoMode(obj?.optString("proto_mode", "tcp_udp")),
@@ -203,12 +218,16 @@ private fun parseSingBoxProfileSettingUi(obj: JSONObject?): SingBoxProfileSettin
   )
 }
 
-private fun SingBoxProfileSettingUi.toJson(): JSONObject {
+private fun SingBoxProfileSettingUi.toJson(
+  defaultTun: String = "sbtun0",
+  defaultT2sPort: Int = 12345,
+  defaultT2sWebPort: Int = 8001,
+): JSONObject {
   return JSONObject()
     .put("mode", normalizeSingBoxMode(mode))
-    .put("t2s_port", t2sPort ?: 12345)
-    .put("t2s_web_port", t2sWebPort ?: 8001)
-    .put("tun", normalizeSingBoxTunName(tun))
+    .put("t2s_port", t2sPort ?: defaultT2sPort)
+    .put("t2s_web_port", t2sWebPort ?: defaultT2sWebPort)
+    .put("tun", normalizeSingBoxTunName(tun, defaultTun))
     .put("dns", JSONArray().also { arr -> normalizeSingBoxDns(dns).forEach { arr.put(it) } })
     .put("tun2socks_loglevel", normalizeSingBoxTun2socksLogLevel(tun2socksLogLevel))
     .put("proto_mode", normalizeSingBoxProtoMode(protoMode))
@@ -217,7 +236,8 @@ private fun SingBoxProfileSettingUi.toJson(): JSONObject {
 
 private fun singBoxWebPanelUrl(port: Int): String = "http://127.0.0.1:$port/"
 
-private fun singBoxWebPanelScope(profile: String): String = "profile/sing-box/${profile.ifBlank { "main" }}"
+private fun singBoxWebPanelScope(programId: String, profile: String): String =
+  "profile/${programId.ifBlank { "sing-box" }}/${profile.ifBlank { "main" }}"
 
 private suspend fun isSingBoxWebPanelPortOpen(port: Int): Boolean = withContext(Dispatchers.IO) {
   runCatching {
@@ -333,7 +353,11 @@ private fun SingBoxProfileEnabledCard(
       )
     },
     trailing = {
-      Switch(checked = checked, onCheckedChange = onCheckedChange)
+      Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+      )
     },
   ) {
     Surface(
@@ -488,7 +512,12 @@ private fun findSingBoxProxyInboundPort(configText: String): Int? {
   return null
 }
 
-private fun rewriteSingBoxConfigInboundsForT2s(configText: String, port: Int, setting: SingBoxProfileSettingUi): String? {
+private fun rewriteSingBoxConfigInboundsForT2s(
+  configText: String,
+  port: Int,
+  setting: SingBoxProfileSettingUi,
+  preserveLxAdvanced: Boolean = false,
+): String? {
   if (port !in 1..65535) return null
   val root = runCatching { JSONObject(configText) }.getOrNull() ?: return null
   val inbound = JSONObject()
@@ -497,14 +526,24 @@ private fun rewriteSingBoxConfigInboundsForT2s(configText: String, port: Int, se
     .put("listen", "127.0.0.1")
     .put("listen_port", port)
   root.put("inbounds", JSONArray().put(inbound))
-  normalizeSingBoxModernDnsRouteAndDial(root, setting.dns)
+  // LX advanced configs may contain endpoint/outbound fields that evolve faster
+  // than the app. For LX, only the local ingress is rewritten here; the daemon
+  // performs the root-side safe normalization and preserves advanced JSON.
+  if (!preserveLxAdvanced) {
+    normalizeSingBoxModernDnsRouteAndDial(root, setting.dns)
+  }
   return root.toString(2)
 }
 
-private fun rewriteSingBoxConfigInboundsForVpn(configText: String, setting: SingBoxProfileSettingUi, port: Int): String? {
+private fun rewriteSingBoxConfigInboundsForVpn(
+  configText: String,
+  setting: SingBoxProfileSettingUi,
+  port: Int,
+  preserveLxAdvanced: Boolean = false,
+): String? {
   // VPN mode is implemented by ZDT-D with a tun2socks helper. sing-box still receives
   // traffic through the same local mixed inbound; do not create native sing-box TUN inbound.
-  return rewriteSingBoxConfigInboundsForT2s(configText, port, setting)
+  return rewriteSingBoxConfigInboundsForT2s(configText, port, setting, preserveLxAdvanced)
 }
 
 private fun normalizeSingBoxModernDnsRouteAndDial(root: JSONObject, dns: List<String>) {
@@ -687,12 +726,13 @@ private fun rewriteSingBoxConfigInboundsForMode(
   configText: String,
   setting: SingBoxProfileSettingUi,
   serverPort: Int?,
+  preserveLxAdvanced: Boolean = false,
 ): String? {
   val port = serverPort?.takeIf { it in 1..65535 } ?: return null
   return if (setting.isVpn) {
-    rewriteSingBoxConfigInboundsForVpn(configText, setting, port)
+    rewriteSingBoxConfigInboundsForVpn(configText, setting, port, preserveLxAdvanced)
   } else {
-    rewriteSingBoxConfigInboundsForT2s(configText, port, setting)
+    rewriteSingBoxConfigInboundsForT2s(configText, port, setting, preserveLxAdvanced)
   }
 }
 
@@ -765,19 +805,35 @@ private fun findNextAvailableSingBoxPort(
 fun SingBoxProfileScreen(
   programs: List<ApiModels.Program>,
   profile: String,
+  programId: String = "sing-box",
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   tproxyEnabled: Boolean = false,
+  singBoxLxInstalled: Boolean = false,
+  onOpenProgram: ((String) -> Unit)? = null,
+  onOpenOptionalTools: (() -> Unit)? = null,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
   val effectiveTopContentPadding = topContentPadding + 12.dp
   val effectiveBottomContentPadding = bottomContentPadding + if (compact) 12.dp else 16.dp
-  val program = programs.firstOrNull { it.id == "sing-box" }
+  val safeProgramId = remember(programId) { if (programId == "sing-box-lx") "sing-box-lx" else "sing-box" }
+  val importTarget = remember(safeProgramId) {
+    if (safeProgramId == "sing-box-lx") {
+      com.android.zdtd.service.singbox.importer.SingBoxImportTarget.LX
+    } else {
+      com.android.zdtd.service.singbox.importer.SingBoxImportTarget.STANDARD
+    }
+  }
+  val defaultTun = remember(safeProgramId) { if (safeProgramId == "sing-box-lx") "sblxtun0" else "sbtun0" }
+  val defaultT2sPort = remember(safeProgramId) { if (safeProgramId == "sing-box-lx") 12355 else 12345 }
+  val defaultT2sWebPort = remember(safeProgramId) { if (safeProgramId == "sing-box-lx") 8011 else 8001 }
+  val program = programs.firstOrNull { it.id == safeProgramId }
+  val lxAvailable = singBoxLxInstalled || programs.any { it.id == "sing-box-lx" }
   val prof = program?.profiles?.firstOrNull { it.name == profile }
   val encodedProfile = remember(profile) { URLEncoder.encode(profile, "UTF-8") }
-  val basePath = remember(encodedProfile) { "/api/programs/sing-box/profiles/$encodedProfile" }
+  val basePath = remember(encodedProfile, safeProgramId) { "/api/programs/$safeProgramId/profiles/$encodedProfile" }
   val context = LocalContext.current
   val configuration = LocalConfiguration.current
   val scope = rememberCoroutineScope()
@@ -799,6 +855,9 @@ fun SingBoxProfileScreen(
 
   var showCreateServer by remember(profile) { mutableStateOf(false) }
   var showImportServer by remember(profile) { mutableStateOf(false) }
+  var showWarpMasque by remember(profile) { mutableStateOf(false) }
+  var showLxImportRequired by remember(profile) { mutableStateOf(false) }
+  var lxImportRequiredFeature by remember(profile) { mutableStateOf("XHTTP") }
   var importTargetServer by remember(profile) { mutableStateOf<String?>(null) }
   var editServer by remember(profile) { mutableStateOf<String?>(null) }
   var editText by remember(profile) { mutableStateOf("") }
@@ -817,7 +876,7 @@ fun SingBoxProfileScreen(
   fun refreshSetting() {
     settingLoading = true
     actions.loadJsonData("$basePath/setting") { obj ->
-      setting = parseSingBoxProfileSettingUi(obj)
+      setting = parseSingBoxProfileSettingUi(obj, defaultTun, defaultT2sPort, defaultT2sWebPort)
       settingLoading = false
     }
   }
@@ -852,9 +911,9 @@ fun SingBoxProfileScreen(
 
     profileNames.forEach { profileName ->
       val encoded = URLEncoder.encode(profileName, "UTF-8")
-      val profileBasePath = "/api/programs/sing-box/profiles/$encoded"
+      val profileBasePath = "/api/programs/$safeProgramId/profiles/$encoded"
       actions.loadJsonData("$profileBasePath/setting") { obj ->
-        settingsByProfile[profileName] = parseSingBoxProfileSettingUi(obj)
+        settingsByProfile[profileName] = parseSingBoxProfileSettingUi(obj, defaultTun, defaultT2sPort, defaultT2sWebPort)
         finishOne()
       }
       actions.loadJsonData("$profileBasePath/servers") { obj ->
@@ -890,8 +949,12 @@ fun SingBoxProfileScreen(
     refreshGlobalPortRegistry()
   }
 
-  LaunchedEffect(profile, program?.profiles) {
-    refreshAll()
+  LaunchedEffect(profile, program?.profiles, safeProgramId, lxAvailable) {
+    if (safeProgramId == "sing-box-lx" && !lxAvailable) {
+      showLxImportRequired = true
+    } else {
+      refreshAll()
+    }
   }
 
   fun openEditor(serverName: String) {
@@ -905,14 +968,14 @@ fun SingBoxProfileScreen(
     }
   }
 
-  fun currentProfileSetting(): SingBoxProfileSettingUi = setting ?: defaultSingBoxProfileSettingUi()
+  fun currentProfileSetting(): SingBoxProfileSettingUi = setting ?: defaultSingBoxProfileSettingUi(defaultTun, defaultT2sPort, defaultT2sWebPort)
 
   fun saveProfileSetting(next: SingBoxProfileSettingUi, onDone: ((Boolean) -> Unit)? = null) {
     val normalized = next.copy(
       mode = normalizeSingBoxMode(next.mode),
-      t2sPort = next.t2sPort ?: 12345,
-      t2sWebPort = next.t2sWebPort ?: 8001,
-      tun = normalizeSingBoxTunName(next.tun),
+      t2sPort = next.t2sPort ?: defaultT2sPort,
+      t2sWebPort = next.t2sWebPort ?: defaultT2sWebPort,
+      tun = normalizeSingBoxTunName(next.tun, defaultTun),
       dns = normalizeSingBoxDns(next.dns),
       tun2socksLogLevel = normalizeSingBoxTun2socksLogLevel(next.tun2socksLogLevel),
       protoMode = normalizeSingBoxProtoMode(next.protoMode),
@@ -946,7 +1009,7 @@ fun SingBoxProfileScreen(
     }
 
     settingSaving = true
-    actions.saveJsonData("$basePath/setting", normalized.toJson()) { ok ->
+    actions.saveJsonData("$basePath/setting", normalized.toJson(defaultTun, defaultT2sPort, defaultT2sWebPort)) { ok ->
       settingSaving = false
       if (ok) {
         setting = normalized
@@ -978,7 +1041,7 @@ fun SingBoxProfileScreen(
     val encodedServer = URLEncoder.encode(onlyServer.name, "UTF-8")
     actions.loadText("$basePath/servers/$encodedServer/config") { txt ->
       val source = txt?.takeIf { it.trim().isNotBlank() } ?: JSONObject().toString(2)
-      val rewritten = rewriteSingBoxConfigInboundsForMode(source, modeSetting, onlyServer.port ?: 1080)
+      val rewritten = rewriteSingBoxConfigInboundsForMode(source, modeSetting, onlyServer.port ?: 1080, safeProgramId == "sing-box-lx")
       if (rewritten == null) {
         onDone?.invoke(false)
         return@loadText
@@ -1010,11 +1073,11 @@ fun SingBoxProfileScreen(
       val serverPort = servers.firstOrNull { it.name == plan.serverName }?.port
         ?: plan.detectedPort.takeIf { it in 1..65535 }
         ?: 1080
-      rewriteSingBoxConfigInboundsForMode(plan.originalConfig, activeSetting, serverPort)
+      rewriteSingBoxConfigInboundsForMode(plan.originalConfig, activeSetting, serverPort, safeProgramId == "sing-box-lx")
     } else {
       when {
-        plan.replacementPort != null -> rewriteSingBoxConfigInboundsForMode(plan.originalConfig, activeSetting, plan.replacementPort)
-        plan.applyPortToServer -> rewriteSingBoxConfigInboundsForMode(plan.originalConfig, activeSetting, plan.detectedPort)
+        plan.replacementPort != null -> rewriteSingBoxConfigInboundsForMode(plan.originalConfig, activeSetting, plan.replacementPort, safeProgramId == "sing-box-lx")
+        plan.applyPortToServer -> rewriteSingBoxConfigInboundsForMode(plan.originalConfig, activeSetting, plan.detectedPort, safeProgramId == "sing-box-lx")
         else -> plan.originalConfig
       }
     }
@@ -1064,13 +1127,67 @@ fun SingBoxProfileScreen(
     }
   }
 
+  if (showWarpMasque && safeProgramId == "sing-box-lx") {
+    val activeSetting = currentProfileSetting()
+    val preferredPort = findNextAvailableSingBoxPort(globalPortRegistry, 2080)
+    SingBoxLxWarpMasqueDialog(
+      actions = actions,
+      existingServerNames = servers.map { it.name },
+      preferredMixedPort = preferredPort,
+      onDismiss = { showWarpMasque = false },
+      onCreate = createWarp@ { serverName, generatedConfig, localPort ->
+        if (activeSetting.isVpn && servers.isNotEmpty()) {
+          showSnack(context.getString(R.string.singbox_vpn_add_server_blocked))
+          return@createWarp
+        }
+        val configToSave = rewriteSingBoxConfigInboundsForMode(generatedConfig, activeSetting, localPort, true) ?: generatedConfig
+        showWarpMasque = false
+        actions.createSingBoxServer(safeProgramId, profile, serverName) { created ->
+          if (created == null) {
+            showSnack(context.getString(R.string.create_failed))
+            return@createSingBoxServer
+          }
+          val encodedServer = URLEncoder.encode(created, "UTF-8")
+          actions.saveText("$basePath/servers/$encodedServer/config", configToSave) { configOk ->
+            if (!configOk) {
+              actions.deleteSingBoxServer(safeProgramId, profile, created) {
+                showSnack(context.getString(R.string.save_failed))
+                refreshServers()
+                refreshGlobalPortRegistry()
+              }
+              return@saveText
+            }
+            val payload = JSONObject().put("enabled", true).put("port", localPort)
+            actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { settingOk ->
+              if (settingOk) {
+                rememberGeneratedServer(created, localPort)
+                showSnack(context.getString(R.string.warp_masque_created_fmt, created))
+                scope.launch {
+                  delay(250)
+                  refreshServers()
+                  refreshGlobalPortRegistry()
+                }
+              } else {
+                actions.deleteSingBoxServer(safeProgramId, profile, created) {
+                  showSnack(context.getString(R.string.singbox_config_saved_port_update_failed))
+                  refreshServers()
+                  refreshGlobalPortRegistry()
+                }
+              }
+            }
+          }
+        }
+      },
+    )
+  }
+
   if (showCreateServer) {
     SingBoxCreateServerDialog(
       existing = servers.map { it.name },
       onDismiss = { showCreateServer = false },
       onCreate = { name ->
         showCreateServer = false
-        actions.createSingBoxServer(profile, name) { created ->
+        actions.createSingBoxServer(safeProgramId, profile, name) { created ->
           if (created != null) {
             showSnack(context.getString(R.string.singbox_server_created_fmt, created))
             refreshServers()
@@ -1091,17 +1208,37 @@ fun SingBoxProfileScreen(
       existing = servers.map { it.name },
       suggestedPort = findNextAvailableSingBoxPort(globalPortRegistry, 2080),
       lockedServerName = targetServer,
+      isLx = safeProgramId == "sing-box-lx",
       onDismiss = {
         showImportServer = false
         importTargetServer = null
       },
       onGenerate = generate@ { serverName, sourceText ->
         val preferredPort = findNextAvailableSingBoxPort(globalPortRegistry, 2080)
-        val importedResult = runCatching { com.android.zdtd.service.singbox.importer.SingBoxOneLineImporter.import(sourceText, preferredPort) }
+        val importedResult = runCatching {
+          com.android.zdtd.service.singbox.importer.SingBoxOneLineImporter.import(
+            sourceText,
+            preferredPort,
+            importTarget,
+          )
+        }
         val imported = importedResult.getOrNull()
         if (imported == null) {
           val error = importedResult.exceptionOrNull()
-          showSnack(context.getString(R.string.singbox_import_failed_fmt, error?.message ?: context.getString(R.string.singbox_parse_error)))
+          if (error is com.android.zdtd.service.singbox.importer.SingBoxImportCompatibilityException &&
+            error.requiredTarget == com.android.zdtd.service.singbox.importer.SingBoxImportTarget.LX
+          ) {
+            showImportServer = false
+            importTargetServer = null
+            lxImportRequiredFeature = error.feature
+            showLxImportRequired = true
+          } else if (error is com.android.zdtd.service.singbox.importer.SingBoxImportValidationException &&
+            error.code == "vless_encryption_invalid"
+          ) {
+            showSnack(context.getString(R.string.singbox_import_invalid_vless_encryption))
+          } else {
+            showSnack(context.getString(R.string.singbox_import_failed_fmt, error?.message ?: context.getString(R.string.singbox_parse_error)))
+          }
           return@generate
         }
 
@@ -1114,7 +1251,7 @@ fun SingBoxProfileScreen(
             findSingBoxPortConflictLabel(globalPortRegistry, detectedPort, ignoredLabel = targetServer?.let { singBoxServerPortLabel(profile, it) }) == null -> detectedPort
             else -> findNextAvailableSingBoxPort(globalPortRegistry, detectedPort, ignoredLabel = targetServer?.let { singBoxServerPortLabel(profile, it) })
           }
-          configToSave = rewriteSingBoxConfigInboundsForMode(configToSave, activeSetting, resolvedPort) ?: configToSave
+          configToSave = rewriteSingBoxConfigInboundsForMode(configToSave, activeSetting, resolvedPort, safeProgramId == "sing-box-lx") ?: configToSave
           return configToSave to resolvedPort
         }
 
@@ -1169,7 +1306,7 @@ fun SingBoxProfileScreen(
         }
 
         val (configToSave, resolvedPort) = prepareConfig(null)
-        actions.createSingBoxServer(profile, serverName) { created ->
+        actions.createSingBoxServer(safeProgramId, profile, serverName) { created ->
           if (created == null) {
             showSnack(context.getString(R.string.create_failed))
             return@createSingBoxServer
@@ -1181,6 +1318,47 @@ fun SingBoxProfileScreen(
     )
   }
 
+  if (showLxImportRequired) {
+    if (!lxAvailable && onOpenOptionalTools != null) {
+      SingBoxLxInstallRequiredDialog(
+        onDismiss = { showLxImportRequired = false },
+        onOpenOptionalTools = {
+          showLxImportRequired = false
+          onOpenOptionalTools()
+        },
+      )
+    } else {
+      AlertDialog(
+        onDismissRequest = { showLxImportRequired = false },
+        title = { Text(stringResource(R.string.sing_box_lx_install_required_title)) },
+        text = { Text(stringResource(R.string.singbox_import_requires_lx_feature_message, lxImportRequiredFeature)) },
+        confirmButton = {
+          Button(
+            onClick = {
+              showLxImportRequired = false
+              onOpenProgram?.invoke("sing-box-lx")
+            },
+            enabled = lxAvailable && onOpenProgram != null,
+            modifier = Modifier.tvFocusHighlight(
+              RoundedCornerShape(18.dp),
+              lxAvailable && onOpenProgram != null,
+            ),
+          ) {
+            Text(stringResource(R.string.singbox_import_open_lx))
+          }
+        },
+        dismissButton = {
+          OutlinedButton(
+            onClick = { showLxImportRequired = false },
+            modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+          ) {
+            Text(stringResource(R.string.action_cancel))
+          }
+        },
+      )
+    }
+  }
+
   if (editServer != null) {
     AlertDialog(
       onDismissRequest = { if (!editLoading) editServer = null },
@@ -1189,6 +1367,13 @@ fun SingBoxProfileScreen(
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
           if (editLoading) {
             StableLinearProgressIndicator(visible = true)
+          }
+          if (safeProgramId == "sing-box-lx") {
+            Text(
+              stringResource(R.string.singbox_lx_advanced_json_hint),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           }
           OutlinedTextField(
             value = editText,
@@ -1200,7 +1385,10 @@ fun SingBoxProfileScreen(
         }
       },
       confirmButton = {
-        Button(enabled = !editLoading && editText != editLastLoadedText, onClick = {
+        Button(
+          enabled = !editLoading && editText != editLastLoadedText,
+          modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp), !editLoading && editText != editLastLoadedText),
+          onClick = {
           val serverName = editServer ?: return@Button
           val parsed = runCatching { JSONObject(editText.trim()) }.getOrElse {
             showSnack(context.getString(R.string.singbox_invalid_json_fmt, it.message ?: context.getString(R.string.singbox_parse_error)))
@@ -1245,7 +1433,11 @@ fun SingBoxProfileScreen(
         }) { Text(stringResource(R.string.action_save)) }
       },
       dismissButton = {
-        OutlinedButton(enabled = !editLoading, onClick = { editServer = null }) {
+        OutlinedButton(
+          enabled = !editLoading,
+          onClick = { editServer = null },
+          modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp), !editLoading),
+        ) {
           Text(stringResource(R.string.action_cancel))
         }
       }
@@ -1269,10 +1461,13 @@ fun SingBoxProfileScreen(
       title = { Text(stringResource(R.string.singbox_port_sync_title)) },
       text = { Text(message) },
       confirmButton = {
-        Button(onClick = {
+        Button(
+          onClick = {
           pendingConfigPlan = null
           applyConfigPlan(plan)
-        }) {
+        },
+          modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+        ) {
           Text(
             if (plan.conflictServerName == null) stringResource(R.string.singbox_port_sync_apply)
             else stringResource(R.string.singbox_port_sync_replace_and_apply)
@@ -1281,16 +1476,22 @@ fun SingBoxProfileScreen(
       },
       dismissButton = {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedButton(onClick = {
-            pendingConfigPlan = null
-            applyConfigPlan(plan.copy(applyPortToServer = false, replacementPort = null))
-          }) {
+          OutlinedButton(
+            onClick = {
+              pendingConfigPlan = null
+              applyConfigPlan(plan.copy(applyPortToServer = false, replacementPort = null))
+            },
+            modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+          ) {
             Text(
               if (plan.conflictServerName == null) stringResource(R.string.singbox_port_sync_skip_profile)
               else stringResource(R.string.singbox_port_sync_save_config_only)
             )
           }
-          OutlinedButton(onClick = { pendingConfigPlan = null }) {
+          OutlinedButton(
+            onClick = { pendingConfigPlan = null },
+            modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+          ) {
             Text(stringResource(R.string.action_cancel))
           }
         }
@@ -1321,7 +1522,7 @@ fun SingBoxProfileScreen(
 
     SingBoxProfileEnabledCard(
       checked = prof?.enabled ?: false,
-      onCheckedChange = { v -> actions.setProfileEnabled("sing-box", profile, v) },
+      onCheckedChange = { v -> actions.setProfileEnabled(safeProgramId, profile, v) },
     )
 
     AnimatedVisibility(
@@ -1344,9 +1545,9 @@ fun SingBoxProfileScreen(
               if (available) {
                 context.startActivity(
                   Intent(context, T2sPanelActivity::class.java)
-                    .putExtra(T2sPanelActivity.EXTRA_SCOPE, singBoxWebPanelScope(profile))
+                    .putExtra(T2sPanelActivity.EXTRA_SCOPE, singBoxWebPanelScope(safeProgramId, profile))
                     .putExtra(T2sPanelActivity.EXTRA_PORT, port)
-                    .putExtra(T2sPanelActivity.EXTRA_TITLE, "sing-box / $profile")
+                    .putExtra(T2sPanelActivity.EXTRA_TITLE, "$safeProgramId / $profile")
                 )
               } else {
                 showSnack(context.getString(R.string.web_panel_unavailable))
@@ -1430,6 +1631,7 @@ fun SingBoxProfileScreen(
     )
 
     SingBoxServersSection(
+      programId = safeProgramId,
       profile = profile,
       basePath = basePath,
       setting = activeSetting,
@@ -1452,6 +1654,15 @@ fun SingBoxProfileScreen(
           showImportServer = true
         }
       },
+      onAddWarpMasque = if (safeProgramId == "sing-box-lx") {
+        {
+          if (activeSetting.isVpn && servers.isNotEmpty()) {
+            showSnack(context.getString(R.string.singbox_vpn_add_server_blocked))
+          } else {
+            showWarpMasque = true
+          }
+        }
+      } else null,
       onRefresh = { refreshServers() },
       onServerSaved = { updated ->
         servers = servers.map { if (it.name == updated.name) updated else it }
@@ -1494,6 +1705,7 @@ private fun SingBoxEndpointResolveCard(
         checked = enabled,
         enabled = !loading && !saving,
         onCheckedChange = onToggle,
+        modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp), !loading && !saving),
       )
     }
   }
@@ -1718,7 +1930,9 @@ private fun SingBoxModeOption(
 ) {
   val alpha = if (enabled) 1f else 0.46f
   Surface(
-    modifier = modifier.clickable(enabled = enabled && !selected) { onClick() },
+    modifier = modifier
+      .tvFocusHighlight(RoundedCornerShape(18.dp), enabled)
+      .clickable(enabled = enabled && !selected) { onClick() },
     shape = RoundedCornerShape(18.dp),
     color = accent.copy(alpha = if (selected) 0.20f else 0.08f),
     contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
@@ -1741,7 +1955,10 @@ private fun SingBoxVpnStructureWarningCard(onSwitchToT2s: () -> Unit) {
         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
         style = MaterialTheme.typography.bodySmall,
       )
-      OutlinedButton(onClick = onSwitchToT2s, modifier = Modifier.fillMaxWidth()) {
+      OutlinedButton(
+        onClick = onSwitchToT2s,
+        modifier = Modifier.fillMaxWidth().tvFocusHighlight(RoundedCornerShape(18.dp)),
+      ) {
         Text(stringResource(R.string.singbox_switch_to_t2s))
       }
     }
@@ -1860,6 +2077,7 @@ private fun SingBoxVpnProfileCard(
 
 @Composable
 private fun SingBoxServersSection(
+  programId: String,
   profile: String,
   basePath: String,
   setting: SingBoxProfileSettingUi,
@@ -1869,6 +2087,7 @@ private fun SingBoxServersSection(
   snackHost: SnackbarHostState,
   onCreateServer: () -> Unit,
   onGenerateServer: () -> Unit,
+  onAddWarpMasque: (() -> Unit)? = null,
   onRefresh: () -> Unit,
   onServerSaved: (SingBoxServerUi) -> Unit,
   onEditConfig: (String) -> Unit,
@@ -1905,6 +2124,7 @@ private fun SingBoxServersSection(
       Surface(
         modifier = Modifier
           .weight(1f)
+          .tvFocusHighlight(RoundedCornerShape(100.dp), createEnabled)
           .clickable(enabled = createEnabled) { onCreateServer() },
         shape = RoundedCornerShape(100.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -1924,6 +2144,7 @@ private fun SingBoxServersSection(
       Surface(
         modifier = Modifier
           .weight(1f)
+          .tvFocusHighlight(RoundedCornerShape(100.dp), createEnabled)
           .clickable(enabled = createEnabled) { onGenerateServer() },
         shape = RoundedCornerShape(100.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -1936,6 +2157,29 @@ private fun SingBoxServersSection(
           horizontalArrangement = Arrangement.Center,
         ) {
           Text(stringResource(R.string.singbox_import_action), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+      }
+    }
+
+    if (onAddWarpMasque != null) {
+      Surface(
+        modifier = Modifier
+          .fillMaxWidth()
+          .tvFocusHighlight(RoundedCornerShape(100.dp), createEnabled)
+          .clickable(enabled = createEnabled) { onAddWarpMasque() },
+        shape = RoundedCornerShape(100.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        contentColor = if (createEnabled) Color(0xFFF97316) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+        border = BorderStroke(1.dp, Color(0xFFF97316).copy(alpha = if (createEnabled) 0.48f else 0.18f)),
+      ) {
+        Row(
+          modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.Center,
+        ) {
+          Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(17.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.warp_masque_add_action), fontWeight = FontWeight.Bold)
         }
       }
     }
@@ -1958,6 +2202,7 @@ private fun SingBoxServersSection(
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         servers.forEach { server ->
           SingBoxServerCard(
+            programId = programId,
             profile = profile,
             basePath = basePath,
             server = server,
@@ -1976,6 +2221,7 @@ private fun SingBoxServersSection(
 
 @Composable
 private fun SingBoxServerCard(
+  programId: String,
   profile: String,
   basePath: String,
   server: SingBoxServerUi,
@@ -2077,9 +2323,10 @@ private fun SingBoxServerCard(
       title = { Text(stringResource(R.string.singbox_delete_server_title)) },
       text = { Text(context.getString(R.string.singbox_delete_server_message_fmt, profile, server.name)) },
       confirmButton = {
-        Button(onClick = {
+        Button(
+          onClick = {
           askDelete = false
-          actions.deleteSingBoxServer(profile, server.name) { ok ->
+          actions.deleteSingBoxServer(programId, profile, server.name) { ok ->
             if (ok) {
               showSnack(context.getString(R.string.deleted))
               onRefresh()
@@ -2087,10 +2334,15 @@ private fun SingBoxServerCard(
               showSnack(context.getString(R.string.delete_failed))
             }
           }
-        }) { Text(stringResource(R.string.action_delete)) }
+        },
+          modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+        ) { Text(stringResource(R.string.action_delete)) }
       },
       dismissButton = {
-        OutlinedButton(onClick = { askDelete = false }) { Text(stringResource(R.string.action_cancel)) }
+        OutlinedButton(
+          onClick = { askDelete = false },
+          modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+        ) { Text(stringResource(R.string.action_cancel)) }
       }
     )
   }
@@ -2149,7 +2401,11 @@ private fun SingBoxServerCard(
               overflow = TextOverflow.Ellipsis,
             )
           }
-          Switch(checked = enabled, onCheckedChange = { enabled = it })
+          Switch(
+            checked = enabled,
+            onCheckedChange = { enabled = it },
+            modifier = Modifier.tvFocusHighlight(RoundedCornerShape(18.dp)),
+          )
         }
 
         server.subscriptionLink?.let { link ->
@@ -2187,7 +2443,7 @@ private fun SingBoxServerCard(
               OutlinedButton(
                 enabled = !saving,
                 onClick = { sniMenu = true },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().tvFocusHighlight(RoundedCornerShape(18.dp), !saving),
               ) {
                 Text(
                   selectedSni ?: server.sniOptions.first(),
@@ -2214,7 +2470,10 @@ private fun SingBoxServerCard(
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           Surface(
-            modifier = Modifier.weight(1f).clickable { onEditConfig() },
+            modifier = Modifier
+              .weight(1f)
+              .tvFocusHighlight(RoundedCornerShape(100.dp))
+              .clickable { onEditConfig() },
             shape = RoundedCornerShape(100.dp),
             color = Color(0xFF38BDF8).copy(alpha = 0.13f),
             contentColor = Color(0xFF7DD3FC),
@@ -2231,7 +2490,10 @@ private fun SingBoxServerCard(
             }
           }
           Surface(
-            modifier = Modifier.weight(1f).clickable { askDelete = true },
+            modifier = Modifier
+              .weight(1f)
+              .tvFocusHighlight(RoundedCornerShape(100.dp))
+              .clickable { askDelete = true },
             shape = RoundedCornerShape(100.dp),
             color = Color(0xFFEF4444).copy(alpha = 0.13f),
             contentColor = Color(0xFFFCA5A5),
@@ -2348,11 +2610,14 @@ private fun SingBoxCreateServerDialog(
           }
 
           Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+              onClick = onDismiss,
+              modifier = Modifier.weight(1f).tvFocusHighlight(RoundedCornerShape(18.dp)),
+            ) {
               Text(stringResource(R.string.action_cancel))
             }
             Button(
-              modifier = Modifier.weight(1f),
+              modifier = Modifier.weight(1f).tvFocusHighlight(RoundedCornerShape(18.dp), name.isNotBlank()),
               enabled = name.isNotBlank(),
               onClick = {
                 val n = name.trim()
@@ -2385,6 +2650,7 @@ private fun SingBoxImportToProfileDialog(
   existing: List<String>,
   suggestedPort: Int,
   lockedServerName: String? = null,
+  isLx: Boolean = false,
   onDismiss: () -> Unit,
   onGenerate: (String, String) -> Unit,
   snackHost: SnackbarHostState,
@@ -2444,7 +2710,7 @@ private fun SingBoxImportToProfileDialog(
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
               Text(
-                stringResource(R.string.singbox_import_dialog_title),
+                stringResource(if (isLx) R.string.singbox_lx_import_dialog_title else R.string.singbox_import_dialog_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
@@ -2466,7 +2732,7 @@ private fun SingBoxImportToProfileDialog(
             border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.14f)),
           ) {
             Text(
-              stringResource(R.string.singbox_import_dialog_desc),
+              stringResource(if (isLx) R.string.singbox_lx_import_dialog_desc else R.string.singbox_import_dialog_desc),
               modifier = Modifier.fillMaxWidth().padding(12.dp),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
@@ -2509,11 +2775,15 @@ private fun SingBoxImportToProfileDialog(
           )
 
           Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+              onClick = onDismiss,
+              modifier = Modifier.weight(1f).tvFocusHighlight(RoundedCornerShape(18.dp)),
+            ) {
               Text(stringResource(R.string.action_cancel))
             }
             Button(
-              modifier = Modifier.weight(1f),
+              modifier = Modifier.weight(1f).tvFocusHighlight(RoundedCornerShape(18.dp), source.isNotBlank() && name.isNotBlank()),
+              enabled = source.isNotBlank() && name.isNotBlank(),
               onClick = {
                 val n = name.trim()
                 when {

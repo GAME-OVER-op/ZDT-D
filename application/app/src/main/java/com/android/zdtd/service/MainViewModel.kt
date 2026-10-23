@@ -23,6 +23,10 @@ import com.android.zdtd.service.api.ApiModels
 import com.android.zdtd.service.api.DeviceInfo
 import com.android.zdtd.service.remote.RemoteControlCenter
 import com.android.zdtd.service.remote.RemoteRootClient
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentError
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentRepository
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentStage
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentState
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentRepository
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentStage
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
@@ -228,6 +232,7 @@ data class UiState(
   val daemonLogTail: String = "",
   val daemonLogDetailedTail: String = "",
   val tgWsProxy: TgWsProxyComponentState = TgWsProxyComponentState(),
+  val singBoxLx: SingBoxLxComponentState = SingBoxLxComponentState(),
 )
 
 private data class StartupTimingPlan(
@@ -343,6 +348,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   )
   private val remoteRoot = RemoteRootClient()
   private val tgWsProxyRepository = TgWsProxyComponentRepository(ctx, root)
+  private val singBoxLxRepository = SingBoxLxComponentRepository(ctx, root)
 
   private val hotspotSettingsMutex = Mutex()
 
@@ -6923,8 +6929,16 @@ private fun shQuote(s: String): String {
 
   override fun refreshOptionalTools() {
     launchIO {
-      val state = runCatching { tgWsProxyRepository.currentState() }.getOrDefault(TgWsProxyComponentState(stage = TgWsProxyComponentStage.FAILED, errorMessage = "Status check failed"))
-      _uiState.update { it.copy(tgWsProxy = state) }
+      val tgWsState = runCatching { tgWsProxyRepository.currentState() }
+        .getOrDefault(TgWsProxyComponentState(stage = TgWsProxyComponentStage.FAILED, errorMessage = "Status check failed"))
+      val lxState = runCatching { singBoxLxRepository.currentState() }
+        .getOrDefault(
+          SingBoxLxComponentState(
+            stage = SingBoxLxComponentStage.FAILED,
+            error = SingBoxLxComponentError.STATUS,
+          )
+        )
+      _uiState.update { it.copy(tgWsProxy = tgWsState, singBoxLx = lxState) }
     }
   }
 
@@ -6959,6 +6973,57 @@ private fun shQuote(s: String): String {
       } else if (state.stage == TgWsProxyComponentStage.FAILED) {
         log("ERR", "tg-ws-proxy remove failed: ${state.errorMessage ?: "unknown"}")
       }
+    }
+  }
+
+
+  override fun installSingBoxLx() {
+    launchIO {
+      val initial = SingBoxLxComponentState(
+        stage = SingBoxLxComponentStage.DOWNLOADING,
+        selectedAbi = _uiState.value.singBoxLx.selectedAbi,
+      )
+      _uiState.update { it.copy(singBoxLx = initial) }
+      val finalState = singBoxLxRepository.downloadAndInstall { state ->
+        _uiState.update { it.copy(singBoxLx = state) }
+      }
+      _uiState.update { it.copy(singBoxLx = finalState) }
+      if (finalState.installed && finalState.stage == SingBoxLxComponentStage.INSTALLED) {
+        log("OK", "sing-box-lx installed (${finalState.selectedAbi}, ${finalState.installedVersion})")
+      } else {
+        log(
+          "ERR",
+          "sing-box-lx install failed: ${finalState.error?.name ?: "unknown"}${finalState.errorDetail?.let { ": $it" } ?: ""}",
+        )
+      }
+      // Refresh the daemon program list immediately so the newly installed optional core appears
+      // without restarting the application.
+      lastProgramsFetchAtMs = 0L
+      refreshProgramsNow(force = true)
+    }
+  }
+
+  override fun removeSingBoxLx() {
+    launchIO {
+      val state = runCatching { singBoxLxRepository.remove() }.getOrElse {
+        SingBoxLxComponentState(
+          stage = SingBoxLxComponentStage.FAILED,
+          installed = singBoxLxRepository.isInstalled(),
+          error = SingBoxLxComponentError.REMOVE,
+          errorDetail = it.message ?: it.javaClass.simpleName,
+        )
+      }
+      _uiState.update { it.copy(singBoxLx = state) }
+      if (!state.installed && state.stage != SingBoxLxComponentStage.FAILED) {
+        log("OK", "sing-box-lx removed")
+      } else if (state.stage == SingBoxLxComponentStage.FAILED) {
+        log(
+          "ERR",
+          "sing-box-lx remove failed: ${state.errorDetail ?: state.error?.name ?: "unknown"}",
+        )
+      }
+      lastProgramsFetchAtMs = 0L
+      refreshProgramsNow(force = true)
     }
   }
 
@@ -7002,6 +7067,7 @@ private fun shQuote(s: String): String {
     "byedpi",
     "dpitunnel",
     "sing-box",
+    "sing-box-lx",
     "hysteria2",
     "wireproxy",
     "myproxy",
@@ -7193,6 +7259,37 @@ private fun shQuote(s: String): String {
         log("OK", "sing-box/$safeProfile/$safeServer deleted")
       } else {
         log("ERR", "sing-box/$safeProfile/$safeServer delete failed")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+  override fun createSingBoxServer(programId: String, profile: String, server: String, onDone: (String?) -> Unit) {
+    launchIO {
+      val safeProgram = programId.trim()
+      val safeProfile = profile.trim()
+      val safeServer = server.trim()
+      val ok = runCatching { api.createSingBoxServer(safeProgram, safeProfile, safeServer) }.getOrDefault(false)
+      if (ok) {
+        log("OK", "$safeProgram/$safeProfile/$safeServer created (apply after stop/start)")
+        withContext(Dispatchers.Main.immediate) { onDone(safeServer) }
+      } else {
+        log("ERR", "$safeProgram/$safeProfile/$safeServer create failed")
+        withContext(Dispatchers.Main.immediate) { onDone(null) }
+      }
+    }
+  }
+
+  override fun deleteSingBoxServer(programId: String, profile: String, server: String, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val safeProgram = programId.trim()
+      val safeProfile = profile.trim()
+      val safeServer = server.trim()
+      val ok = runCatching { api.deleteSingBoxServer(safeProgram, safeProfile, safeServer) }.getOrDefault(false)
+      if (ok) {
+        log("OK", "$safeProgram/$safeProfile/$safeServer deleted")
+      } else {
+        log("ERR", "$safeProgram/$safeProfile/$safeServer delete failed")
       }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }

@@ -800,6 +800,11 @@ Instale o módulo novamente.</string>
     <string name="singbox_import_dialog_title">Gerar servidor sing-box</string>
     <string name="singbox_import_dialog_beta_warning">Recurso beta. Revise o resultado com atenção se usar parâmetros incomuns.</string>
     <string name="singbox_import_dialog_desc">Cole uma configuração de uma linha como vless://, vmess://, trojan://, ss:// ou socks://. Um novo servidor e suas configurações serão criados automaticamente.</string>
+    <string name="singbox_lx_import_dialog_title">Gerar servidor sing-box-lx</string>
+    <string name="singbox_lx_import_dialog_desc">Cole um link VLESS, VMess, Trojan, Shadowsocks ou SOCKS, ou um JSON completo. Links XHTTP/splithttp são importados como transporte XHTTP nativo do sing-box-lx.</string>
+    <string name="singbox_import_requires_lx_title">Este link requer sing-box-lx</string>
+    <string name="singbox_import_requires_lx_message">A configuração usa XHTTP, que não é compatível com o núcleo sing-box padrão. Importe-a pela ferramenta sing-box-lx.</string>
+    <string name="singbox_import_open_lx">Abrir sing-box-lx</string>
     <string name="singbox_import_auto_port_hint">Uma porta mixed-in livre será atribuída automaticamente. Porta sugerida: %1$d.</string>
     <string name="singbox_import_source_label">Configuração de uma linha</string>
     <string name="singbox_import_source_support_hint">Compatível: vless, vmess, trojan, shadowsocks e socks. JSON completo também é aceito.</string>
@@ -1214,6 +1219,17 @@ A proteção não funciona no modo ponto de acesso. Se o ponto de acesso estiver
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Proxy WS do Telegram</string>
     <string name="tg_ws_proxy_desc">Utilitário de proxy Telegram MTProto → WebSocket.</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">Núcleo sing-box estendido opcional com XHTTP, MASQUE/WARP, AmneziaWG 3.x e recursos VLESS adicionais.</string>
+    <string name="sing_box_lx_install_required_title">sing-box-lx necessário</string>
+    <string name="sing_box_lx_install_required_message">Esta ação requer o componente opcional sing-box-lx. Instale-o em Ferramentas adicionais para continuar.</string>
+    <string name="sing_box_lx_open_optional_tools">Abrir ferramentas adicionais</string>
+    <string name="sing_box_lx_error_status">Não foi possível verificar o status de instalação do sing-box-lx.</string>
+    <string name="sing_box_lx_error_unsupported_abi">ABI de CPU não suportada: %1$s</string>
+    <string name="sing_box_lx_error_download">Não foi possível baixar o sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_package">Falha na verificação do pacote sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_install">Não foi possível instalar o sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_remove">Não foi possível remover o sing-box-lx: %1$s</string>
     <string name="apps_list_desc_tgwsproxy">Utilitário de proxy Telegram MTProto → WebSocket.</string>
 
     <string name="world_map_title">Mapa-múndi</string>
@@ -2606,4 +2622,72 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">Informe uma URL de proxy HTTP, HTTPS, SOCKS5 ou SOCKS5H válida com host e porta.</string>
     <string name="non_root_log_opera_upstream">Proxy de saída do Opera: %1$s</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">Requer sing-box-lx</string>
+    <string name="subscription_lx_required_hint">Este nó usa XHTTP ou outro recurso disponível apenas no sing-box-lx.</string>
+    <string name="subscription_lx_not_installed_hint">Este nó requer sing-box-lx. Instale o componente opcional para importá-lo.</string>
+    <string name="subscription_install_required_short">instalação necessária</string>
+    <string name="subscription_bulk_import_section">Importação em massa</string>
+    <string name="subscription_bulk_import_desc">Importa todos os nós compatíveis desta assinatura para um perfil. Nós já vinculados são ignorados.</string>
+    <string name="subscription_bulk_import_to">Importar todos para %1$s (%2$d)</string>
+    <string name="subscription_bulk_import_title">Importação em massa para %1$s</string>
+    <string name="subscription_bulk_import_count">%1$d nós compatíveis</string>
+    <string name="subscription_bulk_import_naming_hint">Os nomes dos servidores são gerados a partir dos nós; conflitos recebem um sufixo numérico. Para vários servidores é necessário um perfil T2S.</string>
+    <string name="subscription_bulk_import_result">Importados %1$d · ignorados %2$d · falharam %3$d</string>
+    <string name="subscription_bulk_import_failed">Falha na importação em massa</string>
+    <string name="subscription_target_choice">Destino da importação</string>
+    <string name="subscription_new_profile_name">Nome do novo perfil</string>
+    <string name="subscription_create_profile">Criar perfil</string>
+    <string name="subscription_profile_created">Perfil %1$s criado</string>
+    <string name="subscription_profile_create_failed">Não foi possível criar o perfil de destino</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">Cria um nó WARP por MASQUE (CONNECT-IP sobre HTTP/3 ou HTTP/2). A chave privada P-256 é gerada neste dispositivo e nunca é enviada a terceiros.</string>
+    <string name="warp_masque_cache_loading">Verificando o registro WARP salvo…</string>
+    <string name="warp_masque_cache_ready">O registro MASQUE salvo está pronto</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">Não foi possível ler o registro MASQUE salvo.</string>
+    <string name="warp_masque_cache_missing">Não há registro MASQUE salvo. Um novo dispositivo Cloudflare WARP será registrado.</string>
+    <string name="warp_masque_server_name">Nome do servidor</string>
+    <string name="warp_masque_transport_fmt">Transporte: %1$s</string>
+    <string name="warp_masque_transport_auto">Auto (HTTP/3 → HTTP/2)</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">IP ou host do endpoint</string>
+    <string name="warp_masque_endpoint_hint">Vazio = endpoint do registro (%1$s)</string>
+    <string name="warp_masque_endpoint_port">Porta do endpoint</string>
+    <string name="warp_masque_endpoint_port_hint">Vazio = porta do registro (%1$d)</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">Padrão: www.cloudflare.com. Você pode definir outro SNI que funcione na sua rede.</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">Tempo ocioso, minutos</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive, segundos</string>
+    <string name="warp_masque_optional_default">Opcional. Vazio = padrão do sing-box-lx.</string>
+    <string name="warp_masque_keepalive_h2">Não usado com HTTP/2 fixo.</string>
+    <string name="warp_masque_reregister">Registrar WARP novamente</string>
+    <string name="warp_masque_reregister_hint">Gera novas chaves e cria um novo dispositivo Cloudflare WARP em vez de usar o registro salvo.</string>
+    <string name="warp_masque_clear_cache">Limpar registro MASQUE salvo</string>
+    <string name="warp_masque_create_cached">Criar do registro salvo</string>
+    <string name="warp_masque_register_create">Registrar e criar</string>
+    <string name="warp_masque_add_action">Obter WARP / MASQUE</string>
+    <string name="warp_masque_created_fmt">Servidor WARP MASQUE criado: %1$s</string>
+    <string name="warp_masque_error_name">Digite um nome de servidor.</string>
+    <string name="warp_masque_error_name_exists">Já existe um servidor com esse nome.</string>
+    <string name="warp_masque_error_port">A porta do endpoint deve estar entre 1 e 65535.</string>
+    <string name="warp_masque_error_mtu">O MTU deve estar entre 576 e 16000.</string>
+    <string name="warp_masque_error_idle">O tempo ocioso deve ser de 1 a 1440 minutos ou ficar vazio.</string>
+    <string name="warp_masque_error_keepalive">O keep-alive deve ser de 1 a 3600 segundos ou ficar vazio.</string>
+    <string name="warp_masque_error_config">Não foi possível criar a configuração MASQUE.</string>
+    <string name="warp_masque_error_registration">Falha no registro Cloudflare WARP MASQUE.</string>
+    <string name="warp_masque_error_cache_save">O registro foi concluído, mas não pôde ser salvo com segurança no módulo root.</string>
+    <string name="warp_masque_error_cache_clear">Não foi possível limpar o registro MASQUE salvo.</string>
+    <string name="warp_masque_error_network">Não foi possível acessar o serviço de registro do Cloudflare WARP. Verifique a conexão e tente novamente.</string>
+    <string name="warp_masque_error_api_http">O serviço de registro do Cloudflare WARP retornou HTTP %1$d. A API pode ter mudado.</string>
+    <string name="warp_masque_error_response">O Cloudflare retornou uma resposta WARP MASQUE inválida ou incompleta.</string>
+    <string name="warp_masque_error_crypto">Não foi possível gerar a chave P-256 local para o WARP MASQUE.</string>
+    <string name="singbox_import_requires_lx_feature_message">Esta configuração usa %1$s, que requer o sing-box-lx. Importe-a pela ferramenta sing-box-lx.</string>
+    <string name="singbox_import_invalid_vless_encryption">O valor de criptografia VLESS está malformado. O ML-KEM deve usar o formato mlkem768x25519plus….</string>
+    <string name="singbox_lx_advanced_json_hint">Os campos JSON avançados do sing-box-lx são preservados. O ZDT-D gerencia apenas o mixed inbound local e adiciona padrões seguros de DNS/roteamento quando estiverem ausentes.</string>
 </resources>

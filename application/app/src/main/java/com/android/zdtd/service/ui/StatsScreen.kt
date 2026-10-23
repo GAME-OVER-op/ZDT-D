@@ -192,6 +192,10 @@ fun StatsScreen(
         add(ProcRow("opera-proxy", "opera-proxy", r?.opera?.opera ?: ApiModels.ProcAgg(), "operaproxy", configuredEnabled = enabled("operaproxy")))
         add(ProcRow("opera-byedpi", "opera-ByeDPI", r?.opera?.byedpi ?: ApiModels.ProcAgg(), "operaproxy", "byedpi", configuredEnabled = enabled("operaproxy")))
         add(ProcRow("sing-box", "sing-box", r?.singBox ?: ApiModels.ProcAgg(), "sing-box", configuredEnabled = enabled("sing-box")))
+        val singBoxLxAgg = r?.singBoxLx ?: ApiModels.ProcAgg()
+        if ("sing-box-lx" in installedProgramIds || singBoxLxAgg.count > 0) {
+          add(ProcRow("sing-box-lx", "sing-box-lx", singBoxLxAgg, "sing-box-lx", configuredEnabled = enabled("sing-box-lx")))
+        }
         add(
           ProcRow(
             key = "t2s",

@@ -800,6 +800,11 @@ APatch: 10700+</string>
     <string name="singbox_import_dialog_title">ساخت سرور sing-box</string>
     <string name="singbox_import_dialog_beta_warning">قابلیت آزمایشی است. اگر پارامترهای غیرمعمول استفاده می‌کنید، نتیجه را با دقت بررسی کنید.</string>
     <string name="singbox_import_dialog_desc">یک پیکربندی تک‌خطی مانند vless://، vmess://، trojan://، ss:// یا socks:// بچسبانید. سرور جدید و تنظیماتش به‌طور خودکار ایجاد می‌شوند.</string>
+    <string name="singbox_lx_import_dialog_title">ساخت سرور sing-box-lx</string>
+    <string name="singbox_lx_import_dialog_desc">یک پیوند VLESS، VMess، Trojan، Shadowsocks یا SOCKS یا JSON کامل را جای‌گذاری کنید. پیوندهای XHTTP/splithttp به‌صورت انتقال بومی XHTTP در sing-box-lx وارد می‌شوند.</string>
+    <string name="singbox_import_requires_lx_title">این پیوند به sing-box-lx نیاز دارد</string>
+    <string name="singbox_import_requires_lx_message">این پیکربندی از XHTTP استفاده می‌کند که هسته استاندارد sing-box از آن پشتیبانی نمی‌کند. آن را از ابزار sing-box-lx وارد کنید.</string>
+    <string name="singbox_import_open_lx">باز کردن sing-box-lx</string>
     <string name="singbox_import_auto_port_hint">یک پورت mixed-in آزاد به‌طور خودکار اختصاص داده می‌شود. پورت پیشنهادی: %1$d.</string>
     <string name="singbox_import_source_label">پیکربندی تک‌خطی</string>
     <string name="singbox_import_source_support_hint">پشتیبانی‌شده: vless، vmess، trojan، shadowsocks، socks. JSON کامل نیز پذیرفته می‌شود.</string>
@@ -1214,6 +1219,17 @@ APatch: 10700+</string>
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">پراکسی WS تلگرام</string>
     <string name="tg_ws_proxy_desc">ابزار پراکسی Telegram MTProto ← WebSocket.</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">هستهٔ توسعه‌یافتهٔ اختیاری sing-box با پشتیبانی از XHTTP، MASQUE/WARP، AmneziaWG 3.x و قابلیت‌های بیشتر VLESS.</string>
+    <string name="sing_box_lx_install_required_title">sing-box-lx لازم است</string>
+    <string name="sing_box_lx_install_required_message">این عمل به مؤلفهٔ اختیاری sing-box-lx نیاز دارد. برای ادامه آن را از ابزارهای اضافی نصب کنید.</string>
+    <string name="sing_box_lx_open_optional_tools">باز کردن ابزارهای اضافی</string>
+    <string name="sing_box_lx_error_status">بررسی وضعیت نصب sing-box-lx ممکن نشد.</string>
+    <string name="sing_box_lx_error_unsupported_abi">ABI پردازنده پشتیبانی نمی‌شود: %1$s</string>
+    <string name="sing_box_lx_error_download">دانلود sing-box-lx ناموفق بود: %1$s</string>
+    <string name="sing_box_lx_error_package">اعتبارسنجی بستهٔ sing-box-lx ناموفق بود: %1$s</string>
+    <string name="sing_box_lx_error_install">نصب sing-box-lx ناموفق بود: %1$s</string>
+    <string name="sing_box_lx_error_remove">حذف sing-box-lx ناموفق بود: %1$s</string>
     <string name="apps_list_desc_tgwsproxy">ابزار پراکسی Telegram MTProto ← WebSocket.</string>
 
     <string name="world_map_title">نقشه جهان</string>
@@ -2606,4 +2622,72 @@ APatch: 10700+</string>
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">یک URL معتبر HTTP، HTTPS، SOCKS5 یا SOCKS5H همراه میزبان و پورت وارد کنید.</string>
     <string name="non_root_log_opera_upstream">پراکسی بالادستی Opera: %1$s</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">نیازمند sing-box-lx</string>
+    <string name="subscription_lx_required_hint">این گره از XHTTP یا قابلیتی استفاده می‌کند که فقط در sing-box-lx موجود است.</string>
+    <string name="subscription_lx_not_installed_hint">این گره به sing-box-lx نیاز دارد. برای وارد کردن، مؤلفه اختیاری را نصب کنید.</string>
+    <string name="subscription_install_required_short">نیاز به نصب</string>
+    <string name="subscription_bulk_import_section">وارد کردن گروهی</string>
+    <string name="subscription_bulk_import_desc">همه گره‌های سازگار این اشتراک را به یک نمایه وارد می‌کند. گره‌های از قبل متصل رد می‌شوند.</string>
+    <string name="subscription_bulk_import_to">وارد کردن همه به %1$s (%2$d)</string>
+    <string name="subscription_bulk_import_title">وارد کردن گروهی به %1$s</string>
+    <string name="subscription_bulk_import_count">%1$d گره سازگار</string>
+    <string name="subscription_bulk_import_naming_hint">نام سرورها از نام گره‌ها ساخته می‌شود و در تداخل پسوند عددی می‌گیرد. برای چند سرور نمایه T2S لازم است.</string>
+    <string name="subscription_bulk_import_result">وارد شد %1$d · رد شد %2$d · ناموفق %3$d</string>
+    <string name="subscription_bulk_import_failed">وارد کردن گروهی ناموفق بود</string>
+    <string name="subscription_target_choice">هدف وارد کردن</string>
+    <string name="subscription_new_profile_name">نام نمایه جدید</string>
+    <string name="subscription_create_profile">ایجاد نمایه</string>
+    <string name="subscription_profile_created">نمایه %1$s ایجاد شد</string>
+    <string name="subscription_profile_create_failed">ایجاد نمایه مقصد ممکن نشد</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">یک گره WARP از طریق MASQUE ‏(CONNECT-IP روی HTTP/3 یا HTTP/2) می‌سازد. کلید خصوصی P-256 روی همین دستگاه ساخته می‌شود و برای سرویس‌های ثالث ارسال نمی‌شود.</string>
+    <string name="warp_masque_cache_loading">در حال بررسی ثبت WARP ذخیره‌شده…</string>
+    <string name="warp_masque_cache_ready">ثبت MASQUE ذخیره‌شده آماده است</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">خواندن ثبت MASQUE ذخیره‌شده ممکن نشد.</string>
+    <string name="warp_masque_cache_missing">ثبت MASQUE ذخیره‌شده‌ای وجود ندارد. یک دستگاه Cloudflare WARP جدید ثبت می‌شود.</string>
+    <string name="warp_masque_server_name">نام سرور</string>
+    <string name="warp_masque_transport_fmt">انتقال: %1$s</string>
+    <string name="warp_masque_transport_auto">خودکار (HTTP/3 → HTTP/2)</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">IP یا میزبان Endpoint</string>
+    <string name="warp_masque_endpoint_hint">خالی = Endpoint ثبت (%1$s)</string>
+    <string name="warp_masque_endpoint_port">پورت Endpoint</string>
+    <string name="warp_masque_endpoint_port_hint">خالی = پورت ثبت (%1$d)</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">پیش‌فرض: www.cloudflare.com. می‌توانید SNI دیگری که در شبکه شما کار می‌کند وارد کنید.</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">مهلت بیکاری، دقیقه</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive، ثانیه</string>
+    <string name="warp_masque_optional_default">اختیاری. خالی = مقدار پیش‌فرض sing-box-lx.</string>
+    <string name="warp_masque_keepalive_h2">با HTTP/2 ثابت استفاده نمی‌شود.</string>
+    <string name="warp_masque_reregister">ثبت دوباره WARP</string>
+    <string name="warp_masque_reregister_hint">به‌جای ثبت ذخیره‌شده، کلیدهای جدید و یک دستگاه Cloudflare WARP جدید ایجاد می‌کند.</string>
+    <string name="warp_masque_clear_cache">پاک کردن ثبت MASQUE ذخیره‌شده</string>
+    <string name="warp_masque_create_cached">ساخت از ثبت ذخیره‌شده</string>
+    <string name="warp_masque_register_create">ثبت و ایجاد</string>
+    <string name="warp_masque_add_action">دریافت WARP / MASQUE</string>
+    <string name="warp_masque_created_fmt">سرور WARP MASQUE ساخته شد: %1$s</string>
+    <string name="warp_masque_error_name">نام سرور را وارد کنید.</string>
+    <string name="warp_masque_error_name_exists">سروری با این نام از قبل وجود دارد.</string>
+    <string name="warp_masque_error_port">پورت Endpoint باید بین 1 تا 65535 باشد.</string>
+    <string name="warp_masque_error_mtu">MTU باید بین 576 تا 16000 باشد.</string>
+    <string name="warp_masque_error_idle">مهلت بیکاری باید بین 1 تا 1440 دقیقه یا خالی باشد.</string>
+    <string name="warp_masque_error_keepalive">Keep-alive باید بین 1 تا 3600 ثانیه یا خالی باشد.</string>
+    <string name="warp_masque_error_config">ساخت پیکربندی MASQUE ممکن نشد.</string>
+    <string name="warp_masque_error_registration">ثبت Cloudflare WARP MASQUE ناموفق بود.</string>
+    <string name="warp_masque_error_cache_save">ثبت موفق بود اما ذخیره امن آن در ماژول root ممکن نشد.</string>
+    <string name="warp_masque_error_cache_clear">پاک کردن ثبت MASQUE ذخیره‌شده ممکن نشد.</string>
+    <string name="warp_masque_error_network">اتصال با سرویس ثبت Cloudflare WARP ممکن نشد. اتصال را بررسی کرده و دوباره تلاش کنید.</string>
+    <string name="warp_masque_error_api_http">سرویس ثبت Cloudflare WARP پاسخ HTTP %1$d را برگرداند. ممکن است API تغییر کرده باشد.</string>
+    <string name="warp_masque_error_response">Cloudflare پاسخ WARP MASQUE نامعتبر یا ناقصی برگرداند.</string>
+    <string name="warp_masque_error_crypto">ایجاد کلید محلی P-256 برای WARP MASQUE ممکن نشد.</string>
+    <string name="singbox_import_requires_lx_feature_message">این پیکربندی از %1$s استفاده می‌کند که به sing-box-lx نیاز دارد. آن را از طریق ابزار sing-box-lx وارد کنید.</string>
+    <string name="singbox_import_invalid_vless_encryption">مقدار رمزنگاری VLESS قالب معتبری ندارد. ML-KEM باید از قالب mlkem768x25519plus… استفاده کند.</string>
+    <string name="singbox_lx_advanced_json_hint">فیلدهای پیشرفته JSON مربوط به sing-box-lx حفظ می‌شوند. ZDT-D فقط ورودی mixed محلی را مدیریت می‌کند و در صورت نبودن، پیش‌فرض‌های امن DNS/مسیریابی را اضافه می‌کند.</string>
 </resources>

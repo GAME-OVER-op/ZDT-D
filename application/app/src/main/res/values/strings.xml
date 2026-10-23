@@ -800,6 +800,11 @@ Install the module again.</string>
     <string name="singbox_import_dialog_title">Generate sing-box server</string>
     <string name="singbox_import_dialog_beta_warning">Beta feature. Review the result carefully if you use uncommon parameters.</string>
     <string name="singbox_import_dialog_desc">Paste a one-line config such as vless://, vmess://, trojan://, ss:// or socks://. A new server and its settings will be created automatically.</string>
+    <string name="singbox_lx_import_dialog_title">Generate sing-box-lx server</string>
+    <string name="singbox_lx_import_dialog_desc">Paste a VLESS, VMess, Trojan, Shadowsocks or SOCKS link, or full JSON. XHTTP/splithttp links are imported as native sing-box-lx XHTTP transport.</string>
+    <string name="singbox_import_requires_lx_title">This link requires sing-box-lx</string>
+    <string name="singbox_import_requires_lx_message">The configuration uses XHTTP, which is not supported by the standard sing-box core. Import it from the sing-box-lx tool.</string>
+    <string name="singbox_import_open_lx">Open sing-box-lx</string>
     <string name="singbox_import_auto_port_hint">A free mixed-in port will be assigned automatically. Suggested port: %1$d.</string>
     <string name="singbox_import_source_label">One-line config</string>
     <string name="singbox_import_source_support_hint">Supported: vless, vmess, trojan, shadowsocks, socks. Full JSON is also accepted.</string>
@@ -1214,6 +1219,17 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Telegram WS Proxy</string>
     <string name="tg_ws_proxy_desc">Telegram MTProto → WebSocket proxy utility.</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">Optional extended sing-box core with XHTTP, MASQUE/WARP, AmneziaWG 3.x and additional VLESS capabilities.</string>
+    <string name="sing_box_lx_install_required_title">sing-box-lx required</string>
+    <string name="sing_box_lx_install_required_message">This action requires the optional sing-box-lx component. Install it from Additional tools to continue.</string>
+    <string name="sing_box_lx_open_optional_tools">Open additional tools</string>
+    <string name="sing_box_lx_error_status">Unable to check sing-box-lx installation status.</string>
+    <string name="sing_box_lx_error_unsupported_abi">Unsupported CPU ABI: %1$s</string>
+    <string name="sing_box_lx_error_download">Failed to download sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_package">sing-box-lx package verification failed: %1$s</string>
+    <string name="sing_box_lx_error_install">Failed to install sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_remove">Failed to remove sing-box-lx: %1$s</string>
     <string name="apps_list_desc_tgwsproxy">Telegram MTProto → WebSocket proxy utility.</string>
 
     <string name="world_map_title">World map</string>
@@ -2605,4 +2621,72 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">Enter a valid HTTP, HTTPS, SOCKS5, or SOCKS5H proxy URL with host and port.</string>
     <string name="non_root_log_opera_upstream">Opera upstream: %1$s</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">Requires sing-box-lx</string>
+    <string name="subscription_lx_required_hint">This node uses XHTTP or another capability available only in sing-box-lx.</string>
+    <string name="subscription_lx_not_installed_hint">This node requires sing-box-lx. Install the optional component to import it.</string>
+    <string name="subscription_install_required_short">install required</string>
+    <string name="subscription_bulk_import_section">Bulk import</string>
+    <string name="subscription_bulk_import_desc">Import every compatible node from this subscription into one profile. Existing linked nodes are skipped.</string>
+    <string name="subscription_bulk_import_to">Import all to %1$s (%2$d)</string>
+    <string name="subscription_bulk_import_title">Bulk import to %1$s</string>
+    <string name="subscription_bulk_import_count">%1$d compatible nodes</string>
+    <string name="subscription_bulk_import_naming_hint">Server names are generated from node names; conflicts receive a numeric suffix. Bulk import requires a T2S profile when more than one server is imported.</string>
+    <string name="subscription_bulk_import_result">Imported %1$d · skipped %2$d · failed %3$d</string>
+    <string name="subscription_bulk_import_failed">Bulk import failed</string>
+    <string name="subscription_target_choice">Import target</string>
+    <string name="subscription_new_profile_name">New profile name</string>
+    <string name="subscription_create_profile">Create profile</string>
+    <string name="subscription_profile_created">Profile %1$s created</string>
+    <string name="subscription_profile_create_failed">Could not create the target profile</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">Creates a WARP node through MASQUE (CONNECT-IP over HTTP/3 or HTTP/2). The private P-256 key is generated on this device and never sent to third parties.</string>
+    <string name="warp_masque_cache_loading">Checking saved WARP registration…</string>
+    <string name="warp_masque_cache_ready">Saved MASQUE registration is ready</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">Could not read the saved MASQUE registration.</string>
+    <string name="warp_masque_cache_missing">No saved MASQUE registration. A new Cloudflare WARP device will be registered.</string>
+    <string name="warp_masque_server_name">Server name</string>
+    <string name="warp_masque_transport_fmt">Transport: %1$s</string>
+    <string name="warp_masque_transport_auto">Auto (HTTP/3 → HTTP/2)</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">Endpoint IP or host</string>
+    <string name="warp_masque_endpoint_hint">Empty = registration endpoint (%1$s)</string>
+    <string name="warp_masque_endpoint_port">Endpoint port</string>
+    <string name="warp_masque_endpoint_port_hint">Empty = registration port (%1$d)</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">Default: www.cloudflare.com. You can set another SNI supported by the network.</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">Idle timeout, minutes</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive, seconds</string>
+    <string name="warp_masque_optional_default">Optional. Empty = sing-box-lx default.</string>
+    <string name="warp_masque_keepalive_h2">Not used with fixed HTTP/2.</string>
+    <string name="warp_masque_reregister">Re-register WARP</string>
+    <string name="warp_masque_reregister_hint">Generate new keys and create a new Cloudflare WARP device instead of using the saved registration.</string>
+    <string name="warp_masque_clear_cache">Clear saved MASQUE registration</string>
+    <string name="warp_masque_create_cached">Create from saved registration</string>
+    <string name="warp_masque_register_create">Register and create</string>
+    <string name="warp_masque_add_action">Get WARP / MASQUE</string>
+    <string name="warp_masque_created_fmt">WARP MASQUE server created: %1$s</string>
+    <string name="warp_masque_error_name">Enter a server name.</string>
+    <string name="warp_masque_error_name_exists">A server with this name already exists.</string>
+    <string name="warp_masque_error_port">Endpoint port must be from 1 to 65535.</string>
+    <string name="warp_masque_error_mtu">MTU must be from 576 to 16000.</string>
+    <string name="warp_masque_error_idle">Idle timeout must be from 1 to 1440 minutes or empty.</string>
+    <string name="warp_masque_error_keepalive">Keep-alive must be from 1 to 3600 seconds or empty.</string>
+    <string name="warp_masque_error_config">Could not build the MASQUE configuration.</string>
+    <string name="warp_masque_error_registration">Cloudflare WARP MASQUE registration failed.</string>
+    <string name="warp_masque_error_cache_save">Registration succeeded, but it could not be saved securely in the root module.</string>
+    <string name="warp_masque_error_cache_clear">Could not clear the saved MASQUE registration.</string>
+    <string name="warp_masque_error_network">Could not reach the Cloudflare WARP registration service. Check the connection and try again.</string>
+    <string name="warp_masque_error_api_http">Cloudflare WARP registration service returned HTTP %1$d. The API may have changed.</string>
+    <string name="warp_masque_error_response">Cloudflare returned an invalid or incomplete WARP MASQUE response.</string>
+    <string name="warp_masque_error_crypto">Could not generate the local P-256 key for WARP MASQUE.</string>
+    <string name="singbox_import_requires_lx_feature_message">This configuration uses %1$s, which requires sing-box-lx. Import it through the sing-box-lx tool.</string>
+    <string name="singbox_import_invalid_vless_encryption">The VLESS encryption value is malformed. ML-KEM must use the mlkem768x25519plus… format.</string>
+    <string name="singbox_lx_advanced_json_hint">Advanced sing-box-lx JSON fields are preserved. ZDT-D only manages the local mixed inbound and adds safe DNS/routing defaults when they are missing.</string>
 </resources>

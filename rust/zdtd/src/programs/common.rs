@@ -281,8 +281,9 @@ pub const NETID_MIHOMO: (u32, u32) = (24200, 24999);
 pub const NETID_MIERU: (u32, u32) = (25200, 25999);
 pub const NETID_HYSTERIA2: (u32, u32) = (26200, 26999);
 pub const NETID_AMNEZIAWG: (u32, u32) = (27200, 27999);
+pub const NETID_SINGBOX_LX: (u32, u32) = (28200, 28999);
 
-pub const NETID_BLOCKS: [(&str, (u32, u32)); 8] = [
+pub const NETID_BLOCKS: [(&str, (u32, u32)); 9] = [
     ("openvpn", NETID_OPENVPN),
     ("tun2socks", NETID_TUN2SOCKS),
     ("singbox", NETID_SINGBOX),
@@ -291,6 +292,7 @@ pub const NETID_BLOCKS: [(&str, (u32, u32)); 8] = [
     ("mieru", NETID_MIERU),
     ("hysteria2", NETID_HYSTERIA2),
     ("amneziawg", NETID_AMNEZIAWG),
+    ("singbox-lx", NETID_SINGBOX_LX),
 ];
 
 // merged: было generate_netid(), выдававшее первый свободный id по порядку включённых

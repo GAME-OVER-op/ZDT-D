@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Send
@@ -35,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,12 +44,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentError
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentStage
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentState
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentStage
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
 
 @Composable
 fun OptionalToolsScreen(
-  state: TgWsProxyComponentState,
+  tgWsProxyState: TgWsProxyComponentState,
+  singBoxLxState: SingBoxLxComponentState,
   actions: ZdtdActions,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
@@ -64,11 +70,18 @@ fun OptionalToolsScreen(
     item {
       OptionalToolsHeader()
     }
-    item {
+    item(key = "tg-ws-proxy") {
       TgWsProxyUtilityCard(
-        state = state,
+        state = tgWsProxyState,
         onInstall = actions::installTgWsProxy,
         onRemove = actions::removeTgWsProxy,
+      )
+    }
+    item(key = "sing-box-lx") {
+      SingBoxLxUtilityCard(
+        state = singBoxLxState,
+        onInstall = actions::installSingBoxLx,
+        onRemove = actions::removeSingBoxLx,
       )
     }
     item { Spacer(Modifier.height(4.dp)) }
@@ -109,7 +122,69 @@ private fun TgWsProxyUtilityCard(
   onInstall: () -> Unit,
   onRemove: () -> Unit,
 ) {
-  val accentColor = if (state.installed) Color(0xFF22C55E) else MaterialTheme.colorScheme.primary
+  OptionalBinaryUtilityCard(
+    title = stringResource(R.string.tg_ws_proxy_title),
+    description = stringResource(R.string.tg_ws_proxy_desc),
+    icon = Icons.Outlined.Send,
+    installed = state.installed,
+    isWorking = state.isWorking,
+    statusText = tgWsProxyStatusText(state),
+    progressPercent = state.progressPercent,
+    downloadedBytes = state.downloadedBytes,
+    totalBytes = state.totalBytes,
+    isDownloading = state.stage == TgWsProxyComponentStage.DOWNLOADING,
+    selectedAbi = state.selectedAbi,
+    installedVersion = state.installedVersion,
+    errorText = state.errorMessage,
+    onInstall = onInstall,
+    onRemove = onRemove,
+  )
+}
+
+@Composable
+private fun SingBoxLxUtilityCard(
+  state: SingBoxLxComponentState,
+  onInstall: () -> Unit,
+  onRemove: () -> Unit,
+) {
+  OptionalBinaryUtilityCard(
+    title = stringResource(R.string.sing_box_lx_title),
+    description = stringResource(R.string.sing_box_lx_desc),
+    icon = Icons.Outlined.Dns,
+    installed = state.installed,
+    isWorking = state.isWorking,
+    statusText = singBoxLxStatusText(state),
+    progressPercent = state.progressPercent,
+    downloadedBytes = state.downloadedBytes,
+    totalBytes = state.totalBytes,
+    isDownloading = state.stage == SingBoxLxComponentStage.DOWNLOADING,
+    selectedAbi = state.selectedAbi,
+    installedVersion = state.installedVersion,
+    errorText = singBoxLxErrorText(state),
+    onInstall = onInstall,
+    onRemove = onRemove,
+  )
+}
+
+@Composable
+private fun OptionalBinaryUtilityCard(
+  title: String,
+  description: String,
+  icon: ImageVector,
+  installed: Boolean,
+  isWorking: Boolean,
+  statusText: String,
+  progressPercent: Int,
+  downloadedBytes: Long,
+  totalBytes: Long,
+  isDownloading: Boolean,
+  selectedAbi: String,
+  installedVersion: String,
+  errorText: String?,
+  onInstall: () -> Unit,
+  onRemove: () -> Unit,
+) {
+  val accentColor = if (installed) Color(0xFF22C55E) else MaterialTheme.colorScheme.primary
   Card(
     modifier = Modifier
       .fillMaxWidth()
@@ -138,32 +213,44 @@ private fun TgWsProxyUtilityCard(
           border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
         ) {
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(Icons.Outlined.Send, contentDescription = null, modifier = Modifier.size(29.dp))
+            Icon(icon, contentDescription = null, modifier = Modifier.size(29.dp))
           }
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
           Text(
-            text = stringResource(R.string.tg_ws_proxy_title),
+            text = title,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
           Text(
-            text = stringResource(R.string.tg_ws_proxy_desc),
+            text = description,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
           )
         }
       }
 
-      OptionalToolStatusPill(state = state, accentColor = accentColor)
+      OptionalToolStatusPill(
+        installed = installed,
+        isWorking = isWorking,
+        statusText = statusText,
+        selectedAbi = selectedAbi,
+        installedVersion = installedVersion,
+        accentColor = accentColor,
+      )
 
-      if (state.isWorking) {
-        OptionalToolProgress(state = state)
+      if (isWorking) {
+        OptionalToolProgress(
+          progressPercent = progressPercent,
+          downloadedBytes = downloadedBytes,
+          totalBytes = totalBytes,
+          isDownloading = isDownloading,
+        )
       }
 
-      state.errorMessage?.takeIf { it.isNotBlank() }?.let { error ->
+      errorText?.takeIf { it.isNotBlank() }?.let { error ->
         Text(
           text = error,
           style = MaterialTheme.typography.bodySmall,
@@ -175,11 +262,13 @@ private fun TgWsProxyUtilityCard(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        if (state.installed) {
+        if (installed) {
           Button(
             onClick = onInstall,
-            enabled = !state.isWorking,
-            modifier = Modifier.weight(1f),
+            enabled = !isWorking,
+            modifier = Modifier
+              .weight(1f)
+              .tvFocusHighlight(RoundedCornerShape(18.dp), !isWorking),
           ) {
             Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.size(8.dp))
@@ -187,8 +276,10 @@ private fun TgWsProxyUtilityCard(
           }
           OutlinedButton(
             onClick = onRemove,
-            enabled = !state.isWorking,
-            modifier = Modifier.weight(1f),
+            enabled = !isWorking,
+            modifier = Modifier
+              .weight(1f)
+              .tvFocusHighlight(RoundedCornerShape(18.dp), !isWorking),
           ) {
             Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.size(8.dp))
@@ -197,8 +288,10 @@ private fun TgWsProxyUtilityCard(
         } else {
           Button(
             onClick = onInstall,
-            enabled = !state.isWorking,
-            modifier = Modifier.fillMaxWidth(),
+            enabled = !isWorking,
+            modifier = Modifier
+              .fillMaxWidth()
+              .tvFocusHighlight(RoundedCornerShape(18.dp), !isWorking),
           ) {
             Icon(Icons.Outlined.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.size(8.dp))
@@ -211,16 +304,50 @@ private fun TgWsProxyUtilityCard(
 }
 
 @Composable
-private fun OptionalToolStatusPill(state: TgWsProxyComponentState, accentColor: Color) {
-  val text = when {
-    state.installed -> stringResource(R.string.optional_tools_status_installed)
-    state.stage == TgWsProxyComponentStage.DOWNLOADING -> stringResource(R.string.optional_tools_status_downloading)
-    state.stage == TgWsProxyComponentStage.UNPACKING -> stringResource(R.string.optional_tools_status_unpacking)
-    state.stage == TgWsProxyComponentStage.VERIFYING -> stringResource(R.string.optional_tools_status_verifying)
-    state.stage == TgWsProxyComponentStage.INSTALLING -> stringResource(R.string.optional_tools_status_installing)
-    state.stage == TgWsProxyComponentStage.FAILED -> stringResource(R.string.optional_tools_status_failed)
-    else -> stringResource(R.string.optional_tools_status_not_installed)
+private fun tgWsProxyStatusText(state: TgWsProxyComponentState): String = when {
+  state.installed -> stringResource(R.string.optional_tools_status_installed)
+  state.stage == TgWsProxyComponentStage.DOWNLOADING -> stringResource(R.string.optional_tools_status_downloading)
+  state.stage == TgWsProxyComponentStage.UNPACKING -> stringResource(R.string.optional_tools_status_unpacking)
+  state.stage == TgWsProxyComponentStage.VERIFYING -> stringResource(R.string.optional_tools_status_verifying)
+  state.stage == TgWsProxyComponentStage.INSTALLING -> stringResource(R.string.optional_tools_status_installing)
+  state.stage == TgWsProxyComponentStage.FAILED -> stringResource(R.string.optional_tools_status_failed)
+  else -> stringResource(R.string.optional_tools_status_not_installed)
+}
+
+@Composable
+private fun singBoxLxStatusText(state: SingBoxLxComponentState): String = when {
+  state.installed && state.stage != SingBoxLxComponentStage.FAILED -> stringResource(R.string.optional_tools_status_installed)
+  state.stage == SingBoxLxComponentStage.DOWNLOADING -> stringResource(R.string.optional_tools_status_downloading)
+  state.stage == SingBoxLxComponentStage.UNPACKING -> stringResource(R.string.optional_tools_status_unpacking)
+  state.stage == SingBoxLxComponentStage.VERIFYING -> stringResource(R.string.optional_tools_status_verifying)
+  state.stage == SingBoxLxComponentStage.INSTALLING -> stringResource(R.string.optional_tools_status_installing)
+  state.stage == SingBoxLxComponentStage.FAILED -> stringResource(R.string.optional_tools_status_failed)
+  else -> stringResource(R.string.optional_tools_status_not_installed)
+}
+
+@Composable
+private fun singBoxLxErrorText(state: SingBoxLxComponentState): String? {
+  val error = state.error ?: return null
+  val detail = state.errorDetail.orEmpty().ifBlank { "—" }
+  return when (error) {
+    SingBoxLxComponentError.STATUS -> stringResource(R.string.sing_box_lx_error_status)
+    SingBoxLxComponentError.UNSUPPORTED_ABI -> stringResource(R.string.sing_box_lx_error_unsupported_abi, detail)
+    SingBoxLxComponentError.DOWNLOAD -> stringResource(R.string.sing_box_lx_error_download, detail)
+    SingBoxLxComponentError.PACKAGE -> stringResource(R.string.sing_box_lx_error_package, detail)
+    SingBoxLxComponentError.INSTALL -> stringResource(R.string.sing_box_lx_error_install, detail)
+    SingBoxLxComponentError.REMOVE -> stringResource(R.string.sing_box_lx_error_remove, detail)
   }
+}
+
+@Composable
+private fun OptionalToolStatusPill(
+  installed: Boolean,
+  isWorking: Boolean,
+  statusText: String,
+  selectedAbi: String,
+  installedVersion: String,
+  accentColor: Color,
+) {
   Surface(
     color = accentColor.copy(alpha = 0.14f),
     contentColor = accentColor,
@@ -232,38 +359,48 @@ private fun OptionalToolStatusPill(state: TgWsProxyComponentState, accentColor: 
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-      if (state.isWorking) {
+      if (isWorking) {
         CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = accentColor)
       } else {
         Icon(
-          imageVector = if (state.installed) Icons.Outlined.DownloadDone else Icons.Outlined.CloudDownload,
+          imageVector = if (installed) Icons.Outlined.DownloadDone else Icons.Outlined.CloudDownload,
           contentDescription = null,
           modifier = Modifier.size(15.dp),
         )
       }
-      Text(text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-      if (state.selectedAbi.isNotBlank()) {
-        Text("• ${state.selectedAbi}", style = MaterialTheme.typography.labelMedium)
+      Text(statusText, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+      if (selectedAbi.isNotBlank()) {
+        Text("• $selectedAbi", style = MaterialTheme.typography.labelMedium)
       }
-      if (state.installedVersion.isNotBlank()) {
-        Text("• ${state.installedVersion}", style = MaterialTheme.typography.labelMedium)
+      if (installedVersion.isNotBlank()) {
+        Text("• $installedVersion", style = MaterialTheme.typography.labelMedium)
       }
     }
   }
 }
 
 @Composable
-private fun OptionalToolProgress(state: TgWsProxyComponentState) {
-  val progress = (state.progressPercent / 100f).coerceIn(0f, 1f)
+private fun OptionalToolProgress(
+  progressPercent: Int,
+  downloadedBytes: Long,
+  totalBytes: Long,
+  isDownloading: Boolean,
+) {
+  val progress = (progressPercent / 100f).coerceIn(0f, 1f)
   Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     androidx.compose.material3.LinearProgressIndicator(
       progress = { progress },
       modifier = Modifier.fillMaxWidth(),
     )
-    val progressText = if (state.totalBytes > 0L && state.stage == TgWsProxyComponentStage.DOWNLOADING) {
-      stringResource(R.string.optional_tools_download_progress, state.progressPercent, formatBytes(state.downloadedBytes), formatBytes(state.totalBytes))
+    val progressText = if (totalBytes > 0L && isDownloading) {
+      stringResource(
+        R.string.optional_tools_download_progress,
+        progressPercent,
+        formatBytes(downloadedBytes),
+        formatBytes(totalBytes),
+      )
     } else {
-      stringResource(R.string.optional_tools_progress_percent, state.progressPercent)
+      stringResource(R.string.optional_tools_progress_percent, progressPercent)
     }
     Text(
       text = progressText,

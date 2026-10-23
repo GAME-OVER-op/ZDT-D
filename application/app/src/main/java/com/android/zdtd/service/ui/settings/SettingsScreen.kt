@@ -18,25 +18,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
+import com.android.zdtd.service.ui.rememberIsTelevision
 
 /**
- * Full-screen settings window.
+ * Full-screen settings surface rendered inside the app's existing Compose window.
  *
- * Replaces the previous bottom-sheet / side-shelf card presentation with a
- * dedicated Material 3 screen (top app bar + back action), so settings feel
- * like a separate window rather than an overlay card.
- *
- * The screen does not own any business logic: it only frames [content]
- * (the existing settings sections) and forwards the back action to [onDismiss].
- * The settings content scrolls internally, so this frame must not add a
- * second vertical scroll.
+ * Keeping Settings in the same window avoids OEM-specific Dialog/Window compositor
+ * overhead while preserving the dedicated top app bar and back navigation.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,65 +42,66 @@ fun SettingsScreen(
   loading: Boolean,
   content: @Composable () -> Unit,
 ) {
-  Dialog(
-    onDismissRequest = onDismiss,
-    properties = DialogProperties(
-      usePlatformDefaultWidth = false,
-      dismissOnBackPress = true,
-      dismissOnClickOutside = false,
-    ),
+  val television = rememberIsTelevision()
+  val backFocusRequester = remember { FocusRequester() }
+
+  LaunchedEffect(television) {
+    if (television) backFocusRequester.requestFocus()
+  }
+
+  Surface(
+    modifier = Modifier.fillMaxSize(),
+    color = MaterialTheme.colorScheme.background,
   ) {
-    Surface(
-      modifier = Modifier.fillMaxSize(),
-      color = MaterialTheme.colorScheme.background,
-    ) {
-      Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-          TopAppBar(
-            title = { Text(stringResource(R.string.settings_screen_title)) },
-            navigationIcon = {
-              IconButton(onClick = onDismiss) {
-                Icon(
-                  imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                  contentDescription = stringResource(R.string.common_back),
-                )
-              }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-              containerColor = MaterialTheme.colorScheme.background,
-              scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-              titleContentColor = MaterialTheme.colorScheme.onBackground,
-              navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
-            ),
-          )
-        },
-      ) { innerPadding ->
-        Box(
-          modifier = Modifier
-            .fillMaxSize()
-            .padding(innerPadding),
-        ) {
-          if (loading) {
-            Box(
-              modifier = Modifier.fillMaxSize(),
-              contentAlignment = Alignment.Center,
+    Scaffold(
+      containerColor = MaterialTheme.colorScheme.background,
+      topBar = {
+        TopAppBar(
+          title = { Text(stringResource(R.string.settings_screen_title)) },
+          navigationIcon = {
+            IconButton(
+              onClick = onDismiss,
+              modifier = Modifier.focusRequester(backFocusRequester),
             ) {
-              Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-              ) {
-                CircularProgressIndicator()
-                Text(
-                  text = stringResource(R.string.common_loading),
-                  style = MaterialTheme.typography.bodyMedium,
-                  color = MaterialTheme.colorScheme.onSurface,
-                )
-              }
+              Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = stringResource(R.string.common_back),
+              )
             }
-          } else {
-            content()
+          },
+          colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.background,
+            scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            titleContentColor = MaterialTheme.colorScheme.onBackground,
+            navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+          ),
+        )
+      },
+    ) { innerPadding ->
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(innerPadding),
+      ) {
+        if (loading) {
+          Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+          ) {
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+              CircularProgressIndicator()
+              Text(
+                text = stringResource(R.string.common_loading),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+              )
+            }
           }
+        } else {
+          content()
         }
       }
     }

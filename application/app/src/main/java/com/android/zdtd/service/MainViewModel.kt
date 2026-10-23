@@ -47,6 +47,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -533,6 +534,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   @Volatile private var statsPowerReady: Boolean = false
   private var daemonLogJob: Job? = null
   private var startupJob: Job? = null
+  private var settingsRefreshJob: Job? = null
   private var proxyInfoApplyJob: Job? = null
   private var runtimeApplyPollJob: Job? = null
   private val proxyInfoApplyDelayMs: Long = 1_200L
@@ -1887,6 +1889,7 @@ private fun clearDownloadedUpdateApk() {
       statusJob?.cancel(); statusJob = null
       stopStatsPowerSampling()
       daemonLogJob?.cancel(); daemonLogJob = null
+      settingsRefreshJob?.cancel(); settingsRefreshJob = null
       return
     }
 
@@ -1918,6 +1921,14 @@ private fun clearDownloadedUpdateApk() {
     val wasHome = previousTab == "HOME"
     activeMainTabHint = tab
 
+    if (previousTab == "SETTINGS" && tab != "SETTINGS") {
+      settingsRefreshJob?.cancel()
+      settingsRefreshJob = null
+      if (tab != "HOME" && startupCompleted && appVisible && _rootState.value == RootState.GRANTED && isSetupDone()) {
+        startDaemonLogPolling()
+      }
+    }
+
     if (!wasHome && tab == "HOME") {
       refreshDaemonLog()
       if (appVisible && _rootState.value == RootState.GRANTED && isSetupDone()) {
@@ -1944,10 +1955,15 @@ private fun clearDownloadedUpdateApk() {
     "HOME" -> 5_800L
     "STATS" -> 5_000L
     "APPS" -> 9_500L
+    "SETTINGS" -> 20_000L
     else -> 10_500L
   }
 
-  private fun currentDaemonLogPollDelayMs(): Long = if (activeMainTabHint == "HOME") 650L else 15_000L
+  private fun currentDaemonLogPollDelayMs(): Long = when (activeMainTabHint) {
+    "HOME" -> 650L
+    "SETTINGS" -> 30_000L
+    else -> 15_000L
+  }
 
   private fun moduleDirExists(): Boolean = runCatching {
     root.execRoot("sh -c 'test -d /data/adb/modules/ZDT-D'").isSuccess
@@ -8094,6 +8110,119 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         hotspotProxyPrograms = proxyPrograms,
         hotspotVpnPrograms = vpnPrograms,
       )
+    }
+  }
+
+  override fun refreshSettings(onDone: () -> Unit) {
+    settingsRefreshJob?.cancel()
+    settingsRefreshJob = launchIO {
+      coroutineScope {
+          val daemonSettingsDeferred = async {
+            runCatching { api.getDaemonSettings() }
+              .onFailure { log("ERR", "settings refresh failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val singboxProfilesDeferred = async {
+            runCatching { api.getSingBoxProfiles() }
+              .onFailure { log("ERR", "hotspot sing-box profiles load failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val wireproxyProfilesDeferred = async {
+            runCatching { api.getWireProxyProfiles() }
+              .onFailure { log("ERR", "hotspot wireproxy profiles load failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val programsDeferred = async {
+            runCatching { api.getPrograms() }
+              .onFailure { log("ERR", "settings programs load failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val energySaverDeferred = async {
+            runCatching { api.getEnergySaver() }
+              .onFailure { log("ERR", "energy saver load failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val proxyInfoDeferred = async {
+            runCatching {
+              val base = api.getProxyInfo()
+              val apps = base.appsContent.ifBlank { api.getProxyInfoApps() }
+              base.copy(appsContent = apps)
+            }.onFailure { log("ERR", "proxyInfo refresh failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val hidingStatusDeferred = async {
+            runCatching { api.getHidingStatus() }
+              .onFailure { log("ERR", "hiding status refresh failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val blockedQuicDeferred = async {
+            runCatching {
+              val base = api.getBlockedQuic()
+              val apps = base.appsContent.ifBlank { api.getBlockedQuicApps() }
+              base.copy(appsContent = apps)
+            }.onFailure { log("ERR", "blockedQuic refresh failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+
+          val settings = daemonSettingsDeferred.await()
+          val singboxProfiles = singboxProfilesDeferred.await()
+          val wireproxyProfiles = wireproxyProfilesDeferred.await()
+          val programs = programsDeferred.await()
+          val energySaver = energySaverDeferred.await()
+          val proxyInfo = proxyInfoDeferred.await()
+          val hidingStatus = hidingStatusDeferred.await()
+          val blockedQuic = blockedQuicDeferred.await()
+
+          _appUpdate.update { current ->
+            var next = current
+            if (settings != null) {
+              next = next.copy(
+                protectorMode = settings.protectorMode,
+                hotspotT2sEnabled = settings.hotspotT2sEnabled,
+                hotspotMode = settings.hotspotMode,
+                hotspotProgram = settings.hotspotProgram,
+                hotspotProfile = settings.hotspotProfile,
+                hotspotT2sTarget = settings.hotspotT2sTarget,
+                hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
+                hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
+                hotspotT2sCaptureAll = settings.hotspotT2sCaptureAll,
+                captivePortalEnabled = settings.captivePortalEnabled,
+                selinuxPermissiveEnabled = settings.selinuxPermissiveEnabled,
+                ipForwardEnabled = settings.ipForwardEnabled,
+                tproxyEnabled = settings.tproxyEnabled,
+              )
+            }
+            if (energySaver != null) next = next.copy(energySaver = energySaver)
+            if (singboxProfiles != null) next = next.copy(hotspotSingboxProfiles = singboxProfiles)
+            if (wireproxyProfiles != null) next = next.copy(hotspotWireproxyProfiles = wireproxyProfiles)
+            if (programs != null) {
+              val proxyIds = setOf("operaproxy", "singbox", "sing-box", "wireproxy")
+              val vpnIds = setOf("openvpn", "amneziawg", "mihomo", "mieru")
+              next = next.copy(
+                hotspotProxyPrograms = programs.filter { it.id in proxyIds },
+                hotspotVpnPrograms = programs.filter { it.id in vpnIds },
+              )
+            }
+            if (proxyInfo != null) {
+              next = next.copy(
+                proxyInfoEnabled = proxyInfo.enabled,
+                proxyInfoAppsContent = proxyInfo.appsContent,
+              )
+            }
+            if (hidingStatus != null) next = next.copy(hidingStatus = hidingStatus)
+            if (blockedQuic != null) {
+              next = next.copy(
+                blockedQuicEnabled = blockedQuic.enabled,
+                blockedQuicAppsContent = blockedQuic.appsContent,
+              )
+            }
+            next
+          }
+          if (proxyInfo != null) {
+            syncLsposedHidePreferences(proxyInfo.enabled, proxyInfo.appsContent)
+          }
+      }
+      withContext(Dispatchers.Main.immediate) { onDone() }
     }
   }
 

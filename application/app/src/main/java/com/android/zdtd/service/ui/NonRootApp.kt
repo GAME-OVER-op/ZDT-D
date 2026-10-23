@@ -102,6 +102,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -261,12 +262,30 @@ fun NonRootApp(
     }
   }
 
-  Box(
-    modifier = Modifier
-      .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background)
-      .then(if (wideLayout) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier),
-  ) {
+  Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .background(MaterialTheme.colorScheme.background)
+        .alpha(if (showSettings) 0f else 1f)
+        .focusProperties { canFocus = !showSettings }
+        .then(if (wideLayout) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier)
+        .then(
+          if (showSettings) {
+            Modifier
+              .clearAndSetSemantics { }
+              .pointerInput(Unit) {
+                awaitPointerEventScope {
+                  while (true) {
+                    awaitPointerEvent().changes.forEach { it.consume() }
+                  }
+                }
+              }
+          } else {
+            Modifier
+          },
+        ),
+    ) {
     val editedProfile = cascadeProfileId?.let { id -> cascadeState.profiles.firstOrNull { it.id == id } }
     val pageKey = when {
       editedProfile != null -> "profile:${editedProfile.id}"
@@ -612,6 +631,7 @@ fun NonRootApp(
         landscapeColumns = wideLayout,
       )
     }
+  }
   }
 }
 

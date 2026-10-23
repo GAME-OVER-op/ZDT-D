@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -130,32 +132,36 @@ fun NonRootSettingsContent(
     return
   }
 
-  Column(
-    modifier = Modifier
-      .fillMaxSize()
-      .verticalScroll(rememberScrollState())
-      .padding(16.dp),
+  LazyColumn(
+    modifier = Modifier.fillMaxSize(),
+    contentPadding = PaddingValues(16.dp),
     verticalArrangement = Arrangement.spacedBy(18.dp),
   ) {
-    SettingsLanguageSection(
-      languageMode = languageMode,
-      compactWidth = compactWidth,
-      onLanguageModeChange = onLanguageModeChange,
-    )
-    SettingsThemeSection(
-      themeMode = themeMode,
-      compactWidth = compactWidth,
-      onThemeModeChange = onThemeModeChange,
-    )
-    NonRootAppRoutingSection(
-      mode = appRoutingMode,
-      selectedPackages = appRoutingPackages,
-      vpnState = vpnState,
-      onModeChange = onAppRoutingModeChange,
-      onPackagesChange = onAppRoutingPackagesChange,
-      onRestartVpn = onRestartVpn,
-    )
-    Spacer(Modifier.height(8.dp))
+    item(key = "language") {
+      SettingsLanguageSection(
+        languageMode = languageMode,
+        compactWidth = compactWidth,
+        onLanguageModeChange = onLanguageModeChange,
+      )
+    }
+    item(key = "theme") {
+      SettingsThemeSection(
+        themeMode = themeMode,
+        compactWidth = compactWidth,
+        onThemeModeChange = onThemeModeChange,
+      )
+    }
+    item(key = "routing") {
+      NonRootAppRoutingSection(
+        mode = appRoutingMode,
+        selectedPackages = appRoutingPackages,
+        vpnState = vpnState,
+        onModeChange = onAppRoutingModeChange,
+        onPackagesChange = onAppRoutingPackagesChange,
+        onRestartVpn = onRestartVpn,
+      )
+    }
+    item(key = "bottom_space") { Spacer(Modifier.height(8.dp)) }
   }
 }
 
@@ -240,132 +246,156 @@ fun AppUpdateSettings(
           .weight(1f),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        Column(
+        LazyColumn(
           modifier = Modifier
             .weight(1f)
-            .fillMaxHeight()
-            .verticalScroll(rememberScrollState()),
+            .fillMaxHeight(),
           verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-          SettingsSwitchSection(
-            title = stringResource(R.string.app_update_check_title),
-            body = stringResource(R.string.app_update_check_body),
-            checked = enabled,
-            onCheckedChange = onToggle,
-          )
-          OutlinedButton(onClick = onCheckNow, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.app_update_check_now))
-          }
-          SettingsSwitchSection(
-            title = stringResource(R.string.settings_notifications_title),
-            body = stringResource(R.string.settings_notifications_body),
-            checked = daemonNotificationEnabled,
-            onCheckedChange = onToggleDaemonNotification,
-          )
-          ProtectorModeSection(
-            selectedMode = protectorMode,
-            onModeSelected = onProtectorModeChange,
-          )
-          SettingsActionCard(
-            title = stringResource(R.string.settings_energy_saver_title),
-            body = stringResource(R.string.settings_energy_saver_body),
-            actionText = stringResource(R.string.settings_energy_saver_open),
-            onClick = {
-              onRefreshEnergySaver()
-              showEnergySaverConfigure = true
-            },
-          )
-          OutlinedButton(onClick = { showAdvancedSettings = true }, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.settings_advanced_title))
-          }
-          HotspotT2sSection(
-            enabled = hotspotT2sEnabled,
-            mode = hotspotMode,
-            program = hotspotProgram,
-            profile = hotspotProfile,
-            target = hotspotT2sTarget,
-            singboxProfile = hotspotT2sSingboxProfile,
-            wireproxyProfile = hotspotT2sWireproxyProfile,
-            captureAll = hotspotT2sCaptureAll,
-            singboxProfiles = hotspotSingboxProfiles,
-            wireproxyProfiles = hotspotWireproxyProfiles,
-            proxyPrograms = hotspotProxyPrograms,
-            vpnPrograms = hotspotVpnPrograms,
-            compactWidth = false,
-            onEnabledChange = { checked ->
-              if (checked && !hotspotT2sEnabled) {
-                showHotspotWarning = true
-              } else {
-                onHotspotT2sEnabledChange(checked)
-              }
-            },
-            onModeChange = onHotspotModeChange,
-            onSelectionChange = onHotspotSelectionChange,
-            onTargetChange = onHotspotT2sTargetChange,
-            onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
-            onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
-            onCaptureAllChange = onHotspotT2sCaptureAllChange,
-            captivePortalEnabled = captivePortalEnabled,
-            onCaptivePortalEnabledChange = onCaptivePortalEnabledChange,
-          )
-        }
-
-        Column(
-          modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight()
-            .verticalScroll(rememberScrollState()),
-          verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-          ProxyInfoSectionCard(
-            enabled = proxyInfoEnabled,
-            busy = proxyInfoBusy,
-            hidingStatus = hidingStatus,
-            onEnabledChange = onProxyInfoEnabledChange,
-            onConfigure = { showProxyInfoConfigure = true },
-          )
-          BlockedQuicSectionCard(
-            enabled = blockedQuicEnabled,
-            busy = blockedQuicBusy,
-            onEnabledChange = onBlockedQuicEnabledChange,
-            onConfigure = { showBlockedQuicConfigure = true },
-          )
-          SettingsLanguageSection(
-            languageMode = languageMode,
-            compactWidth = false,
-            onLanguageModeChange = onLanguageModeChange,
-          )
-          SettingsThemeSection(
-            themeMode = themeMode,
-            compactWidth = false,
-            onThemeModeChange = onThemeModeChange,
-          )
-          Column(Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.settings_reset_identifier_title), style = MaterialTheme.typography.bodyLarge)
-            Text(
-              stringResource(R.string.settings_reset_identifier_body),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+          item(key = "update_toggle") {
+            SettingsSwitchSection(
+              title = stringResource(R.string.app_update_check_title),
+              body = stringResource(R.string.app_update_check_body),
+              checked = enabled,
+              onCheckedChange = onToggle,
             )
-            Spacer(Modifier.height(10.dp))
-            OutlinedButton(
-              onClick = { showResetIdentifierConfirm = true },
-              modifier = Modifier.fillMaxWidth(),
-              enabled = !resettingModuleIdentifier,
-            ) {
-              Text(stringResource(R.string.settings_reset_identifier_action))
+          }
+          item(key = "update_now") {
+            OutlinedButton(onClick = onCheckNow, modifier = Modifier.fillMaxWidth()) {
+              Text(stringResource(R.string.app_update_check_now))
             }
           }
-          Column(Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.settings_delete_module_title), style = MaterialTheme.typography.bodyLarge)
-            Text(
-              stringResource(R.string.settings_delete_module_body),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+          item(key = "notifications") {
+            SettingsSwitchSection(
+              title = stringResource(R.string.settings_notifications_title),
+              body = stringResource(R.string.settings_notifications_body),
+              checked = daemonNotificationEnabled,
+              onCheckedChange = onToggleDaemonNotification,
             )
-            Spacer(Modifier.height(10.dp))
-            OutlinedButton(onClick = onDeleteModule, modifier = Modifier.fillMaxWidth()) {
-              Text(stringResource(R.string.settings_delete_module_action))
+          }
+          item(key = "protector") {
+            ProtectorModeSection(
+              selectedMode = protectorMode,
+              onModeSelected = onProtectorModeChange,
+            )
+          }
+          item(key = "energy") {
+            SettingsActionCard(
+              title = stringResource(R.string.settings_energy_saver_title),
+              body = stringResource(R.string.settings_energy_saver_body),
+              actionText = stringResource(R.string.settings_energy_saver_open),
+              onClick = {
+                onRefreshEnergySaver()
+                showEnergySaverConfigure = true
+              },
+            )
+          }
+          item(key = "advanced") {
+            OutlinedButton(onClick = { showAdvancedSettings = true }, modifier = Modifier.fillMaxWidth()) {
+              Text(stringResource(R.string.settings_advanced_title))
+            }
+          }
+          item(key = "hotspot") {
+            HotspotT2sSection(
+              enabled = hotspotT2sEnabled,
+              mode = hotspotMode,
+              program = hotspotProgram,
+              profile = hotspotProfile,
+              target = hotspotT2sTarget,
+              singboxProfile = hotspotT2sSingboxProfile,
+              wireproxyProfile = hotspotT2sWireproxyProfile,
+              captureAll = hotspotT2sCaptureAll,
+              singboxProfiles = hotspotSingboxProfiles,
+              wireproxyProfiles = hotspotWireproxyProfiles,
+              proxyPrograms = hotspotProxyPrograms,
+              vpnPrograms = hotspotVpnPrograms,
+              compactWidth = false,
+              onEnabledChange = { checked ->
+                if (checked && !hotspotT2sEnabled) {
+                  showHotspotWarning = true
+                } else {
+                  onHotspotT2sEnabledChange(checked)
+                }
+              },
+              onModeChange = onHotspotModeChange,
+              onSelectionChange = onHotspotSelectionChange,
+              onTargetChange = onHotspotT2sTargetChange,
+              onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
+              onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
+              onCaptureAllChange = onHotspotT2sCaptureAllChange,
+              captivePortalEnabled = captivePortalEnabled,
+              onCaptivePortalEnabledChange = onCaptivePortalEnabledChange,
+            )
+          }
+        }
+
+        LazyColumn(
+          modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight(),
+          verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+          item(key = "proxy_info") {
+            ProxyInfoSectionCard(
+              enabled = proxyInfoEnabled,
+              busy = proxyInfoBusy,
+              hidingStatus = hidingStatus,
+              onEnabledChange = onProxyInfoEnabledChange,
+              onConfigure = { showProxyInfoConfigure = true },
+            )
+          }
+          item(key = "blocked_quic") {
+            BlockedQuicSectionCard(
+              enabled = blockedQuicEnabled,
+              busy = blockedQuicBusy,
+              onEnabledChange = onBlockedQuicEnabledChange,
+              onConfigure = { showBlockedQuicConfigure = true },
+            )
+          }
+          item(key = "language") {
+            SettingsLanguageSection(
+              languageMode = languageMode,
+              compactWidth = false,
+              onLanguageModeChange = onLanguageModeChange,
+            )
+          }
+          item(key = "theme") {
+            SettingsThemeSection(
+              themeMode = themeMode,
+              compactWidth = false,
+              onThemeModeChange = onThemeModeChange,
+            )
+          }
+          item(key = "reset_identifier") {
+            Column(Modifier.fillMaxWidth()) {
+              Text(stringResource(R.string.settings_reset_identifier_title), style = MaterialTheme.typography.bodyLarge)
+              Text(
+                stringResource(R.string.settings_reset_identifier_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+              )
+              Spacer(Modifier.height(10.dp))
+              OutlinedButton(
+                onClick = { showResetIdentifierConfirm = true },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !resettingModuleIdentifier,
+              ) {
+                Text(stringResource(R.string.settings_reset_identifier_action))
+              }
+            }
+          }
+          item(key = "delete_module") {
+            Column(Modifier.fillMaxWidth()) {
+              Text(stringResource(R.string.settings_delete_module_title), style = MaterialTheme.typography.bodyLarge)
+              Text(
+                stringResource(R.string.settings_delete_module_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+              )
+              Spacer(Modifier.height(10.dp))
+              OutlinedButton(onClick = onDeleteModule, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_delete_module_action))
+              }
             }
           }
         }
@@ -413,139 +443,162 @@ fun AppUpdateSettings(
     return
   }
 
-  Column(
-    modifier = Modifier
-      .fillMaxWidth()
-      .verticalScroll(rememberScrollState())
-      .padding(horizontal = 16.dp)
-      .padding(bottom = 22.dp),
+  LazyColumn(
+    modifier = Modifier.fillMaxSize(),
+    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 22.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
-    SettingsHeaderCard()
+    item(key = "header") { SettingsHeaderCard() }
 
-    SettingsSwitchSection(
-      title = stringResource(R.string.app_update_check_title),
-      body = stringResource(R.string.app_update_check_body),
-      checked = enabled,
-      onCheckedChange = onToggle,
-    )
-
-    SettingsActionCard(
-      title = stringResource(R.string.app_update_check_now),
-      body = stringResource(R.string.app_update_check_body),
-      actionText = stringResource(R.string.app_update_check_now),
-      showActionChip = false,
-      onClick = onCheckNow,
-    )
-
-    SettingsSwitchSection(
-      title = stringResource(R.string.settings_notifications_title),
-      body = stringResource(R.string.settings_notifications_body),
-      checked = daemonNotificationEnabled,
-      onCheckedChange = onToggleDaemonNotification,
-    )
-
-    SettingsSectionCard {
-      ProtectorModeSection(
-        selectedMode = protectorMode,
-        onModeSelected = onProtectorModeChange,
+    item(key = "update_toggle") {
+      SettingsSwitchSection(
+        title = stringResource(R.string.app_update_check_title),
+        body = stringResource(R.string.app_update_check_body),
+        checked = enabled,
+        onCheckedChange = onToggle,
       )
     }
 
-    SettingsActionCard(
-      title = stringResource(R.string.settings_energy_saver_title),
-      body = stringResource(R.string.settings_energy_saver_body),
-      actionText = stringResource(R.string.settings_energy_saver_open),
-      onClick = {
-        onRefreshEnergySaver()
-        showEnergySaverConfigure = true
-      },
-    )
+    item(key = "update_now") {
+      SettingsActionCard(
+        title = stringResource(R.string.app_update_check_now),
+        body = stringResource(R.string.app_update_check_body),
+        actionText = stringResource(R.string.app_update_check_now),
+        showActionChip = false,
+        onClick = onCheckNow,
+      )
+    }
 
-    SettingsActionCard(
-      title = stringResource(R.string.settings_advanced_title),
-      body = stringResource(R.string.settings_advanced_body),
-      actionText = stringResource(R.string.settings_advanced_open),
-      onClick = { showAdvancedSettings = true },
-    )
+    item(key = "notifications") {
+      SettingsSwitchSection(
+        title = stringResource(R.string.settings_notifications_title),
+        body = stringResource(R.string.settings_notifications_body),
+        checked = daemonNotificationEnabled,
+        onCheckedChange = onToggleDaemonNotification,
+      )
+    }
 
-    SettingsSectionCard {
-      HotspotT2sSection(
-        enabled = hotspotT2sEnabled,
-        mode = hotspotMode,
-        program = hotspotProgram,
-        profile = hotspotProfile,
-        target = hotspotT2sTarget,
-        singboxProfile = hotspotT2sSingboxProfile,
-        wireproxyProfile = hotspotT2sWireproxyProfile,
-        captureAll = hotspotT2sCaptureAll,
-        singboxProfiles = hotspotSingboxProfiles,
-        wireproxyProfiles = hotspotWireproxyProfiles,
-        proxyPrograms = hotspotProxyPrograms,
-        vpnPrograms = hotspotVpnPrograms,
-        compactWidth = compactWidth,
-        onEnabledChange = { checked ->
-          if (checked && !hotspotT2sEnabled) {
-            showHotspotWarning = true
-          } else {
-            onHotspotT2sEnabledChange(checked)
-          }
+    item(key = "protector") {
+      SettingsSectionCard {
+        ProtectorModeSection(
+          selectedMode = protectorMode,
+          onModeSelected = onProtectorModeChange,
+        )
+      }
+    }
+
+    item(key = "energy_saver") {
+      SettingsActionCard(
+        title = stringResource(R.string.settings_energy_saver_title),
+        body = stringResource(R.string.settings_energy_saver_body),
+        actionText = stringResource(R.string.settings_energy_saver_open),
+        onClick = {
+          onRefreshEnergySaver()
+          showEnergySaverConfigure = true
         },
-        onModeChange = onHotspotModeChange,
-        onSelectionChange = onHotspotSelectionChange,
-        onTargetChange = onHotspotT2sTargetChange,
-        onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
-        onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
-        onCaptureAllChange = onHotspotT2sCaptureAllChange,
-        captivePortalEnabled = captivePortalEnabled,
-        onCaptivePortalEnabledChange = onCaptivePortalEnabledChange,
       )
     }
 
-    ProxyInfoSectionCard(
-      enabled = proxyInfoEnabled,
-      busy = proxyInfoBusy,
-      hidingStatus = hidingStatus,
-      onEnabledChange = onProxyInfoEnabledChange,
-      onConfigure = { showProxyInfoConfigure = true },
-    )
+    item(key = "advanced") {
+      SettingsActionCard(
+        title = stringResource(R.string.settings_advanced_title),
+        body = stringResource(R.string.settings_advanced_body),
+        actionText = stringResource(R.string.settings_advanced_open),
+        onClick = { showAdvancedSettings = true },
+      )
+    }
 
-    BlockedQuicSectionCard(
-      enabled = blockedQuicEnabled,
-      busy = blockedQuicBusy,
-      onEnabledChange = onBlockedQuicEnabledChange,
-      onConfigure = { showBlockedQuicConfigure = true },
-    )
+    item(key = "hotspot") {
+      SettingsSectionCard {
+        HotspotT2sSection(
+          enabled = hotspotT2sEnabled,
+          mode = hotspotMode,
+          program = hotspotProgram,
+          profile = hotspotProfile,
+          target = hotspotT2sTarget,
+          singboxProfile = hotspotT2sSingboxProfile,
+          wireproxyProfile = hotspotT2sWireproxyProfile,
+          captureAll = hotspotT2sCaptureAll,
+          singboxProfiles = hotspotSingboxProfiles,
+          wireproxyProfiles = hotspotWireproxyProfiles,
+          proxyPrograms = hotspotProxyPrograms,
+          vpnPrograms = hotspotVpnPrograms,
+          compactWidth = compactWidth,
+          onEnabledChange = { checked ->
+            if (checked && !hotspotT2sEnabled) {
+              showHotspotWarning = true
+            } else {
+              onHotspotT2sEnabledChange(checked)
+            }
+          },
+          onModeChange = onHotspotModeChange,
+          onSelectionChange = onHotspotSelectionChange,
+          onTargetChange = onHotspotT2sTargetChange,
+          onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
+          onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
+          onCaptureAllChange = onHotspotT2sCaptureAllChange,
+          captivePortalEnabled = captivePortalEnabled,
+          onCaptivePortalEnabledChange = onCaptivePortalEnabledChange,
+        )
+      }
+    }
 
-    SettingsLanguageSection(
-      languageMode = languageMode,
-      compactWidth = compactWidth,
-      onLanguageModeChange = onLanguageModeChange,
-    )
+    item(key = "proxy_info") {
+      ProxyInfoSectionCard(
+        enabled = proxyInfoEnabled,
+        busy = proxyInfoBusy,
+        hidingStatus = hidingStatus,
+        onEnabledChange = onProxyInfoEnabledChange,
+        onConfigure = { showProxyInfoConfigure = true },
+      )
+    }
 
-    SettingsThemeSection(
-      themeMode = themeMode,
-      compactWidth = compactWidth,
-      onThemeModeChange = onThemeModeChange,
-    )
+    item(key = "blocked_quic") {
+      BlockedQuicSectionCard(
+        enabled = blockedQuicEnabled,
+        busy = blockedQuicBusy,
+        onEnabledChange = onBlockedQuicEnabledChange,
+        onConfigure = { showBlockedQuicConfigure = true },
+      )
+    }
 
-    SettingsActionCard(
-      title = stringResource(R.string.settings_reset_identifier_title),
-      body = stringResource(R.string.settings_reset_identifier_body),
-      actionText = stringResource(R.string.settings_reset_identifier_action),
-      showActionChip = false,
-      enabled = !resettingModuleIdentifier,
-      onClick = { showResetIdentifierConfirm = true },
-    )
+    item(key = "language") {
+      SettingsLanguageSection(
+        languageMode = languageMode,
+        compactWidth = compactWidth,
+        onLanguageModeChange = onLanguageModeChange,
+      )
+    }
 
-    SettingsActionCard(
-      title = stringResource(R.string.settings_delete_module_title),
-      body = stringResource(R.string.settings_delete_module_body),
-      actionText = stringResource(R.string.settings_delete_module_action),
-      showActionChip = false,
-      danger = true,
-      onClick = onDeleteModule,
-    )
+    item(key = "theme") {
+      SettingsThemeSection(
+        themeMode = themeMode,
+        compactWidth = compactWidth,
+        onThemeModeChange = onThemeModeChange,
+      )
+    }
+
+    item(key = "reset_identifier") {
+      SettingsActionCard(
+        title = stringResource(R.string.settings_reset_identifier_title),
+        body = stringResource(R.string.settings_reset_identifier_body),
+        actionText = stringResource(R.string.settings_reset_identifier_action),
+        showActionChip = false,
+        enabled = !resettingModuleIdentifier,
+        onClick = { showResetIdentifierConfirm = true },
+      )
+    }
+
+    item(key = "delete_module") {
+      SettingsActionCard(
+        title = stringResource(R.string.settings_delete_module_title),
+        body = stringResource(R.string.settings_delete_module_body),
+        actionText = stringResource(R.string.settings_delete_module_action),
+        showActionChip = false,
+        danger = true,
+        onClick = onDeleteModule,
+      )
+    }
   }
 
   SettingsDialogsHost(

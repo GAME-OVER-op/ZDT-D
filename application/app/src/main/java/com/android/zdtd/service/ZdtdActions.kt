@@ -303,6 +303,9 @@ interface ZdtdActions {
   /** Set app theme mode: system | light | dark. */
   fun setThemeMode(mode: String)
 
+  /** Reload all settings-screen data in one coordinated refresh. */
+  fun refreshSettings(onDone: () -> Unit = {})
+
   /** Reload daemon settings used by the settings sheet. */
   fun refreshDaemonSettings()
 

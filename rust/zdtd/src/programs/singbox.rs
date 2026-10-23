@@ -348,13 +348,13 @@ pub fn start_if_enabled() -> Result<()> {
 pub fn start_construction_profile(profile: &str) -> Result<()> {
     ensure_valid_profile_name(profile)?;
     ensure_base_layout()?;
-    ensure_file(SINGBOX_BIN)?;
 
     let active = read_active_profiles().unwrap_or_default();
     if !active.profiles.get(profile).map(|st| st.enabled).unwrap_or(false) {
         info!("sing-box: construction profile '{}' is disabled, skip targeted start", profile);
         return Ok(());
     }
+    ensure_file(SINGBOX_BIN)?;
 
     let api_settings = settings::load_api_settings().unwrap_or_default();
     let hotspot_profile = api_settings
@@ -465,7 +465,6 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
 
 pub fn start_t2s_if_enabled() -> Result<()> {
     ensure_base_layout()?;
-    ensure_file(SINGBOX_BIN)?;
 
     let active = match read_active_profiles() {
         Ok(v) => v,
@@ -486,6 +485,7 @@ pub fn start_t2s_if_enabled() -> Result<()> {
         info!("sing-box: no enabled profiles in active.json");
         return Ok(());
     }
+    ensure_file(SINGBOX_BIN)?;
 
     let api_settings = settings::load_api_settings().unwrap_or_default();
     let hotspot_profile = api_settings
@@ -636,7 +636,6 @@ pub fn start_t2s_if_enabled() -> Result<()> {
 
 pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
     ensure_base_layout()?;
-    ensure_file(SINGBOX_BIN)?;
 
     let active = match read_active_profiles() {
         Ok(v) => v,
@@ -657,6 +656,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
         info!("sing-box vpn: no enabled profiles in active.json");
         return Ok(Vec::new());
     }
+    ensure_file(SINGBOX_BIN)?;
 
     let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding(true, false)
         .unwrap_or_else(|_| BTreeSet::new());

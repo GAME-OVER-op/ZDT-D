@@ -630,9 +630,12 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
 
     crate::logging::user_info("AmneziaWG: запуск");
 
-    if !Path::new(AWG_GO_BIN).is_file() || !Path::new(AWG_BIN).is_file() {
+    let awg_go_missing = !Path::new(AWG_GO_BIN).is_file();
+    let awg_missing = !Path::new(AWG_BIN).is_file();
+    if awg_go_missing || awg_missing {
         warn!("amneziawg: binary not found: {AWG_GO_BIN} or {AWG_BIN} -> skip");
-        crate::logging::user_warn("AmneziaWG: ошибка запуска, запуск продолжен");
+        if awg_go_missing { crate::programs::common::user_warn_missing_component("amneziawg-go"); }
+        if awg_missing { crate::programs::common::user_warn_missing_component("awg"); }
         return Ok(Vec::new());
     }
 
@@ -776,8 +779,12 @@ pub fn start_profile_for_hotspot_vpn(profile: &str) -> Result<Option<VpnTetherPr
         warn!("amneziawg: hotspot VPN profile '{}' is not enabled", profile);
         return Ok(None);
     }
-    if !Path::new(AWG_GO_BIN).is_file() || !Path::new(AWG_BIN).is_file() {
+    let awg_go_missing = !Path::new(AWG_GO_BIN).is_file();
+    let awg_missing = !Path::new(AWG_BIN).is_file();
+    if awg_go_missing || awg_missing {
         warn!("amneziawg: binary not found: {AWG_GO_BIN} or {AWG_BIN} -> skip hotspot VPN");
+        if awg_go_missing { crate::programs::common::user_warn_missing_component("amneziawg-go"); }
+        if awg_missing { crate::programs::common::user_warn_missing_component("awg"); }
         return Ok(None);
     }
     let plan = build_profile_plan(profile, true)?;

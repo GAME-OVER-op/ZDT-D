@@ -514,7 +514,7 @@ pub fn start_if_enabled() -> Result<()> {
     }
     if !is_installed() {
         log::warn!("tgwsproxy: binary is missing: {TGWS_BIN}");
-        crate::logging::user_warn("Telegram WS Proxy: бинарник не установлен");
+        crate::programs::common::user_warn_missing_component("tg-ws-proxy");
         return Ok(());
     }
     let setting = read_setting()?;

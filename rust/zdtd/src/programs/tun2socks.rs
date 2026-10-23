@@ -352,7 +352,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
 
     if !Path::new(TUN2SOCKS_BIN).is_file() {
         warn!("tun2socks: binary not found: {TUN2SOCKS_BIN} -> skip");
-        crate::logging::user_warn("tun2socks: ошибка запуска, запуск продолжен");
+        crate::programs::common::user_warn_missing_component("tun2socks");
         return Ok(Vec::new());
     }
 

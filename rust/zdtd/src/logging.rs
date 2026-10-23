@@ -237,6 +237,9 @@ fn user_localize_en(msg: &str) -> String {
     if let Some(rest) = msg.strip_prefix("DNSCrypt: ошибка проверки готовности, повтор через ") {
         return format!("DNSCrypt: readiness check error, retry in {rest}");
     }
+    if let Some(component) = msg.strip_prefix("Компонент ").and_then(|s| s.strip_suffix(" отсутствует")) {
+        return format!("Component {component} is missing");
+    }
     if let Some(name) = msg.strip_suffix(": ошибка запуска") {
         return format!("{name}: startup error");
     }
@@ -275,7 +278,12 @@ fn user_localize_ru(msg: &str) -> String {
         "DNSCrypt: startup failed — readiness wait stopped" => "DNSCrypt: ошибка запуска — ожидание готовности прекращено".to_string(),
         "D2S: startup failed — DNSCrypt startup continued" => "D2S: ошибка запуска — запуск DNSCrypt продолжен".to_string(),
         "D2S: stopped — DNSCrypt did not start" => "D2S: остановлен — DNSCrypt не запущен".to_string(),
-        _ => msg.to_string(),
+        _ => {
+            if let Some(component) = msg.strip_prefix("Component ").and_then(|s| s.strip_suffix(" is missing")) {
+                return format!("Компонент {component} отсутствует");
+            }
+            msg.to_string()
+        },
     }
 }
 

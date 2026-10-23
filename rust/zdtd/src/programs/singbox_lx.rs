@@ -454,13 +454,13 @@ pub fn start_if_enabled() -> Result<()> {
 pub fn start_construction_profile(profile: &str) -> Result<()> {
     ensure_valid_profile_name(profile)?;
     ensure_base_layout()?;
-    ensure_file(SINGBOX_LX_BIN)?;
 
     let active = read_active_profiles().unwrap_or_default();
     if !active.profiles.get(profile).map(|st| st.enabled).unwrap_or(false) {
         info!("sing-box-lx: construction profile '{}' is disabled, skip targeted start", profile);
         return Ok(());
     }
+    ensure_file(SINGBOX_LX_BIN)?;
 
     let api_settings = settings::load_api_settings().unwrap_or_default();
     // sing-box-lx is an independent optional backend. Do not inherit the regular
@@ -571,10 +571,6 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
 
 pub fn start_t2s_if_enabled() -> Result<()> {
     ensure_base_layout()?;
-    if !is_installed() {
-        info!("sing-box-lx: optional component is not installed; skipping automatic start");
-        return Ok(());
-    }
 
     let active = match read_active_profiles() {
         Ok(v) => v,
@@ -593,6 +589,11 @@ pub fn start_t2s_if_enabled() -> Result<()> {
 
     if enabled_names.is_empty() {
         info!("sing-box-lx: no enabled profiles in active.json");
+        return Ok(());
+    }
+    if !is_installed() {
+        info!("sing-box-lx: enabled profile exists but component is not installed");
+        crate::programs::common::user_warn_missing_component("sing-box-lx");
         return Ok(());
     }
 
@@ -746,10 +747,6 @@ pub fn start_t2s_if_enabled() -> Result<()> {
 
 pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
     ensure_base_layout()?;
-    if !is_installed() {
-        info!("sing-box-lx: optional component is not installed; skipping VPN start");
-        return Ok(Vec::new());
-    }
 
     let active = match read_active_profiles() {
         Ok(v) => v,
@@ -768,6 +765,11 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
 
     if enabled_names.is_empty() {
         info!("sing-box-lx vpn: no enabled profiles in active.json");
+        return Ok(Vec::new());
+    }
+    if !is_installed() {
+        info!("sing-box-lx: enabled VPN profile exists but component is not installed");
+        crate::programs::common::user_warn_missing_component("sing-box-lx");
         return Ok(Vec::new());
     }
 

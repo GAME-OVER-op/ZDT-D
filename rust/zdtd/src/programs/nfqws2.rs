@@ -45,11 +45,16 @@ pub fn start_active_profiles() -> Result<()> {
     ensure_dir(MODULE_DIR)?;
     ensure_dir(WORKING_DIR)?;
     ensure_dir(NFQWS2_ROOT)?;
-    ensure_file(NFQWS2_BIN)?;
 
     let active_path = Path::new(NFQWS2_ROOT).join("active.json");
     let active = read_json::<ActiveJson>(&active_path)
         .with_context(|| format!("read {}", active_path.display()))?;
+
+    if !active.profiles.values().any(|st| st.enabled) {
+        log::info!("nfqws2: no enabled profiles in active.json");
+        return Ok(());
+    }
+    ensure_file(NFQWS2_BIN)?;
 
     let tracker = Sha256Tracker::new(SHA_FLAG_FILE);
 

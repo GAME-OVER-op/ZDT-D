@@ -55,11 +55,16 @@ pub fn start_active_profiles() -> Result<()> {
     ensure_dir(MODULE_DIR)?;
     ensure_dir(WORKING_DIR)?;
     ensure_dir(DPITUNNEL_ROOT)?;
-    ensure_file(DPITUNNEL_BIN)?;
 
     let active_path = Path::new(DPITUNNEL_ROOT).join("active.json");
     let active = read_json::<ActiveJson>(&active_path)
         .with_context(|| format!("read {}", active_path.display()))?;
+
+    if !active.profiles.values().any(|st| st.enabled) {
+        log::info!("dpitunnel: no enabled profiles in active.json");
+        return Ok(());
+    }
+    ensure_file(DPITUNNEL_BIN)?;
 
     let tracker = Sha256Tracker::new(SHA_FLAG_FILE);
 

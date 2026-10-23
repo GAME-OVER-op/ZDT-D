@@ -337,12 +337,21 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
+    let dnscrypt_bin = Path::new(BIN_DIR).join("dnscrypt");
+    if !dnscrypt_bin.is_file() {
+        warn!("dnscrypt enabled but binary not found: {} -> skip", dnscrypt_bin.display());
+        crate::programs::common::user_warn_missing_component("dnscrypt");
+        return Ok(());
+    }
+
     let mut d2s_child = match parse_active_d2s_listener(toml_path) {
         Ok(Some(listener)) => match spawn_d2s(toml_path, listener) {
             Ok(child) => Some(child),
             Err(error) => {
                 warn!("d2s start failed: {error:#}");
-                crate::logging::user_warn("D2S: ошибка запуска — запуск DNSCrypt продолжен");
+                if !crate::programs::common::report_missing_components(&error) {
+                    crate::logging::user_warn("D2S: ошибка запуска — запуск DNSCrypt продолжен");
+                }
                 None
             }
         },
@@ -362,7 +371,9 @@ pub fn start_if_enabled() -> Result<()> {
         }
         Err(error) => {
             warn!("dnscrypt spawn failed: {error:#}");
-            crate::logging::user_error("DNSCrypt: ошибка запуска — ожидание готовности прекращено");
+            if !crate::programs::common::report_missing_components(&error) {
+                crate::logging::user_error("DNSCrypt: ошибка запуска — ожидание готовности прекращено");
+            }
             stop_started_d2s(&mut d2s_child);
             return Ok(());
         }
@@ -464,8 +475,7 @@ fn spawn_d2s(dnscrypt_toml: &Path, listener: SocketAddr) -> Result<Child> {
 fn spawn_dnscrypt(toml_path: &Path, listen_port: u16) -> Result<Option<Child>> {
     let bin = Path::new(BIN_DIR).join("dnscrypt");
     if !bin.is_file() {
-        warn!("dnscrypt enabled but binary not found: {} -> skip", bin.display());
-        return Ok(None);
+        anyhow::bail!("dnscrypt binary not found: {}", bin.display());
     }
 
     let mut cmd = Command::new(&bin);

@@ -572,6 +572,7 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
 
 	if !Path::new(MIHOMO_BIN).is_file() {
 		warn!("mihomo: binary not found: {MIHOMO_BIN} -> skip targeted start");
+		crate::programs::common::user_warn_missing_component("mihomo");
 		return Ok(());
 	}
 	let tun2socks_available = Path::new(TUN2SOCKS_BIN).is_file();
@@ -666,7 +667,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
 
     if !Path::new(MIHOMO_BIN).is_file() {
         warn!("mihomo: binary not found: {MIHOMO_BIN} -> skip");
-        crate::logging::user_warn("mihomo: ошибка запуска, запуск продолжен");
+        crate::programs::common::user_warn_missing_component("mihomo");
         return Ok(Vec::new());
     }
     let tun2socks_available = Path::new(TUN2SOCKS_BIN).is_file();
@@ -689,7 +690,9 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 plans.push(plan);
             }
             Err(e) => {
-                had_error = true;
+                if !crate::programs::common::report_missing_components(&e) {
+                    had_error = true;
+                }
                 warn!("mihomo: profile '{name}' skip: {e:#}");
             }
         }
@@ -764,7 +767,9 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
             Ok(Some(profile)) => profiles.push(profile),
             Ok(None) => {}
             Err(e) => {
-                had_error = true;
+                if !crate::programs::common::report_missing_components(&e) {
+                    had_error = true;
+                }
                 warn!("mihomo: profile '{}' failed, startup continues: {e:#}", plan.name);
             }
         }
@@ -784,10 +789,12 @@ pub fn start_profile_for_hotspot_vpn(profile: &str) -> Result<Option<VpnTetherPr
     }
     if !Path::new(MIHOMO_BIN).is_file() {
         warn!("mihomo: binary not found: {MIHOMO_BIN} -> skip hotspot VPN");
+        crate::programs::common::user_warn_missing_component("mihomo");
         return Ok(None);
     }
     if !Path::new(TUN2SOCKS_BIN).is_file() {
         warn!("mihomo: tun2socks binary not found: {TUN2SOCKS_BIN} -> skip hotspot VPN");
+        crate::programs::common::user_warn_missing_component("tun2socks");
         return Ok(None);
     }
     let plan = build_profile_plan_for_hotspot(profile)?;

@@ -101,7 +101,6 @@ pub fn start_if_enabled() -> Result<()> {
     ensure_dir(WORKING_DIR)?;
     fs::create_dir_all(WIREPROXY_ROOT).ok();
     fs::create_dir_all(WIREPROXY_PROFILE_ROOT).ok();
-    ensure_file(WIREPROXY_BIN)?;
 
     let active_path = Path::new(ACTIVE_JSON);
     let active: ActiveProfiles = match read_json(active_path) {
@@ -123,6 +122,7 @@ pub fn start_if_enabled() -> Result<()> {
         info!("wireproxy: no enabled profiles in active.json");
         return Ok(());
     }
+    ensure_file(WIREPROXY_BIN)?;
 
     let api_settings = settings::load_api_settings().unwrap_or_default();
     let hotspot_profile = api_settings
@@ -313,13 +313,13 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
     ensure_dir(WORKING_DIR)?;
     fs::create_dir_all(WIREPROXY_ROOT).ok();
     fs::create_dir_all(WIREPROXY_PROFILE_ROOT).ok();
-    ensure_file(WIREPROXY_BIN)?;
 
     let active: ActiveProfiles = read_json(Path::new(ACTIVE_JSON)).unwrap_or_default();
     if !active.profiles.get(profile).map(|st| st.enabled).unwrap_or(false) {
         info!("wireproxy: construction profile '{}' is disabled, skip targeted start", profile);
         return Ok(());
     }
+    ensure_file(WIREPROXY_BIN)?;
 
     let api_settings = settings::load_api_settings().unwrap_or_default();
     let hotspot_profile = api_settings

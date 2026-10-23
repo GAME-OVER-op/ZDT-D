@@ -438,7 +438,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
 
     if !Path::new(OPENVPN_BIN).is_file() {
         warn!("openvpn: binary not found: {OPENVPN_BIN} -> skip");
-        crate::logging::user_warn("OpenVPN: ошибка запуска, запуск продолжен");
+        crate::programs::common::user_warn_missing_component("openvpn");
         return Ok(Vec::new());
     }
 
@@ -572,6 +572,7 @@ pub fn start_profile_for_hotspot_vpn(profile: &str) -> Result<Option<VpnTetherPr
     }
     if !Path::new(OPENVPN_BIN).is_file() {
         warn!("openvpn: binary not found: {OPENVPN_BIN} -> skip hotspot VPN");
+        crate::programs::common::user_warn_missing_component("openvpn");
         return Ok(None);
     }
     let plan = build_profile_plan(profile, true)?;

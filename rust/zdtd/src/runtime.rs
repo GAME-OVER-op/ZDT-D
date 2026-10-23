@@ -11,7 +11,7 @@ use std::{
 use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
-    programs::{amneziawg, byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tgwsproxy, tun2socks, myvpn, mihomo, mieru},
+    programs::{amneziawg, byedpi, common, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tgwsproxy, tun2socks, myvpn, mihomo, mieru},
     programs::{singbox, singbox_lx, wireproxy, hysteria2},
     stats,
     settings,
@@ -38,6 +38,7 @@ pub fn last_start_partial() -> bool {
 /// Note: iptables backup should already exist (created by daemon on first run).
 pub fn start_full() -> Result<()> {
     reset_start_partial();
+    common::reset_missing_component_reported();
     // Clean only the main user-facing log before the first visible startup line.
     // Do not delete profile logs yet: on hot daemon replacement we may adopt an
     // already-running runtime and should not erase active process logs.
@@ -184,7 +185,9 @@ pub fn start_full() -> Result<()> {
                     Err(e) => {
                         log::warn!("{log_label} startup failed, continuing: {e:#}");
                         mark_start_partial();
-                        crate::logging::user_warn(user_message);
+                        if !common::report_missing_components(&e) {
+                            crate::logging::user_warn(user_message);
+                        }
                     }
                 }
             }
@@ -250,7 +253,9 @@ pub fn start_full() -> Result<()> {
 // If none of these are running after startup, treat it as a failed start:
 // log an error and stop everything (return to OFF state).
 if !any_main_service_running() {
-    crate::logging::user_error("Ошибка запуска: проверьте настройки");
+    if !common::missing_component_reported() {
+        crate::logging::user_error("Ошибка запуска: проверьте настройки");
+    }
     log::error!("startup sanity check failed: no main services are running after start");
 
     // Persist enabled=false so reboot won't autostart a broken config.
@@ -810,6 +815,7 @@ where
         Ok(Err(e)) => {
             mark_start_partial();
             log::warn!("startup service={name} failed, continuing: {e:#}");
+            let _ = common::report_missing_components(&e);
         }
         Err(_) => {
             mark_start_partial();
@@ -1035,7 +1041,9 @@ fn wait_start_group(stage_name: &str, handles: Vec<(&'static str, thread::JoinHa
             }
             Ok(Err(e)) => {
                 log::error!("startup stage={stage_name} service={name} failed: {:#}", e);
-                crate::logging::user_warn(&format!("{name}: ошибка запуска"));
+                if !common::report_missing_components(&e) {
+                    crate::logging::user_warn(&format!("{name}: ошибка запуска"));
+                }
                 failures.push(name.to_string());
             }
             Err(_) => {

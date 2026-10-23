@@ -35,6 +35,8 @@ enum class SingBoxLxComponentError {
 data class SingBoxLxComponentState(
     val stage: SingBoxLxComponentStage = SingBoxLxComponentStage.IDLE,
     val installed: Boolean = false,
+    /** True only after the app has actually probed the optional component state. */
+    val statusResolved: Boolean = false,
     val fileName: String = SingBoxLxComponentRepository.ARCHIVE_FILE,
     val progressPercent: Int = 0,
     val downloadedBytes: Long = 0L,
@@ -76,6 +78,7 @@ class SingBoxLxComponentRepository(
         return SingBoxLxComponentState(
             stage = if (installed) SingBoxLxComponentStage.INSTALLED else SingBoxLxComponentStage.IDLE,
             installed = installed,
+            statusResolved = true,
             selectedAbi = selectAbi().orEmpty(),
             installedVersion = if (installed) readInstalledVersion() else "",
         )
@@ -95,12 +98,14 @@ class SingBoxLxComponentRepository(
             SingBoxLxComponentState(
                 stage = SingBoxLxComponentStage.IDLE,
                 installed = false,
+                statusResolved = true,
                 selectedAbi = selectAbi().orEmpty(),
             )
         } else {
             SingBoxLxComponentState(
                 stage = SingBoxLxComponentStage.FAILED,
                 installed = installed,
+                statusResolved = true,
                 selectedAbi = selectAbi().orEmpty(),
                 installedVersion = if (installed) readInstalledVersion() else "",
                 error = SingBoxLxComponentError.REMOVE,
@@ -131,17 +136,17 @@ class SingBoxLxComponentRepository(
             archive.delete()
             unpackDir.deleteRecursively()
 
-            onState(SingBoxLxComponentState(stage = SingBoxLxComponentStage.DOWNLOADING, selectedAbi = abi))
+            onState(SingBoxLxComponentState(stage = SingBoxLxComponentStage.DOWNLOADING, statusResolved = true, selectedAbi = abi))
             downloadArchive(archiveTmp, abi, onState)
             if (!archiveTmp.renameTo(archive)) {
                 archiveTmp.copyTo(archive, overwrite = true)
                 archiveTmp.delete()
             }
 
-            onState(SingBoxLxComponentState(stage = SingBoxLxComponentStage.UNPACKING, progressPercent = 100, selectedAbi = abi))
+            onState(SingBoxLxComponentState(stage = SingBoxLxComponentStage.UNPACKING, statusResolved = true, progressPercent = 100, selectedAbi = abi))
             unzipSelectedAbi(archive, unpackDir, abi)
 
-            onState(SingBoxLxComponentState(stage = SingBoxLxComponentStage.VERIFYING, progressPercent = 100, selectedAbi = abi))
+            onState(SingBoxLxComponentState(stage = SingBoxLxComponentStage.VERIFYING, statusResolved = true, progressPercent = 100, selectedAbi = abi))
             val manifest = readManifest(archive)
             validateManifest(manifest)
             val version = manifest.optString("version", "").trim()
@@ -150,6 +155,7 @@ class SingBoxLxComponentRepository(
             onState(
                 SingBoxLxComponentState(
                     stage = SingBoxLxComponentStage.INSTALLING,
+                    statusResolved = true,
                     progressPercent = 100,
                     selectedAbi = abi,
                     installedVersion = version,
@@ -166,6 +172,7 @@ class SingBoxLxComponentRepository(
             return SingBoxLxComponentState(
                 stage = SingBoxLxComponentStage.INSTALLED,
                 installed = true,
+                statusResolved = true,
                 progressPercent = 100,
                 selectedAbi = abi,
                 installedVersion = version,
@@ -232,6 +239,7 @@ class SingBoxLxComponentRepository(
                                 onState(
                                     SingBoxLxComponentState(
                                         stage = SingBoxLxComponentStage.DOWNLOADING,
+                                        statusResolved = true,
                                         progressPercent = percent,
                                         downloadedBytes = downloaded,
                                         totalBytes = totalBytes,
@@ -479,6 +487,7 @@ class SingBoxLxComponentRepository(
         return SingBoxLxComponentState(
             stage = SingBoxLxComponentStage.FAILED,
             installed = installed,
+            statusResolved = true,
             selectedAbi = abi,
             installedVersion = if (installed) readInstalledVersion() else "",
             error = error,

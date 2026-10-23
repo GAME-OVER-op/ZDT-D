@@ -1246,6 +1246,7 @@ pub fn main_pids_exact() -> Vec<i32> {
     }
     pids.sort_unstable();
     pids.dedup();
+    pids.retain(|pid| process_pid_is_live(*pid as u32));
     pids
 }
 
@@ -1255,6 +1256,7 @@ pub fn tun2socks_pids_exact() -> Vec<i32> {
     if let Ok(out) = shell::capture_quiet(cmd) { pids.extend(parse_pid_lines(&out)); }
     pids.sort_unstable();
     pids.dedup();
+    pids.retain(|pid| process_pid_is_live(*pid as u32));
     pids
 }
 

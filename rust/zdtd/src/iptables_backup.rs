@@ -138,11 +138,11 @@ pub fn flush_tables_v6_best_effort() {
 
 pub fn reset_restore_v4_if_present() -> Result<bool> {
     let path_v4 = settings::iptables_backup_path();
-    flush_tables_v4_best_effort();
     if !path_v4.exists() {
-        logging::warn("iptables backup missing; IPv4 tables flushed without restore");
+        logging::warn("iptables backup missing; leaving IPv4 nat/mangle untouched");
         return Ok(false);
     }
+    flush_tables_v4_best_effort();
 
     let restore_line = format!("iptables-restore < '{}'", path_v4.display());
     shell::ok_sh_timeout(&restore_line, IPT_RESTORE_TIMEOUT)
@@ -153,11 +153,11 @@ pub fn reset_restore_v4_if_present() -> Result<bool> {
 
 pub fn reset_restore_v6_if_present() -> Result<bool> {
     let path_v6 = settings::ip6tables_backup_path();
-    flush_tables_v6_best_effort();
     if !path_v6.exists() {
-        logging::warn("ip6tables backup missing; IPv6 tables flushed without restore");
+        logging::warn("ip6tables backup missing; leaving IPv6 nat/mangle untouched");
         return Ok(false);
     }
+    flush_tables_v6_best_effort();
 
     let restore6 = format!("ip6tables-restore < '{}'", path_v6.display());
     match shell::ok_sh_timeout(&restore6, IPT_RESTORE_TIMEOUT) {

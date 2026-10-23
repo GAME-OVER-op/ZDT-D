@@ -31,8 +31,30 @@ fn pidof_any(names: &[&str]) -> Vec<i32> {
     all
 }
 
+fn process_state(pid: i32) -> Option<char> {
+    let raw = std::fs::read_to_string(Path::new("/proc").join(pid.to_string()).join("stat")).ok()?;
+    let rparen = raw.rfind(')')?;
+    raw.get(rparen + 2..)?.split_whitespace().next()?.chars().next()
+}
+
+fn reap_pid_if_child(pid: i32) {
+    let mut status = 0;
+    unsafe {
+        // Target only the service PID. Never use waitpid(-1) here: stop runs several
+        // shell commands in parallel and a global reaper could steal their child status.
+        let _ = libc::waitpid(pid, &mut status, libc::WNOHANG);
+    }
+}
+
 fn pid_alive(pid: i32) -> bool {
-    Path::new("/proc").join(pid.to_string()).is_dir()
+    match process_state(pid) {
+        Some('Z' | 'X' | 'x') => {
+            reap_pid_if_child(pid);
+            false
+        }
+        Some(_) => true,
+        None => Path::new("/proc").join(pid.to_string()).is_dir(),
+    }
 }
 
 fn kill_pids_with_escalation(label: &str, pids: &[i32]) -> Result<()> {
@@ -239,7 +261,7 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
 
     if !restored_v4 {
         log::warn!(
-            "iptables backup is missing; IPv4 nat/mangle were flushed without restore (proxyInfo filter chains already removed)"
+            "iptables backup is missing; baseline restore skipped and existing IPv4 nat/mangle were left untouched"
         );
     }
 

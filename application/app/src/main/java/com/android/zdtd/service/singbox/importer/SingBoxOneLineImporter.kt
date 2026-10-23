@@ -59,18 +59,8 @@ object SingBoxOneLineImporter {
     val text = rawInput.trim()
     require(text.isNotEmpty()) { "Empty source" }
 
-    if (text.startsWith("{")) {
-      val json = JSONObject(text)
-      normalizeAndValidateTargetCompatibility(json, target)
-      val normalized = json.toString(2)
-      return SingBoxImportResult(
-        configJson = normalized,
-        detectedPort = findMixedInboundPort(json),
-        suggestedName = json.optJSONArray("outbounds")
-          ?.optJSONObject(0)
-          ?.optString("tag")
-          ?.takeIf { it.isNotBlank() && it != "proxy" },
-      )
+    if (text.startsWith("{") || text.startsWith("[")) {
+      return importRawJson(text, preferredMixedPort, target)
     }
 
     val outbound = parseShareLink(text, target)
@@ -80,6 +70,210 @@ object SingBoxOneLineImporter {
       detectedPort = preferredMixedPort,
       suggestedName = outbound.nameHint,
     )
+  }
+
+  /**
+   * Accept the same useful sing-box JSON shapes users commonly copy from LxBox:
+   * a full config, one outbound/endpoint, an array of nodes, or an array of configs.
+   *
+   * A raw endpoint must never be left at the config root. In particular WireGuard/AWG
+   * legitimately carries an `address` field on the endpoint itself; placing that object
+   * at the root makes sing-box interpret `address` as an unknown global Config field.
+   */
+  private fun importRawJson(
+    text: String,
+    preferredMixedPort: Int,
+    target: SingBoxImportTarget,
+  ): SingBoxImportResult {
+    val root = if (text.startsWith("{")) JSONObject(text) else null
+    val array = if (text.startsWith("[")) JSONArray(text) else null
+
+    val config = when {
+      root != null && root.has("type") -> buildConfigFromRawNodes(listOf(root), preferredMixedPort)
+      root != null && (root.has("outbounds") || root.has("endpoints")) -> {
+        normalizeFullRawConfig(root)
+        root
+      }
+      root != null -> throw IllegalArgumentException("JSON object is neither a sing-box node nor config")
+      array != null -> {
+        val nodes = mutableListOf<JSONObject>()
+        for (i in 0 until array.length()) {
+          val item = array.optJSONObject(i)
+            ?: throw IllegalArgumentException("JSON array must contain objects")
+          if (item.has("type")) {
+            nodes += item
+          } else if (item.has("outbounds") || item.has("endpoints")) {
+            normalizeFullRawConfig(item)
+            item.optJSONArray("outbounds")?.let { values ->
+              for (j in 0 until values.length()) values.optJSONObject(j)?.let(nodes::add)
+            }
+            item.optJSONArray("endpoints")?.let { values ->
+              for (j in 0 until values.length()) values.optJSONObject(j)?.let(nodes::add)
+            }
+          } else {
+            throw IllegalArgumentException("JSON array contains an unsupported object")
+          }
+        }
+        require(nodes.isNotEmpty()) { "JSON array contains no sing-box nodes" }
+        buildConfigFromRawNodes(nodes, preferredMixedPort)
+      }
+      else -> throw IllegalArgumentException("Invalid JSON source")
+    }
+
+    normalizeAndValidateTargetCompatibility(config, target)
+    val firstNode = firstConfigNode(config)
+    return SingBoxImportResult(
+      configJson = config.toString(2),
+      detectedPort = findMixedInboundPort(config),
+      suggestedName = firstNode?.optString("tag")
+        ?.takeIf { it.isNotBlank() && it != "proxy" },
+    )
+  }
+
+  private val ENDPOINT_TYPES = setOf("wireguard", "tailscale", "openvpn-client", "openconnect")
+
+  private fun isEndpointType(type: String): Boolean = type.trim().lowercase() in ENDPOINT_TYPES
+
+  private fun normalizeFullRawConfig(config: JSONObject) {
+    val outbounds = config.optJSONArray("outbounds") ?: JSONArray()
+    val endpoints = config.optJSONArray("endpoints") ?: JSONArray()
+    val keptOutbounds = JSONArray()
+    val keptEndpoints = JSONArray()
+
+    for (i in 0 until endpoints.length()) {
+      endpoints.optJSONObject(i)?.let { node ->
+        normalizeRawNode(node)
+        keptEndpoints.put(node)
+      }
+    }
+    for (i in 0 until outbounds.length()) {
+      val node = outbounds.optJSONObject(i) ?: continue
+      normalizeRawNode(node)
+      if (isEndpointType(node.optString("type"))) keptEndpoints.put(node) else keptOutbounds.put(node)
+    }
+
+    if (config.has("outbounds") || keptOutbounds.length() > 0) config.put("outbounds", keptOutbounds)
+    if (config.has("endpoints") || keptEndpoints.length() > 0) config.put("endpoints", keptEndpoints)
+  }
+
+  private fun buildConfigFromRawNodes(nodes: List<JSONObject>, mixedPort: Int): JSONObject {
+    val outbounds = JSONArray()
+    val endpoints = JSONArray()
+    val usedTags = linkedSetOf<String>()
+    var proxyTag: String? = null
+
+    fun uniqueTag(preferred: String, index: Int): String {
+      var base = preferred.trim().ifBlank { if (index == 0) "proxy" else "proxy_${index + 1}" }
+      if (base !in usedTags) {
+        usedTags += base
+        return base
+      }
+      var suffix = 2
+      while ("${base}_$suffix" in usedTags) suffix++
+      base = "${base}_$suffix"
+      usedTags += base
+      return base
+    }
+
+    nodes.forEachIndexed { index, original ->
+      val node = JSONObject(original.toString())
+      normalizeRawNode(node)
+      val tag = uniqueTag(node.optString("tag"), index)
+      node.put("tag", tag)
+      if (proxyTag == null && node.optString("type").lowercase() !in setOf("direct", "block", "dns")) {
+        proxyTag = tag
+      }
+      if (isEndpointType(node.optString("type"))) endpoints.put(node) else outbounds.put(node)
+    }
+
+    val finalTag = proxyTag ?: firstJsonObject(outbounds)?.optString("tag")
+      ?: firstJsonObject(endpoints)?.optString("tag")
+      ?: "proxy"
+
+    if (!jsonArrayHasType(outbounds, "direct")) {
+      outbounds.put(JSONObject().put("tag", uniqueTag("direct", nodes.size + 1)).put("type", "direct"))
+    }
+    if (!jsonArrayHasType(outbounds, "direct", tag = "bypass")) {
+      outbounds.put(JSONObject().put("tag", uniqueTag("bypass", nodes.size + 2)).put("type", "direct"))
+    }
+
+    val directDomains = linkedSetOf("dns.google")
+    nodes.forEach { collectRawNodeHosts(it, directDomains) }
+    val dnsRules = JSONArray()
+      .put(JSONObject().put("domain", JSONArray().also { arr -> directDomains.forEach { domain -> arr.put(domain) } }).put("server", "dns-direct"))
+      .put(JSONObject().put("inbound", JSONArray().put("mixed-in")).put("query_type", JSONArray().put("A").put("AAAA")).put("server", "dns-fake").put("disable_cache", true))
+
+    val config = JSONObject()
+      .put("dns", JSONObject()
+        .put("servers", JSONArray()
+          .put(JSONObject().put("type", "local").put("tag", "dns-local"))
+          .put(JSONObject().put("type", "udp").put("tag", "dns-direct").put("server", "8.8.8.8").put("server_port", 53))
+          .put(JSONObject().put("type", "https").put("tag", "dns-remote").put("server", "dns.google").put("server_port", 443).put("path", "/dns-query").put("domain_resolver", JSONObject().put("server", "dns-direct").put("strategy", "ipv4_only")))
+          .put(JSONObject().put("type", "fakeip").put("tag", "dns-fake").put("inet4_range", "198.18.0.0/15").put("inet6_range", "fc00::/18")))
+        .put("rules", dnsRules)
+        .put("final", "dns-remote")
+        .put("strategy", "ipv4_only"))
+      .put("inbounds", JSONArray().put(JSONObject().put("listen", "127.0.0.1").put("listen_port", mixedPort).put("tag", "mixed-in").put("type", "mixed")))
+      .put("log", JSONObject().put("level", "panic"))
+      .put("outbounds", outbounds)
+      .put("route", JSONObject()
+        .put("auto_detect_interface", true)
+        .put("default_domain_resolver", JSONObject().put("server", "dns-direct").put("strategy", "ipv4_only"))
+        .put("rule_set", JSONArray())
+        .put("rules", JSONArray()
+          .put(JSONObject().put("inbound", JSONArray().put("mixed-in")).put("action", "sniff"))
+          .put(JSONObject().put("action", "hijack-dns").put("port", JSONArray().put(53)))
+          .put(JSONObject().put("action", "hijack-dns").put("protocol", JSONArray().put("dns")))
+          .put(JSONObject().put("action", "reject").put("ip_cidr", JSONArray().put("224.0.0.0/3").put("ff00::/8")).put("source_ip_cidr", JSONArray().put("224.0.0.0/3").put("ff00::/8"))))
+        .put("final", finalTag))
+    if (endpoints.length() > 0) config.put("endpoints", endpoints)
+    return config
+  }
+
+  private fun normalizeRawNode(node: JSONObject) {
+    val type = node.optString("type").trim().lowercase()
+    if (type != "masque") return
+
+    if (node.has("address")) {
+      val values = mutableListOf<String>()
+      when (val raw = node.opt("address")) {
+        is JSONArray -> for (i in 0 until raw.length()) raw.optString(i).trim().takeIf { it.isNotBlank() }?.let(values::add)
+        is String -> raw.split(',').map { it.trim() }.filter { it.isNotBlank() }.let(values::addAll)
+      }
+      values.firstOrNull { ':' !in it }?.let { if (!node.has("ip")) node.put("ip", it) }
+      values.firstOrNull { ':' in it }?.let { if (!node.has("ipv6")) node.put("ipv6", it) }
+      node.remove("address")
+    }
+    // Current sing-box-lx expects MASQUE TLS options inside `tls` and rejects these flat aliases.
+    node.remove("sni")
+    node.remove("skip_cert_verify")
+  }
+
+  private fun collectRawNodeHosts(node: JSONObject, out: MutableSet<String>) {
+    fun addHost(raw: String?) {
+      val host = raw?.trim().orEmpty()
+      if (host.isBlank() || ':' in host || host.matches(Regex("^(25[0-5]|2[0-4]\\d|1?\\d?\\d)(\\.(25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}$"))) return
+      out += host
+    }
+    addHost(node.optString("server"))
+    node.optJSONArray("peers")?.let { peers ->
+      for (i in 0 until peers.length()) addHost(peers.optJSONObject(i)?.optString("address"))
+    }
+  }
+
+  private fun firstConfigNode(config: JSONObject): JSONObject? =
+    firstJsonObject(config.optJSONArray("outbounds")) ?: firstJsonObject(config.optJSONArray("endpoints"))
+
+  private fun firstJsonObject(array: JSONArray?): JSONObject? =
+    if (array != null && array.length() > 0) array.optJSONObject(0) else null
+
+  private fun jsonArrayHasType(array: JSONArray, type: String, tag: String? = null): Boolean {
+    for (i in 0 until array.length()) {
+      val item = array.optJSONObject(i) ?: continue
+      if (!item.optString("type").equals(type, ignoreCase = true)) continue
+      if (tag == null || item.optString("tag") == tag) return true
+    }
+    return false
   }
 
   private fun parseShareLink(link: String, target: SingBoxImportTarget): OutboundSpec {

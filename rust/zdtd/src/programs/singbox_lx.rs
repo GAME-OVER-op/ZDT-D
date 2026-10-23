@@ -623,6 +623,10 @@ pub fn start_t2s_if_enabled() -> Result<()> {
             Err(e) => {
                 had_error = true;
                 warn!("sing-box-lx: profile '{}' skip: {e:#}", name);
+                crate::logging::user_warn(&format!(
+                    "sing-box-lx: профиль '{}' не запущен: {e:#}",
+                    name
+                ));
             }
         }
     }
@@ -1103,6 +1107,7 @@ fn collect_t2s_profile_servers(
 
     let mut out = Vec::<ServerPlan>::new();
     let mut seen_ports = BTreeSet::<u16>::new();
+    let mut validation_errors = Vec::<String>::new();
     let entries = read_sorted_dirs(&server_root)?;
 
     for (name, dir) in entries {
@@ -1115,6 +1120,7 @@ fn collect_t2s_profile_servers(
                     profile,
                     name
                 );
+                validation_errors.push(format!("server '{name}': bad setting.json: {e:#}"));
                 continue;
             }
         };
@@ -1127,6 +1133,7 @@ fn collect_t2s_profile_servers(
                 profile,
                 name
             );
+            validation_errors.push(format!("server '{name}': missing/invalid port"));
             continue;
         }
         if external_used.contains(&setting.port)
@@ -1140,6 +1147,7 @@ fn collect_t2s_profile_servers(
                 name,
                 setting.port
             );
+            validation_errors.push(format!("server '{name}': port conflict {}", setting.port));
             continue;
         }
 
@@ -1150,6 +1158,7 @@ fn collect_t2s_profile_servers(
                 profile,
                 name
             );
+            validation_errors.push(format!("server '{name}': config.json missing"));
             continue;
         }
         if !is_nonempty_file(&cfg).unwrap_or(false) {
@@ -1158,6 +1167,7 @@ fn collect_t2s_profile_servers(
                 profile,
                 name
             );
+            validation_errors.push(format!("server '{name}': config.json empty"));
             continue;
         }
         if let Err(e) = normalize_singbox_config_for_t2s(&cfg, setting.port, &profile_setting.dns) {
@@ -1166,6 +1176,7 @@ fn collect_t2s_profile_servers(
                 profile,
                 name
             );
+            validation_errors.push(format!("server '{name}': normalize failed: {e:#}"));
             continue;
         }
         let runtime_cfg = match prepare_runtime_config(&cfg, profile_setting.endpoint_resolve) {
@@ -1176,6 +1187,7 @@ fn collect_t2s_profile_servers(
                     profile,
                     name
                 );
+                validation_errors.push(format!("server '{name}': endpoint resolve failed: {e:#}"));
                 continue;
             }
         };
@@ -1186,6 +1198,7 @@ fn collect_t2s_profile_servers(
                 profile,
                 name
             );
+            validation_errors.push(format!("server '{name}': config check failed: {e:#}"));
             continue;
         }
 
@@ -1195,6 +1208,13 @@ fn collect_t2s_profile_servers(
             config_path: runtime_cfg,
             log_path: dir.join("log/sing-box.log"),
         });
+    }
+
+    if out.is_empty() && !validation_errors.is_empty() {
+        bail!(
+            "profile '{profile}' has no runnable t2s servers: {}",
+            validation_errors.join("; ")
+        );
     }
 
     Ok(out)
@@ -2154,6 +2174,27 @@ fn singbox_check_config(config_path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn validate_config_text(config_text: &str) -> Result<()> {
+    if !is_installed() {
+        bail!("sing-box-lx optional component is not installed");
+    }
+    let parsed: Value = serde_json::from_str(config_text).context("invalid sing-box-lx JSON")?;
+    if !parsed.is_object() {
+        bail!("sing-box-lx config root must be a JSON object");
+    }
+    let tmp_dir = Path::new(SINGBOX_LX_ROOT).join("tmp");
+    fs::create_dir_all(&tmp_dir).with_context(|| format!("create {}", tmp_dir.display()))?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp = tmp_dir.join(format!("validate.{}.{}.json", std::process::id(), stamp));
+    fs::write(&tmp, config_text).with_context(|| format!("write {}", tmp.display()))?;
+    let result = singbox_check_config(&tmp);
+    let _ = fs::remove_file(&tmp);
+    result
+}
+
 fn singbox_check_config_with_vpn_retry(config_path: &Path, log_path: &Path) -> Result<()> {
     ensure_parent_dir(log_path)?;
     let (code, out) = run_singbox_check(config_path)?;
@@ -2551,6 +2592,7 @@ fn is_forbidden_tun_name(s: &str) -> bool {
         || lower.starts_with("br-")
 }
 
+
 fn main_pids_exact() -> Vec<u32> {
     let mut pids = Vec::new();
     for name in ["sing-box-lx", "singbox-lx"] {
@@ -2566,6 +2608,7 @@ fn main_pids_exact() -> Vec<u32> {
     }
     pids.sort_unstable();
     pids.dedup();
+    pids.retain(|pid| process_pid_is_live(*pid));
     pids
 }
 

@@ -375,7 +375,7 @@ class WarpMasqueRegistrar(
 }
 
 data class WarpMasqueNodeOptions(
-  val name: String = "WARP MASQUE",
+  val name: String = "warp_masq",
   val vhttp: String = "auto",
   val server: String = "",
   val port: Int? = null,

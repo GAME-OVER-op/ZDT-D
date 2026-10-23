@@ -77,6 +77,17 @@ pub fn parse_pid_lines(out: &str) -> Vec<i32> {
         .collect()
 }
 
+/// `/proc/<pid>` may outlive a killed process while it is a zombie. Treat such
+/// entries as stopped so backend `is_running()` checks agree with Statistics.
+pub fn process_pid_is_live(pid: u32) -> bool {
+    let Ok(raw) = fs::read_to_string(format!("/proc/{pid}/stat")) else { return false; };
+    let Some(rparen) = raw.rfind(')') else { return false; };
+    let Some(state) = raw.get(rparen + 2..)
+        .and_then(|tail| tail.split_whitespace().next())
+        .and_then(|value| value.chars().next()) else { return false; };
+    !matches!(state, 'Z' | 'X' | 'x')
+}
+
 // from programs/singbox.rs
 pub fn is_nonempty_file(p: &Path) -> Result<bool> {
     let md = fs::metadata(p).with_context(|| format!("stat {}", p.display()))?;

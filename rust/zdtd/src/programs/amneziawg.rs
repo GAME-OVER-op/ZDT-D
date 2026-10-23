@@ -1847,5 +1847,6 @@ pub fn main_pids_exact() -> Vec<i32> {
     }
     pids.sort_unstable();
     pids.dedup();
+    pids.retain(|pid| process_pid_is_live(*pid as u32));
     pids
 }

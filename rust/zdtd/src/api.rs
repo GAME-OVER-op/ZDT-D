@@ -5407,6 +5407,17 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 Err(e) => write_err(stream, e),
             }
         }
+        ("POST", ["api", "programs", "sing-box-lx", "validate-config"]) => {
+            let res = (|| -> Result<()> {
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::singbox_lx::validate_config_text(&req.content)
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
 
         // --- sing-box-lx profile/server API
         ("GET", ["api", "programs", "sing-box-lx", "profiles"]) => {

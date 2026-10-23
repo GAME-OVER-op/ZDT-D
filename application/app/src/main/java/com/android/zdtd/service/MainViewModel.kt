@@ -6935,6 +6935,7 @@ private fun shQuote(s: String): String {
         .getOrDefault(
           SingBoxLxComponentState(
             stage = SingBoxLxComponentStage.FAILED,
+            statusResolved = false,
             error = SingBoxLxComponentError.STATUS,
           )
         )
@@ -6981,6 +6982,7 @@ private fun shQuote(s: String): String {
     launchIO {
       val initial = SingBoxLxComponentState(
         stage = SingBoxLxComponentStage.DOWNLOADING,
+        statusResolved = true,
         selectedAbi = _uiState.value.singBoxLx.selectedAbi,
       )
       _uiState.update { it.copy(singBoxLx = initial) }
@@ -7009,6 +7011,7 @@ private fun shQuote(s: String): String {
         SingBoxLxComponentState(
           stage = SingBoxLxComponentStage.FAILED,
           installed = singBoxLxRepository.isInstalled(),
+          statusResolved = true,
           error = SingBoxLxComponentError.REMOVE,
           errorDetail = it.message ?: it.javaClass.simpleName,
         )
@@ -7295,6 +7298,14 @@ private fun shQuote(s: String): String {
     }
   }
 
+
+  override fun validateSingBoxLxConfig(configText: String, onDone: (String?) -> Unit) {
+    launchIO {
+      val error = runCatching { api.validateSingBoxLxConfig(configText) }
+        .getOrElse { it.message ?: it.toString() }
+      withContext(Dispatchers.Main.immediate) { onDone(error) }
+    }
+  }
 
   override fun createHysteria2Server(profile: String, server: String, onDone: (String?) -> Unit) {
     launchIO {

@@ -984,11 +984,11 @@ private fun SingBoxSection(
       existing = currentSetting.profiles.map { it.name },
       suggestedPort = findNextAvailableSingPort(currentSetting.profiles, 2080),
       onDismiss = { showImport = false },
-      onGenerate = { serverName, sourceText ->
+      onGenerate = { serverName, sourceText, complete ->
         val preferredPort = findNextAvailableSingPort(currentSetting.profiles, 2080)
         val imported = runCatching { com.android.zdtd.service.singbox.importer.SingBoxOneLineImporter.import(sourceText, preferredPort) }
           .getOrElse {
-            showSnack(context.getString(R.string.singbox_import_failed_fmt, it.message ?: context.getString(R.string.singbox_parse_error)))
+            complete(context.getString(R.string.singbox_import_failed_fmt, it.message ?: context.getString(R.string.singbox_parse_error)))
             return@SingBoxImportServerDialog
           }
 
@@ -1004,17 +1004,22 @@ private fun SingBoxSection(
           }
         }
 
-        showImport = false
+        fun failAndRollback(created: String, message: String) {
+          actions.deleteProfile("sing-box", created) {
+            refreshSetting()
+            complete(message)
+          }
+        }
+
         actions.createNamedProfile("sing-box", serverName) { created ->
           if (created == null) {
-            showSnack(context.getString(R.string.create_failed))
+            complete(context.getString(R.string.create_failed))
             return@createNamedProfile
           }
           val encoded = URLEncoder.encode(created, "UTF-8")
           actions.saveText("/api/programs/sing-box/profiles/$encoded/config", configToSave) { configOk ->
             if (!configOk) {
-              showSnack(context.getString(R.string.save_failed))
-              refreshSetting()
+              failAndRollback(created, context.getString(R.string.save_failed))
               return@saveText
             }
 
@@ -1042,9 +1047,9 @@ private fun SingBoxSection(
                   setting = updatedSetting
                   rawJson = obj
                   showSnack(context.getString(R.string.singbox_import_created_fmt, created, resolvedPort))
+                  complete(null)
                 } else {
-                  showSnack(context.getString(R.string.singbox_config_saved_port_update_failed))
-                  refreshSetting()
+                  failAndRollback(created, context.getString(R.string.singbox_config_saved_port_update_failed))
                 }
               }
             }
@@ -1618,17 +1623,15 @@ private fun SingBoxImportServerDialog(
   existing: List<String>,
   suggestedPort: Int,
   onDismiss: () -> Unit,
-  onGenerate: (String, String) -> Unit,
+  onGenerate: (String, String, (String?) -> Unit) -> Unit,
   snackHost: SnackbarHostState,
 ) {
-  val scope = rememberCoroutineScope()
   val existingNorm = remember(existing) { existing.map { normalizeProfileName(it) }.toSet() }
   var rawName by remember { mutableStateOf("") }
   val name = remember(rawName) { normalizeProfileName(rawName) }
   var source by remember { mutableStateOf("") }
   var error by remember { mutableStateOf<String?>(null) }
-
-  fun snack(msg: String) { scope.launch { snackHost.showSnackbar(msg) } }
+  var submitting by remember { mutableStateOf(false) }
 
   val enterNameErr = stringResource(R.string.enter_a_name)
   val invalidServerErr = stringResource(R.string.singbox_invalid_server_name)
@@ -1636,7 +1639,7 @@ private fun SingBoxImportServerDialog(
   val sourceRequiredErr = stringResource(R.string.singbox_import_source_required)
 
   AlertDialog(
-    onDismissRequest = onDismiss,
+    onDismissRequest = { if (!submitting) onDismiss() },
     title = { Text(stringResource(R.string.singbox_import_dialog_title)) },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1651,7 +1654,7 @@ private fun SingBoxImportServerDialog(
           style = MaterialTheme.typography.bodySmall,
         )
         OutlinedTextField(
-          value = name,
+          value = rawName,
           onValueChange = {
             rawName = it
             error = null
@@ -1686,28 +1689,31 @@ private fun SingBoxImportServerDialog(
       }
     },
     confirmButton = {
-      Button(onClick = {
+      Button(
+        enabled = !submitting,
+        onClick = {
         when {
-          name.isBlank() -> {
-            error = enterNameErr
-            snack(invalidServerErr)
+          name.isBlank() -> error = enterNameErr.ifBlank { invalidServerErr }
+          existingNorm.contains(name) -> error = serverExistsErr
+          source.trim().isBlank() -> error = sourceRequiredErr
+          else -> {
+            submitting = true
+            onGenerate(name, source.trim()) { message ->
+              submitting = false
+              if (message == null) onDismiss() else error = message
+            }
           }
-          existingNorm.contains(name) -> {
-            error = serverExistsErr
-            snack(serverExistsErr)
-          }
-          source.trim().isBlank() -> {
-            error = sourceRequiredErr
-            snack(sourceRequiredErr)
-          }
-          else -> onGenerate(name, source)
         }
       }) {
-        Text(stringResource(R.string.singbox_import_action))
+        if (submitting) {
+          CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        } else {
+          Text(stringResource(R.string.singbox_import_action))
+        }
       }
     },
     dismissButton = {
-      OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+      OutlinedButton(onClick = onDismiss, enabled = !submitting) { Text(stringResource(R.string.action_cancel)) }
     },
   )
 }
@@ -2003,7 +2009,7 @@ private fun CreateProfileDialog(
           }
 
           OutlinedTextField(
-            value = name,
+            value = raw,
             onValueChange = { v ->
               raw = v
               error = null

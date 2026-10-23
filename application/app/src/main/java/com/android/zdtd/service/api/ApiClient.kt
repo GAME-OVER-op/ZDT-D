@@ -123,6 +123,16 @@ class ApiClient(
   }
 
 
+  /** Returns null when the config is accepted by the installed sing-box-lx core, otherwise the core error. */
+  fun validateSingBoxLxConfig(configText: String): String? {
+    val obj = requestJson(
+      "POST",
+      "/api/programs/sing-box-lx/validate-config",
+      JSONObject().put("content", configText),
+    ) ?: return "empty validation response"
+    return if (jsonBool(obj, "ok", false)) null else obj.optString("error", "sing-box-lx config validation failed")
+  }
+
   fun createHysteria2Server(profile: String, server: String? = null): Boolean {
     val path = "/api/programs/hysteria2/profiles/${enc(profile)}/servers"
     val body = JSONObject()

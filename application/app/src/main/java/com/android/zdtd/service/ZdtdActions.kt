@@ -203,6 +203,9 @@ interface ZdtdActions {
   fun deleteSingBoxServer(programId: String, profile: String, server: String, onDone: (Boolean) -> Unit = {})
 
 
+  /** Validate a generated config with the installed sing-box-lx binary before saving it. */
+  fun validateSingBoxLxConfig(configText: String, onDone: (String?) -> Unit = {})
+
   /** Create a hysteria2 server inside a specific profile. */
   fun createHysteria2Server(profile: String, server: String, onDone: (String?) -> Unit = {})
 

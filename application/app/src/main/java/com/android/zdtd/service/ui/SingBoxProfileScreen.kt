@@ -810,6 +810,7 @@ fun SingBoxProfileScreen(
   snackHost: SnackbarHostState,
   tproxyEnabled: Boolean = false,
   singBoxLxInstalled: Boolean = false,
+  singBoxLxStatusResolved: Boolean = false,
   onOpenProgram: ((String) -> Unit)? = null,
   onOpenOptionalTools: (() -> Unit)? = null,
   topContentPadding: Dp = 0.dp,
@@ -830,7 +831,9 @@ fun SingBoxProfileScreen(
   val defaultT2sPort = remember(safeProgramId) { if (safeProgramId == "sing-box-lx") 12355 else 12345 }
   val defaultT2sWebPort = remember(safeProgramId) { if (safeProgramId == "sing-box-lx") 8011 else 8001 }
   val program = programs.firstOrNull { it.id == safeProgramId }
-  val lxAvailable = singBoxLxInstalled || programs.any { it.id == "sing-box-lx" }
+  val lxListed = programs.any { it.id == "sing-box-lx" }
+  val lxAvailable = singBoxLxInstalled || lxListed
+  val lxAvailabilityKnown = singBoxLxStatusResolved || lxListed
   val prof = program?.profiles?.firstOrNull { it.name == profile }
   val encodedProfile = remember(profile) { URLEncoder.encode(profile, "UTF-8") }
   val basePath = remember(encodedProfile, safeProgramId) { "/api/programs/$safeProgramId/profiles/$encodedProfile" }
@@ -949,9 +952,12 @@ fun SingBoxProfileScreen(
     refreshGlobalPortRegistry()
   }
 
-  LaunchedEffect(profile, program?.profiles, safeProgramId, lxAvailable) {
-    if (safeProgramId == "sing-box-lx" && !lxAvailable) {
+  LaunchedEffect(profile, program?.profiles, safeProgramId, lxAvailable, lxAvailabilityKnown) {
+    if (safeProgramId == "sing-box-lx" && lxAvailabilityKnown && !lxAvailable) {
       showLxImportRequired = true
+    } else if (safeProgramId == "sing-box-lx" && lxAvailable) {
+      showLxImportRequired = false
+      refreshAll()
     } else {
       refreshAll()
     }
@@ -1135,43 +1141,49 @@ fun SingBoxProfileScreen(
       existingServerNames = servers.map { it.name },
       preferredMixedPort = preferredPort,
       onDismiss = { showWarpMasque = false },
-      onCreate = createWarp@ { serverName, generatedConfig, localPort ->
+      onCreate = createWarp@ { serverName, generatedConfig, localPort, onResult ->
         if (activeSetting.isVpn && servers.isNotEmpty()) {
-          showSnack(context.getString(R.string.singbox_vpn_add_server_blocked))
+          onResult(context.getString(R.string.singbox_vpn_add_server_blocked))
           return@createWarp
         }
         val configToSave = rewriteSingBoxConfigInboundsForMode(generatedConfig, activeSetting, localPort, true) ?: generatedConfig
-        showWarpMasque = false
-        actions.createSingBoxServer(safeProgramId, profile, serverName) { created ->
-          if (created == null) {
-            showSnack(context.getString(R.string.create_failed))
-            return@createSingBoxServer
+        actions.validateSingBoxLxConfig(configToSave) { validationError ->
+          if (!validationError.isNullOrBlank()) {
+            onResult(validationError)
+            return@validateSingBoxLxConfig
           }
-          val encodedServer = URLEncoder.encode(created, "UTF-8")
-          actions.saveText("$basePath/servers/$encodedServer/config", configToSave) { configOk ->
-            if (!configOk) {
-              actions.deleteSingBoxServer(safeProgramId, profile, created) {
-                showSnack(context.getString(R.string.save_failed))
-                refreshServers()
-                refreshGlobalPortRegistry()
-              }
-              return@saveText
+          actions.createSingBoxServer(safeProgramId, profile, serverName) { created ->
+            if (created == null) {
+              onResult(context.getString(R.string.create_failed))
+              return@createSingBoxServer
             }
-            val payload = JSONObject().put("enabled", true).put("port", localPort)
-            actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { settingOk ->
-              if (settingOk) {
-                rememberGeneratedServer(created, localPort)
-                showSnack(context.getString(R.string.warp_masque_created_fmt, created))
-                scope.launch {
-                  delay(250)
-                  refreshServers()
-                  refreshGlobalPortRegistry()
-                }
-              } else {
+            val encodedServer = URLEncoder.encode(created, "UTF-8")
+            actions.saveText("$basePath/servers/$encodedServer/config", configToSave) { configOk ->
+              if (!configOk) {
                 actions.deleteSingBoxServer(safeProgramId, profile, created) {
-                  showSnack(context.getString(R.string.singbox_config_saved_port_update_failed))
                   refreshServers()
                   refreshGlobalPortRegistry()
+                  onResult(context.getString(R.string.save_failed))
+                }
+                return@saveText
+              }
+              val payload = JSONObject().put("enabled", true).put("port", localPort)
+              actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { settingOk ->
+                if (settingOk) {
+                  rememberGeneratedServer(created, localPort)
+                  showSnack(context.getString(R.string.warp_masque_created_fmt, created))
+                  scope.launch {
+                    delay(250)
+                    refreshServers()
+                    refreshGlobalPortRegistry()
+                  }
+                  onResult(null)
+                } else {
+                  actions.deleteSingBoxServer(safeProgramId, profile, created) {
+                    refreshServers()
+                    refreshGlobalPortRegistry()
+                    onResult(context.getString(R.string.singbox_config_saved_port_update_failed))
+                  }
                 }
               }
             }
@@ -1213,7 +1225,7 @@ fun SingBoxProfileScreen(
         showImportServer = false
         importTargetServer = null
       },
-      onGenerate = generate@ { serverName, sourceText ->
+      onGenerate = generate@ { serverName, sourceText, complete ->
         val preferredPort = findNextAvailableSingBoxPort(globalPortRegistry, 2080)
         val importedResult = runCatching {
           com.android.zdtd.service.singbox.importer.SingBoxOneLineImporter.import(
@@ -1235,9 +1247,9 @@ fun SingBoxProfileScreen(
           } else if (error is com.android.zdtd.service.singbox.importer.SingBoxImportValidationException &&
             error.code == "vless_encryption_invalid"
           ) {
-            showSnack(context.getString(R.string.singbox_import_invalid_vless_encryption))
+            complete(context.getString(R.string.singbox_import_invalid_vless_encryption))
           } else {
-            showSnack(context.getString(R.string.singbox_import_failed_fmt, error?.message ?: context.getString(R.string.singbox_parse_error)))
+            complete(context.getString(R.string.singbox_import_failed_fmt, error?.message ?: context.getString(R.string.singbox_parse_error)))
           }
           return@generate
         }
@@ -1255,18 +1267,26 @@ fun SingBoxProfileScreen(
           return configToSave to resolvedPort
         }
 
-        fun saveGeneratedToServer(server: String, port: Int, configText: String, updateSetting: Boolean) {
+        fun saveGeneratedToServer(server: String, port: Int, configText: String, newlyCreated: Boolean) {
           val encodedServer = URLEncoder.encode(server, "UTF-8")
-          actions.saveText("$basePath/servers/$encodedServer/config", configText) { configOk ->
-            if (!configOk) {
-              showSnack(context.getString(R.string.save_failed))
-              refreshServers()
-              return@saveText
-            }
-            if (!updateSetting) {
-              showSnack(context.getString(R.string.common_saved))
+
+          fun fail(message: String) {
+            if (newlyCreated) {
+              actions.deleteSingBoxServer(safeProgramId, profile, server) {
+                refreshServers()
+                refreshGlobalPortRegistry()
+                complete(message)
+              }
+            } else {
               refreshServers()
               refreshGlobalPortRegistry()
+              complete(message)
+            }
+          }
+
+          actions.saveText("$basePath/servers/$encodedServer/config", configText) { configOk ->
+            if (!configOk) {
+              fail(context.getString(R.string.save_failed))
               return@saveText
             }
             val current = servers.firstOrNull { it.name == server }
@@ -1282,43 +1302,54 @@ fun SingBoxProfileScreen(
                   refreshServers()
                   refreshGlobalPortRegistry()
                 }
+                complete(null)
               } else {
-                showSnack(context.getString(R.string.singbox_config_saved_port_update_failed))
-                refreshServers()
-                refreshGlobalPortRegistry()
+                fail(context.getString(R.string.singbox_config_saved_port_update_failed))
               }
             }
           }
         }
 
-        showImportServer = false
-        importTargetServer = null
-        if (targetServer != null) {
-          val current = servers.firstOrNull { it.name == targetServer }
-          val (configToSave, resolvedPort) = prepareConfig(current?.port)
-          saveGeneratedToServer(targetServer, resolvedPort, configToSave, updateSetting = true)
+        if (targetServer == null && activeSetting.isVpn && servers.isNotEmpty()) {
+          complete(context.getString(R.string.singbox_vpn_add_server_blocked))
           return@generate
         }
 
-        if (activeSetting.isVpn && servers.isNotEmpty()) {
-          showSnack(context.getString(R.string.singbox_vpn_add_server_blocked))
-          return@generate
-        }
+        val currentServer = targetServer?.let { target -> servers.firstOrNull { it.name == target } }
+        val (configToSave, resolvedPort) = prepareConfig(currentServer?.port)
 
-        val (configToSave, resolvedPort) = prepareConfig(null)
-        actions.createSingBoxServer(safeProgramId, profile, serverName) { created ->
-          if (created == null) {
-            showSnack(context.getString(R.string.create_failed))
-            return@createSingBoxServer
+        fun persistImportedConfig() {
+          if (targetServer != null) {
+            saveGeneratedToServer(targetServer, resolvedPort, configToSave, newlyCreated = false)
+            return
           }
-          saveGeneratedToServer(created, resolvedPort, configToSave, updateSetting = true)
+
+          actions.createSingBoxServer(safeProgramId, profile, serverName) { created ->
+            if (created == null) {
+              complete(context.getString(R.string.create_failed))
+              return@createSingBoxServer
+            }
+            saveGeneratedToServer(created, resolvedPort, configToSave, newlyCreated = true)
+          }
+        }
+
+        if (safeProgramId == "sing-box-lx") {
+          actions.validateSingBoxLxConfig(configToSave) { validationError ->
+            if (!validationError.isNullOrBlank()) {
+              complete(validationError)
+            } else {
+              persistImportedConfig()
+            }
+          }
+        } else {
+          persistImportedConfig()
         }
       },
       snackHost = snackHost,
     )
   }
 
-  if (showLxImportRequired) {
+  if (showLxImportRequired && lxAvailabilityKnown) {
     if (!lxAvailable && onOpenOptionalTools != null) {
       SingBoxLxInstallRequiredDialog(
         onDismiss = { showLxImportRequired = false },
@@ -2530,9 +2561,8 @@ private fun SingBoxCreateServerDialog(
   val existingNorm = remember(existing) { existing.map { normalizeSingBoxServerName(it) }.toSet() }
   var raw by remember { mutableStateOf("") }
   var error by remember { mutableStateOf<String?>(null) }
+  var submitting by remember { mutableStateOf(false) }
   val name = remember(raw) { normalizeSingBoxServerName(raw) }
-
-  val snack = createSnackFunction(scope, snackHost)
 
   Dialog(
     onDismissRequest = onDismiss,
@@ -2587,7 +2617,7 @@ private fun SingBoxCreateServerDialog(
           }
 
           OutlinedTextField(
-            value = name,
+            value = raw,
             onValueChange = {
               raw = it
               error = null
@@ -2612,7 +2642,8 @@ private fun SingBoxCreateServerDialog(
           Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(
               onClick = onDismiss,
-              modifier = Modifier.weight(1f).tvFocusHighlight(RoundedCornerShape(18.dp)),
+              enabled = !submitting,
+              modifier = Modifier.weight(1f).tvFocusHighlight(RoundedCornerShape(18.dp), !submitting),
             ) {
               Text(stringResource(R.string.action_cancel))
             }
@@ -2652,24 +2683,22 @@ private fun SingBoxImportToProfileDialog(
   lockedServerName: String? = null,
   isLx: Boolean = false,
   onDismiss: () -> Unit,
-  onGenerate: (String, String) -> Unit,
+  onGenerate: (String, String, (String?) -> Unit) -> Unit,
   snackHost: SnackbarHostState,
 ) {
   val context = LocalContext.current
   val configuration = LocalConfiguration.current
-  val scope = rememberCoroutineScope()
   val dialogScrollState = rememberScrollState()
   val maxDialogHeight = configuration.screenHeightDp.dp * 0.92f
   val existingNorm = remember(existing) { existing.map { normalizeSingBoxServerName(it) }.toSet() }
   var raw by remember { mutableStateOf(lockedServerName.orEmpty()) }
   var source by remember { mutableStateOf("") }
   var error by remember { mutableStateOf<String?>(null) }
+  var submitting by remember { mutableStateOf(false) }
   val name = remember(raw) { normalizeSingBoxServerName(raw) }
 
-  val snack = createSnackFunction(scope, snackHost)
-
   Dialog(
-    onDismissRequest = onDismiss,
+    onDismissRequest = { if (!submitting) onDismiss() },
     properties = DialogProperties(usePlatformDefaultWidth = false),
   ) {
     Surface(
@@ -2740,7 +2769,7 @@ private fun SingBoxImportToProfileDialog(
           }
 
           OutlinedTextField(
-            value = name,
+            value = raw,
             onValueChange = {
               if (lockedServerName == null) {
                 raw = it
@@ -2766,7 +2795,7 @@ private fun SingBoxImportToProfileDialog(
           }
           OutlinedTextField(
             value = source,
-            onValueChange = { source = it },
+            onValueChange = { source = it; error = null },
             label = { Text(stringResource(R.string.singbox_import_source_label)) },
             modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp, max = 260.dp),
             singleLine = false,
@@ -2777,32 +2806,35 @@ private fun SingBoxImportToProfileDialog(
           Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(
               onClick = onDismiss,
-              modifier = Modifier.weight(1f).tvFocusHighlight(RoundedCornerShape(18.dp)),
+              enabled = !submitting,
+              modifier = Modifier.weight(1f).tvFocusHighlight(RoundedCornerShape(18.dp), !submitting),
             ) {
               Text(stringResource(R.string.action_cancel))
             }
             Button(
-              modifier = Modifier.weight(1f).tvFocusHighlight(RoundedCornerShape(18.dp), source.isNotBlank() && name.isNotBlank()),
-              enabled = source.isNotBlank() && name.isNotBlank(),
+              modifier = Modifier.weight(1f).tvFocusHighlight(RoundedCornerShape(18.dp), !submitting && source.isNotBlank() && name.isNotBlank()),
+              enabled = !submitting && source.isNotBlank() && name.isNotBlank(),
               onClick = {
                 val n = name.trim()
                 when {
-                  n.isEmpty() -> {
-                    val msg = context.getString(R.string.enter_a_name)
-                    error = msg
-                    snack(msg)
+                  n.isEmpty() -> error = context.getString(R.string.enter_a_name)
+                  lockedServerName == null && existingNorm.contains(n) -> error = context.getString(R.string.singbox_server_already_exists)
+                  source.trim().isEmpty() -> error = context.getString(R.string.singbox_import_source_required)
+                  else -> {
+                    submitting = true
+                    onGenerate(n, source.trim()) { message ->
+                      submitting = false
+                      if (message == null) onDismiss() else error = message
+                    }
                   }
-                  lockedServerName == null && existingNorm.contains(n) -> {
-                    val msg = context.getString(R.string.singbox_server_already_exists)
-                    error = msg
-                    snack(msg)
-                  }
-                  source.trim().isEmpty() -> snack(context.getString(R.string.singbox_import_source_required))
-                  else -> onGenerate(n, source.trim())
                 }
               },
             ) {
-              Text(stringResource(R.string.singbox_import_action))
+              if (submitting) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+              } else {
+                Text(stringResource(R.string.singbox_import_action))
+              }
             }
           }
         }

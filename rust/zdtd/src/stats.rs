@@ -741,7 +741,14 @@ fn read_proc_raw_stat(pid: u32, page_kb: u64) -> Option<ProcRawStat> {
     let stat = fs::read_to_string(stat_path).ok()?;
     let rparen = stat.rfind(')')?;
     let fields: Vec<&str> = stat.get(rparen + 2..)?.split_whitespace().collect();
-    // fields[0] is state (field 3). utime/stime are fields 14/15, starttime is field 22.
+    // fields[0] is state (field 3). Zombie/dead processes can remain visible to
+    // pidof briefly after SIGKILL, but they are not running services and must not
+    // keep Statistics/runtime adoption in the active state.
+    let state = fields.first()?.chars().next()?;
+    if matches!(state, 'Z' | 'X' | 'x') {
+        return None;
+    }
+    // utime/stime are fields 14/15, starttime is field 22.
     let utime = fields.get(11)?.parse::<u64>().ok()?;
     let stime = fields.get(12)?.parse::<u64>().ok()?;
     let start_time = fields.get(19)?.parse::<u64>().ok()?;

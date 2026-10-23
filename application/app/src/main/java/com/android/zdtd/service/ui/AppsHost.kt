@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -114,7 +115,18 @@ fun AppsHost(
     else -> false
   }
 
-  if (lxRouteRequested && !singBoxLx.installed) {
+  val lxListed = programs.any { it.id == "sing-box-lx" }
+  val lxAvailable = singBoxLx.installed || lxListed
+  val lxAvailabilityKnown = singBoxLx.statusResolved || lxListed
+
+  if (lxRouteRequested && !lxAvailabilityKnown) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+      CircularProgressIndicator()
+    }
+    return
+  }
+
+  if (lxRouteRequested && !lxAvailable) {
     SingBoxLxInstallRequiredDialog(
       onDismiss = onOpenOptionalTools,
       onOpenOptionalTools = onOpenOptionalTools,
@@ -310,6 +322,7 @@ fun AppsHost(
           snackHost = snackHost,
           tproxyEnabled = tproxyEnabled,
           singBoxLxInstalled = singBoxLx.installed,
+          singBoxLxStatusResolved = singBoxLx.statusResolved,
           onOpenProgram = onOpenProgram,
           onOpenOptionalTools = onOpenOptionalTools,
           topContentPadding = topContentPadding,
@@ -323,6 +336,7 @@ fun AppsHost(
           snackHost = snackHost,
           tproxyEnabled = tproxyEnabled,
           singBoxLxInstalled = singBoxLx.installed,
+          singBoxLxStatusResolved = singBoxLx.statusResolved,
           onOpenProgram = onOpenProgram,
           onOpenOptionalTools = onOpenOptionalTools,
           topContentPadding = topContentPadding,

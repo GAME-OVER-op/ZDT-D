@@ -56,7 +56,7 @@ internal fun SingBoxLxWarpMasqueDialog(
   existingServerNames: List<String>,
   preferredMixedPort: Int,
   onDismiss: () -> Unit,
-  onCreate: (serverName: String, configText: String, localPort: Int) -> Unit,
+  onCreate: (serverName: String, configText: String, localPort: Int, onResult: (String?) -> Unit) -> Unit,
 ) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
@@ -87,12 +87,12 @@ internal fun SingBoxLxWarpMasqueDialog(
   }
 
   fun createWith(account: WarpMasqueAccount) {
-    val safeName = name.trim()
+    val safeName = normalizeWarpMasqueServerName(name)
     if (safeName.isBlank()) {
       errorText = context.getString(R.string.warp_masque_error_name)
       return
     }
-    if (existingServerNames.any { it.equals(safeName, ignoreCase = true) }) {
+    if (existingServerNames.any { normalizeWarpMasqueServerName(it) == safeName }) {
       errorText = context.getString(R.string.warp_masque_error_name_exists)
       return
     }
@@ -136,7 +136,11 @@ internal fun SingBoxLxWarpMasqueDialog(
       errorText = context.getString(R.string.warp_masque_error_config)
       return
     }
-    onCreate(safeName, config, preferredMixedPort)
+    busy = true
+    onCreate(safeName, config, preferredMixedPort) { resultError ->
+      busy = false
+      if (resultError.isNullOrBlank()) onDismiss() else errorText = resultError
+    }
   }
 
   fun registerAndCreate() {
@@ -415,10 +419,31 @@ private fun warpVhttpLabel(mode: String): String = when (mode) {
   else -> stringResource(R.string.warp_masque_transport_auto)
 }
 
+private fun normalizeWarpMasqueServerName(input: String): String {
+  val out = StringBuilder(10)
+  for (ch in input.lowercase()) {
+    if (out.length >= 10) break
+    val normalized = when {
+      ch.isWhitespace() -> '_'
+      ch in 'a'..'z' -> ch
+      ch in '0'..'9' -> ch
+      ch == '_' || ch == '-' -> ch
+      else -> null
+    }
+    if (normalized != null) out.append(normalized)
+  }
+  return out.toString()
+}
+
 private fun nextWarpMasqueName(existing: List<String>): String {
-  val base = "WARP MASQUE"
-  if (existing.none { it.equals(base, ignoreCase = true) }) return base
+  val used = existing.map(::normalizeWarpMasqueServerName).toSet()
+  val base = "warp_masq"
+  if (base !in used) return base
   var index = 2
-  while (existing.any { it.equals("$base $index", ignoreCase = true) }) index += 1
-  return "$base $index"
+  while (true) {
+    val suffix = "_$index"
+    val candidate = base.take(10 - suffix.length) + suffix
+    if (candidate !in used) return candidate
+    index += 1
+  }
 }

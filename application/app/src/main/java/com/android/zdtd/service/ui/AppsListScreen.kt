@@ -68,6 +68,8 @@ fun AppsListScreen(
   daemonOnline: Boolean,
   tgWsProxy: TgWsProxyComponentState,
   singBoxLx: SingBoxLxComponentState,
+  components: List<ApiModels.Component>,
+  componentsResolved: Boolean,
   onOpenProgram: (String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
   onOpenOptionalTools: () -> Unit,
@@ -155,7 +157,8 @@ fun AppsListScreen(
     item(key = "optional_tools_entry") {
       OptionalToolsEntryCard(
         compact = compactCards,
-        installedCount = (if (tgWsProxy.installed) 1 else 0) + (if (singBoxLx.installed) 1 else 0),
+        installedCount = components.count { it.installed },
+        statusResolved = componentsResolved,
         onClick = onOpenOptionalTools,
       )
     }
@@ -289,6 +292,7 @@ fun AppsListScreen(
 private fun OptionalToolsEntryCard(
   compact: Boolean,
   installedCount: Int,
+  statusResolved: Boolean,
   onClick: () -> Unit,
 ) {
   val accentColor = MaterialTheme.colorScheme.primary
@@ -337,7 +341,11 @@ private fun OptionalToolsEntryCard(
           overflow = TextOverflow.Ellipsis,
         )
         ProgramBadgeRow(
-          label = if (installedCount > 0) stringResource(R.string.optional_tools_installed_count, installedCount) else stringResource(R.string.optional_tools_available),
+          label = when {
+            !statusResolved -> stringResource(R.string.common_loading)
+            installedCount > 0 -> stringResource(R.string.optional_tools_installed_count, installedCount)
+            else -> stringResource(R.string.optional_tools_available)
+          },
           containerColor = accentColor.copy(alpha = 0.14f),
           contentColor = accentColor,
         )

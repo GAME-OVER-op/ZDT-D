@@ -1201,7 +1201,7 @@ APatch：10700+</string>
     <string name="myproxy_user_hint">SOCKS5 用户名。如不需要身份验证，请留空。</string>
     <string name="myproxy_pass_hint">SOCKS5 密码。如不需要身份验证，请留空。</string>
 
-    <string name="optional_tools_title">其他工具</string>
+    <string name="optional_tools_title">附加组件</string>
     <string name="optional_tools_entry_desc">可在此下载项目作者支持的可用工具。</string>
     <string name="optional_tools_screen_desc">可在此下载项目作者支持的可用工具。</string>
     <string name="optional_tools_available">可安装</string>
@@ -2689,4 +2689,15 @@ APatch：10700+</string>
     <string name="singbox_import_requires_lx_feature_message">此配置使用 %1$s，因此需要 sing-box-lx。请通过 sing-box-lx 工具导入。</string>
     <string name="singbox_import_invalid_vless_encryption">VLESS 加密值格式无效。ML-KEM 必须使用 mlkem768x25519plus… 格式。</string>
     <string name="singbox_lx_advanced_json_hint">sing-box-lx 的高级 JSON 字段会被保留。ZDT-D 仅管理本地 mixed inbound，并在缺失时添加安全的 DNS/路由默认值。</string>
+
+    <string name="setup_components_title">模块组件</string>
+    <string name="setup_components_selected_fmt">已选择：%1$d / %2$d 个工具</string>
+    <string name="setup_components_configure">选择</string>
+    <string name="setup_components_dialog_title">选择工具</string>
+    <string name="setup_components_dialog_body">选择要随在线模块安装的工具。路由基础组件始终安装，不会显示在此列表中。</string>
+    <string name="component_selection_save_failed">无法保存所选模块组件。</string>
+    <string name="component_install_required_title">组件未安装</string>
+    <string name="component_install_required_message">尚未安装 %1$s 组件。要从“附加组件”中安装吗？</string>
+    <string name="component_install_required_action">安装</string>
+    <string name="optional_component_generic_desc">无需重新安装模块或重启即可安装、更新或移除此工具。</string>
 </resources>

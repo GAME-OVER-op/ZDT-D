@@ -3309,9 +3309,11 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
         }));
     }
 
-    // Optional tg-ws-proxy appears in the main list only after the binary is installed.
-    if crate::programs::tgwsproxy::is_installed() {
-        let enabled = crate::programs::tgwsproxy::load_effective_enabled().map(|v| v.enabled).unwrap_or(false);
+    // Keep the card visible even when the optional binary is absent. The Android client uses
+    // /api/system/components to gate the program screen and offer installation.
+    {
+        let installed = crate::programs::tgwsproxy::is_installed();
+        let enabled = installed && crate::programs::tgwsproxy::load_effective_enabled().map(|v| v.enabled).unwrap_or(false);
         out.push(json!({
             "id": "tgwsproxy",
             "name": program_display_name("tgwsproxy"),
@@ -3346,8 +3348,8 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
         }));
     }
 
-    // Optional sing-box-lx appears in the main list only after the binary is installed.
-    if crate::programs::singbox_lx::is_installed() {
+    // Keep sing-box-lx visible even when its binary is absent; the component API gates access.
+    {
         let active: ProfilesActive = read_json(&singbox_lx_active_path()).unwrap_or_default();
         let mut profiles = Vec::new();
         for (name, st) in active.profiles {
@@ -7761,6 +7763,9 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
 match (method.as_str(), path.as_str()) {
         ("GET", "/api/system/capabilities") => {
             write_json(stream, 200, crate::capabilities::collect())
+        }
+        ("GET", "/api/system/components") => {
+            write_json(stream, 200, crate::components::collect())
         }
 
         ("GET", "/api/runtime-apply/status") => {

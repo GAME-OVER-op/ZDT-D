@@ -1201,9 +1201,9 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_user_hint">SOCKS5 username. Leave empty if auth is not required.</string>
     <string name="myproxy_pass_hint">SOCKS5 password. Leave empty if auth is not required.</string>
 
-    <string name="optional_tools_title">Additional utilities</string>
-    <string name="optional_tools_entry_desc">Here you can download available tools supported by the project author.</string>
-    <string name="optional_tools_screen_desc">Here you can download available tools supported by the project author.</string>
+    <string name="optional_tools_title">Additional components</string>
+    <string name="optional_tools_entry_desc">Install, update or remove additional tool components without reinstalling the module.</string>
+    <string name="optional_tools_screen_desc">Install, update or remove additional tool components without reinstalling the module.</string>
     <string name="optional_tools_available">Available to install</string>
     <string name="optional_tools_installed_count">Installed: %1$d</string>
     <string name="optional_tools_download">Download</string>
@@ -2689,4 +2689,16 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="singbox_import_requires_lx_feature_message">This configuration uses %1$s, which requires sing-box-lx. Import it through the sing-box-lx tool.</string>
     <string name="singbox_import_invalid_vless_encryption">The VLESS encryption value is malformed. ML-KEM must use the mlkem768x25519plus… format.</string>
     <string name="singbox_lx_advanced_json_hint">Advanced sing-box-lx JSON fields are preserved. ZDT-D only manages the local mixed inbound and adds safe DNS/routing defaults when they are missing.</string>
+
+    <string name="setup_components_title">Module components</string>
+    <string name="setup_components_selected_fmt">Selected: %1$d of %2$d tools</string>
+    <string name="setup_components_configure">Select</string>
+    <string name="setup_components_dialog_title">Select tools</string>
+    <string name="setup_components_dialog_body">Choose the tools to install with the online module. The routing base (DNSCrypt, D2S, T2S and tun2socks) is always installed and is not shown here.</string>
+    <string name="component_selection_save_failed">Unable to save the selected module components.</string>
+    <string name="component_install_required_title">Component is not installed</string>
+    <string name="component_install_required_message">The %1$s component is not installed. Install it from Additional components?</string>
+    <string name="component_install_required_action">Install</string>
+    <string name="optional_component_generic_desc">Download, update or remove this tool without reinstalling the module or rebooting.</string>
+
 </resources>

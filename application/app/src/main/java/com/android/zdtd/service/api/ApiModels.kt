@@ -96,6 +96,42 @@ object ApiModels {
     val profiles: List<Profile> = emptyList(),
   )
 
+  data class Component(
+    val id: String,
+    val installed: Boolean = false,
+    val asset: String = "",
+    val files: List<String> = emptyList(),
+    val missingFiles: List<String> = emptyList(),
+    val programIds: List<String> = emptyList(),
+  )
+
+  fun parseComponents(wrapper: JSONObject?): List<Component> {
+    val arr = wrapper?.optJSONArray("components") ?: return emptyList()
+    val out = ArrayList<Component>(arr.length())
+    for (i in 0 until arr.length()) {
+      val obj = arr.optJSONObject(i) ?: continue
+      val id = obj.optString("id", "").trim()
+      if (id.isEmpty()) continue
+      fun strings(name: String): List<String> {
+        val values = obj.optJSONArray(name) ?: return emptyList()
+        return buildList {
+          for (index in 0 until values.length()) {
+            values.optString(index, "").trim().takeIf { it.isNotEmpty() }?.let(::add)
+          }
+        }
+      }
+      out += Component(
+        id = id,
+        installed = obj.optBoolean("installed", false),
+        asset = obj.optString("asset", "").trim(),
+        files = strings("files"),
+        missingFiles = strings("missing_files"),
+        programIds = strings("program_ids"),
+      )
+    }
+    return out
+  }
+
   data class TrafficReport(
     val ok: Boolean = true,
     val busy: Boolean = false,

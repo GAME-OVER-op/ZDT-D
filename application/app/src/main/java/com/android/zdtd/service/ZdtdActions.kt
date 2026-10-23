@@ -17,6 +17,8 @@ interface ZdtdActions {
   fun refreshInstallConflicts()
   fun setInstallConflictMarked(modulePath: String, checked: Boolean)
   fun refreshZygiskInstallMarker()
+  fun refreshInstallComponentSelection()
+  fun setInstallComponentSelected(componentId: String, selected: Boolean)
   fun requestSetInstallZygisk(enabled: Boolean)
   fun confirmInstallZygisk()
   fun dismissInstallZygiskConfirm()
@@ -163,6 +165,8 @@ interface ZdtdActions {
   fun removeTgWsProxy()
   fun installSingBoxLx()
   fun removeSingBoxLx()
+  fun installRootComponent(componentId: String)
+  fun removeRootComponent(componentId: String)
   fun clearLogs()
 
   /**

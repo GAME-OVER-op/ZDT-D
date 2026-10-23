@@ -1201,7 +1201,7 @@ Der Schutz funktioniert nicht im Hotspot-Modus. Wenn der Hotspot aktiviert und s
     <string name="myproxy_user_hint">SOCKS5-Benutzername. Leer lassen, wenn keine Authentifizierung erforderlich ist.</string>
     <string name="myproxy_pass_hint">SOCKS5-Passwort. Leer lassen, wenn keine Authentifizierung erforderlich ist.</string>
 
-    <string name="optional_tools_title">Zusätzliche Werkzeuge</string>
+    <string name="optional_tools_title">Zusätzliche Komponenten</string>
     <string name="optional_tools_entry_desc">Hier kannst du verfügbare Werkzeuge herunterladen, die vom Projektentwickler unterstützt werden.</string>
     <string name="optional_tools_screen_desc">Hier kannst du verfügbare Werkzeuge herunterladen, die vom Projektentwickler unterstützt werden.</string>
     <string name="optional_tools_available">Zur Installation verfügbar</string>
@@ -2690,4 +2690,15 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="singbox_import_requires_lx_feature_message">Diese Konfiguration verwendet %1$s und benötigt daher sing-box-lx. Importiere sie über das Werkzeug sing-box-lx.</string>
     <string name="singbox_import_invalid_vless_encryption">Der VLESS-Verschlüsselungswert ist ungültig. ML-KEM muss das Format mlkem768x25519plus… verwenden.</string>
     <string name="singbox_lx_advanced_json_hint">Erweiterte sing-box-lx-JSON-Felder bleiben erhalten. ZDT-D verwaltet nur den lokalen mixed-Inbound und ergänzt sichere DNS-/Routing-Standardwerte, wenn sie fehlen.</string>
+
+    <string name="setup_components_title">Modulkomponenten</string>
+    <string name="setup_components_selected_fmt">Ausgewählt: %1$d von %2$d Werkzeugen</string>
+    <string name="setup_components_configure">Auswählen</string>
+    <string name="setup_components_dialog_title">Werkzeuge auswählen</string>
+    <string name="setup_components_dialog_body">Wähle die Werkzeuge aus, die mit dem Online-Modul installiert werden sollen. Die Routing-Basis wird immer installiert und hier nicht angezeigt.</string>
+    <string name="component_selection_save_failed">Die ausgewählten Modulkomponenten konnten nicht gespeichert werden.</string>
+    <string name="component_install_required_title">Komponente ist nicht installiert</string>
+    <string name="component_install_required_message">Die Komponente %1$s ist nicht installiert. Aus „Zusätzliche Komponenten“ installieren?</string>
+    <string name="component_install_required_action">Installieren</string>
+    <string name="optional_component_generic_desc">Dieses Werkzeug ohne Neuinstallation des Moduls oder Neustart installieren, aktualisieren oder entfernen.</string>
 </resources>

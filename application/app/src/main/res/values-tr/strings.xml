@@ -1201,7 +1201,7 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="myproxy_user_hint">SOCKS5 kullanıcı adı. Kimlik doğrulama gerekmiyorsa boş bırakın.</string>
     <string name="myproxy_pass_hint">SOCKS5 parolası. Kimlik doğrulama gerekmiyorsa boş bırakın.</string>
 
-    <string name="optional_tools_title">Ek araçlar</string>
+    <string name="optional_tools_title">Ek bileşenler</string>
     <string name="optional_tools_entry_desc">Buradan proje geliştiricisinin desteklediği mevcut araçları indirebilirsiniz.</string>
     <string name="optional_tools_screen_desc">Buradan proje geliştiricisinin desteklediği mevcut araçları indirebilirsiniz.</string>
     <string name="optional_tools_available">Kurulabilir</string>
@@ -2689,4 +2689,15 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="singbox_import_requires_lx_feature_message">Bu yapılandırma %1$s kullanıyor ve sing-box-lx gerektiriyor. sing-box-lx aracı üzerinden içe aktarın.</string>
     <string name="singbox_import_invalid_vless_encryption">VLESS şifreleme değeri hatalı biçimde. ML-KEM, mlkem768x25519plus… biçimini kullanmalıdır.</string>
     <string name="singbox_lx_advanced_json_hint">Gelişmiş sing-box-lx JSON alanları korunur. ZDT-D yalnızca yerel mixed inbound öğesini yönetir ve eksik olduğunda güvenli DNS/yönlendirme varsayılanlarını ekler.</string>
+
+    <string name="setup_components_title">Modül bileşenleri</string>
+    <string name="setup_components_selected_fmt">Seçilen: %1$d / %2$d araç</string>
+    <string name="setup_components_configure">Seç</string>
+    <string name="setup_components_dialog_title">Araçları seç</string>
+    <string name="setup_components_dialog_body">Çevrimiçi modülle birlikte kurulacak araçları seçin. Yönlendirme tabanı her zaman kurulur ve bu listede gösterilmez.</string>
+    <string name="component_selection_save_failed">Seçilen modül bileşenleri kaydedilemedi.</string>
+    <string name="component_install_required_title">Bileşen kurulu değil</string>
+    <string name="component_install_required_message">%1$s bileşeni kurulu değil. Ek bileşenlerden kurulsun mu?</string>
+    <string name="component_install_required_action">Kur</string>
+    <string name="optional_component_generic_desc">Bu aracı modülü yeniden kurmadan veya yeniden başlatmadan kurun, güncelleyin ya da kaldırın.</string>
 </resources>

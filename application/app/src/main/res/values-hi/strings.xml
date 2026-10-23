@@ -1201,7 +1201,7 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="myproxy_user_hint">SOCKS5 उपयोगकर्ता नाम। प्रमाणीकरण आवश्यक न हो तो खाली छोड़ें।</string>
     <string name="myproxy_pass_hint">SOCKS5 पासवर्ड। प्रमाणीकरण आवश्यक न हो तो खाली छोड़ें।</string>
 
-    <string name="optional_tools_title">अतिरिक्त उपयोगिताएँ</string>
+    <string name="optional_tools_title">अतिरिक्त घटक</string>
     <string name="optional_tools_entry_desc">यहाँ आप परियोजना लेखक द्वारा समर्थित उपलब्ध टूल डाउनलोड कर सकते हैं।</string>
     <string name="optional_tools_screen_desc">यहाँ आप परियोजना लेखक द्वारा समर्थित उपलब्ध टूल डाउनलोड कर सकते हैं।</string>
     <string name="optional_tools_available">इंस्टॉल करने के लिए उपलब्ध</string>
@@ -2690,4 +2690,15 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="singbox_import_requires_lx_feature_message">यह कॉन्फ़िगरेशन %1$s का उपयोग करता है, जिसके लिए sing-box-lx आवश्यक है। इसे sing-box-lx टूल से आयात करें।</string>
     <string name="singbox_import_invalid_vless_encryption">VLESS एन्क्रिप्शन मान का प्रारूप गलत है। ML-KEM को mlkem768x25519plus… प्रारूप का उपयोग करना चाहिए।</string>
     <string name="singbox_lx_advanced_json_hint">उन्नत sing-box-lx JSON फ़ील्ड सुरक्षित रखे जाते हैं। ZDT-D केवल स्थानीय mixed inbound को प्रबंधित करता है और अनुपस्थित होने पर सुरक्षित DNS/रूटिंग डिफ़ॉल्ट जोड़ता है।</string>
+
+    <string name="setup_components_title">मॉड्यूल घटक</string>
+    <string name="setup_components_selected_fmt">चुने गए: %1$d / %2$d टूल</string>
+    <string name="setup_components_configure">चुनें</string>
+    <string name="setup_components_dialog_title">टूल चुनें</string>
+    <string name="setup_components_dialog_body">ऑनलाइन मॉड्यूल के साथ इंस्टॉल किए जाने वाले टूल चुनें। रूटिंग बेस हमेशा इंस्टॉल होता है और इस सूची में नहीं दिखाया जाता।</string>
+    <string name="component_selection_save_failed">चुने गए मॉड्यूल घटक सहेजे नहीं जा सके।</string>
+    <string name="component_install_required_title">घटक इंस्टॉल नहीं है</string>
+    <string name="component_install_required_message">%1$s घटक इंस्टॉल नहीं है। इसे अतिरिक्त घटकों से इंस्टॉल करें?</string>
+    <string name="component_install_required_action">इंस्टॉल करें</string>
+    <string name="optional_component_generic_desc">मॉड्यूल को दोबारा इंस्टॉल या डिवाइस रीबूट किए बिना इस टूल को इंस्टॉल, अपडेट या हटाएँ।</string>
 </resources>

@@ -1201,7 +1201,7 @@ APatch: ‏10700+</string>
     <string name="myproxy_user_hint">اسم مستخدم SOCKS5. اتركه فارغًا إذا لم تكن المصادقة مطلوبة.</string>
     <string name="myproxy_pass_hint">كلمة مرور SOCKS5. اتركها فارغة إذا لم تكن المصادقة مطلوبة.</string>
 
-    <string name="optional_tools_title">أدوات إضافية</string>
+    <string name="optional_tools_title">المكونات الإضافية</string>
     <string name="optional_tools_entry_desc">يمكنك هنا تنزيل الأدوات المتاحة التي يدعمها مؤلف المشروع.</string>
     <string name="optional_tools_screen_desc">يمكنك هنا تنزيل الأدوات المتاحة التي يدعمها مؤلف المشروع.</string>
     <string name="optional_tools_available">متاح للتثبيت</string>
@@ -2694,4 +2694,15 @@ APatch: ‏10700+</string>
     <string name="singbox_import_requires_lx_feature_message">يستخدم هذا الإعداد %1$s، وهو يتطلب sing-box-lx. استورده من خلال أداة sing-box-lx.</string>
     <string name="singbox_import_invalid_vless_encryption">قيمة تشفير VLESS بتنسيق غير صالح. يجب أن يستخدم ML-KEM تنسيق mlkem768x25519plus….</string>
     <string name="singbox_lx_advanced_json_hint">يتم الاحتفاظ بحقول JSON المتقدمة الخاصة بـ sing-box-lx. يدير ZDT-D فقط مدخل mixed المحلي ويضيف إعدادات DNS والتوجيه الآمنة عند غيابها.</string>
+
+    <string name="setup_components_title">مكونات الوحدة</string>
+    <string name="setup_components_selected_fmt">تم التحديد: %1$d من %2$d أداة</string>
+    <string name="setup_components_configure">اختيار</string>
+    <string name="setup_components_dialog_title">اختيار الأدوات</string>
+    <string name="setup_components_dialog_body">اختر الأدوات التي سيتم تثبيتها مع الوحدة عبر الإنترنت. يتم تثبيت قاعدة التوجيه دائماً ولا تظهر في هذه القائمة.</string>
+    <string name="component_selection_save_failed">تعذر حفظ مكونات الوحدة المحددة.</string>
+    <string name="component_install_required_title">المكون غير مثبت</string>
+    <string name="component_install_required_message">المكون %1$s غير مثبت. هل تريد تثبيته من قسم المكونات الإضافية؟</string>
+    <string name="component_install_required_action">تثبيت</string>
+    <string name="optional_component_generic_desc">تثبيت هذه الأداة أو تحديثها أو إزالتها من دون إعادة تثبيت الوحدة أو إعادة التشغيل.</string>
 </resources>

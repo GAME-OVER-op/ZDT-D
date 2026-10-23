@@ -1199,9 +1199,9 @@ APatch: 10700+</string>
     <string name="myproxy_user_hint">Логин SOCKS5. Оставьте пустым, если авторизация не нужна.</string>
     <string name="myproxy_pass_hint">Пароль SOCKS5. Оставьте пустым, если авторизация не нужна.</string>
 
-    <string name="optional_tools_title">Дополнительные утилиты</string>
-    <string name="optional_tools_entry_desc">Здесь вы можете загрузить доступные инструменты, поддерживаемые автором проекта.</string>
-    <string name="optional_tools_screen_desc">Здесь вы можете загрузить доступные инструменты, поддерживаемые автором проекта.</string>
+    <string name="optional_tools_title">Дополнительные компоненты</string>
+    <string name="optional_tools_entry_desc">Здесь можно установить, обновить или удалить дополнительные компоненты инструментов без переустановки модуля.</string>
+    <string name="optional_tools_screen_desc">Здесь можно установить, обновить или удалить дополнительные компоненты инструментов без переустановки модуля.</string>
     <string name="optional_tools_available">Доступно для установки</string>
     <string name="optional_tools_installed_count">Установлено: %1$d</string>
     <string name="optional_tools_download">Скачать</string>
@@ -2688,4 +2688,16 @@ APatch: 10700+</string>
     <string name="singbox_import_requires_lx_feature_message">Эта конфигурация использует %1$s, для чего требуется sing-box-lx. Импортируйте её через инструмент sing-box-lx.</string>
     <string name="singbox_import_invalid_vless_encryption">Значение шифрования VLESS имеет неверный формат. ML-KEM должен использовать формат mlkem768x25519plus….</string>
     <string name="singbox_lx_advanced_json_hint">Расширенные поля JSON sing-box-lx сохраняются. ZDT-D управляет только локальным mixed-входом и добавляет безопасные DNS/маршрутные значения по умолчанию, если они отсутствуют.</string>
+
+    <string name="setup_components_title">Компоненты модуля</string>
+    <string name="setup_components_selected_fmt">Выбрано: %1$d из %2$d инструментов</string>
+    <string name="setup_components_configure">Выбрать</string>
+    <string name="setup_components_dialog_title">Выбор инструментов</string>
+    <string name="setup_components_dialog_body">Выберите инструменты, которые будут установлены вместе с онлайн-модулем. База маршрутизации (DNSCrypt, D2S, T2S и tun2socks) устанавливается всегда и здесь не отображается.</string>
+    <string name="component_selection_save_failed">Не удалось сохранить выбранные компоненты модуля.</string>
+    <string name="component_install_required_title">Компонент не установлен</string>
+    <string name="component_install_required_message">Компонент %1$s не установлен. Установить его из раздела «Дополнительные компоненты»?</string>
+    <string name="component_install_required_action">Установить</string>
+    <string name="optional_component_generic_desc">Установка, обновление или удаление инструмента без переустановки модуля и перезагрузки.</string>
+
 </resources>

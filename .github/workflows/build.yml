@@ -5104,6 +5104,18 @@ jobs:
             done
           done
 
+          echo "=== Package independently installable module components ==="
+          python3 scripts/ci/package-module-components.py \
+            --module-root "$MODULE_BUILD_DIR" \
+            --output out/technical/module-components
+          for component_asset in \
+            nfqws.zip nfqws2.zip byedpi.zip dpitunnel.zip opera_proxy.zip \
+            sing_box.zip hysteria2.zip wireproxy.zip openvpn.zip amneziawg.zip \
+            mihomo.zip mieru.zip tor.zip; do
+            require_file "out/technical/module-components/$component_asset"
+            unzip -t "out/technical/module-components/$component_asset" >/dev/null
+          done
+
           rm -rf "$MODULE_BUILD_DIR/verify_sum"
           mkdir -p "$MODULE_BUILD_DIR/verify_sum/prebuilt/bin" "$MODULE_BUILD_DIR/verify_sum/zygisk"
           while IFS= read -r file; do
@@ -5151,6 +5163,14 @@ jobs:
           path: |
             out/module/zdt_module.zip
             out/module/module.prop
+          retention-days: 1
+
+      - name: Upload module component technical assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: zdt-module-component-assets
+          path: out/technical/module-components/*.zip
+          if-no-files-found: error
           retention-days: 1
 
       - name: Publish archive completion
@@ -6620,6 +6640,12 @@ jobs:
           name: zdt-module-final
           path: out/module-online
 
+      - name: Download module component technical assets
+        uses: actions/download-artifact@v8
+        with:
+          name: zdt-module-component-assets
+          path: out/technical/module-components
+
       - name: Download tg_ws_proxy.zip artifact
         if: needs.package_tg_ws_proxy_asset.result == 'success'
         uses: actions/download-artifact@v8
@@ -7026,6 +7052,15 @@ jobs:
           upload_asset_with_retry "$TECHNICAL_TAG" "$MODULE_TECHNICAL_SOURCE" "$MODULE_TECHNICAL_NAME"
           MODULE_UPLOAD_MODE="$UPLOAD_MODE"
           MODULE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+
+          MODULE_COMPONENT_DIR="out/technical/module-components"
+          MODULE_COMPONENT_ASSETS="nfqws.zip nfqws2.zip byedpi.zip dpitunnel.zip opera_proxy.zip sing_box.zip hysteria2.zip wireproxy.zip openvpn.zip amneziawg.zip mihomo.zip mieru.zip tor.zip"
+          for component_asset in $MODULE_COMPONENT_ASSETS; do
+            component_path="$MODULE_COMPONENT_DIR/$component_asset"
+            test -s "$component_path" || { echo "::error::Module component technical asset is missing: $component_path"; exit 1; }
+            unzip -t "$component_path" >/dev/null || { echo "::error::Invalid component archive: $component_path"; exit 1; }
+            upload_asset_with_retry "$TECHNICAL_TAG" "$component_path#$component_asset" "$component_asset"
+          done
 
           git tag -f "$SERVICE_TAG" "$FULL_SHA"
           git push -f origin "refs/tags/${SERVICE_TAG}"

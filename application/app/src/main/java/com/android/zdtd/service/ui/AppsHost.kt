@@ -30,6 +30,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.android.zdtd.service.R
 import com.android.zdtd.service.UiState
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.components.RootBinaryComponentCatalog
 import com.android.zdtd.service.ui.vps.VpsProfileScreen
 import com.android.zdtd.service.ui.vps.VpsServerDetailsScreen
 import com.android.zdtd.service.ui.vps.VpsServersScreen
@@ -46,6 +47,7 @@ import kotlinx.coroutines.flow.map
 fun AppsHost(
   uiStateFlow: StateFlow<UiState>,
   route: AppsRoute,
+  onOpenAppsList: () -> Unit,
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
@@ -86,6 +88,18 @@ fun AppsHost(
     uiStateFlow.map { it.singBoxLx }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = com.android.zdtd.service.singboxlx.SingBoxLxComponentState())
 
+  val components by remember(uiStateFlow) {
+    uiStateFlow.map { it.components }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = emptyList())
+
+  val componentsResolved by remember(uiStateFlow) {
+    uiStateFlow.map { it.componentsResolved }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = false)
+
+  val rootComponents by remember(uiStateFlow) {
+    uiStateFlow.map { it.rootComponents }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = emptyMap())
+
   val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
   LaunchedEffect(Unit) {
@@ -109,26 +123,38 @@ fun AppsHost(
     is AppsRoute.Profile -> 2
   }
 
-  val lxRouteRequested = when (route) {
-    is AppsRoute.Program -> route.programId == "sing-box-lx"
-    is AppsRoute.Profile -> route.programId == "sing-box-lx"
-    else -> false
+  val routeProgramId = when (route) {
+    is AppsRoute.Program -> route.programId
+    is AppsRoute.Profile -> route.programId
+    else -> null
+  }
+  val knownComponentProgramIds = remember {
+    RootBinaryComponentCatalog.moduleComponents.flatMap { it.programIds }.toSet() + setOf("sing-box-lx", "tgwsproxy")
+  }
+  val componentBoundRoute = routeProgramId != null && routeProgramId in knownComponentProgramIds
+  val routeComponent = routeProgramId?.let { programId ->
+    components.firstOrNull { component -> programId in component.programIds }
   }
 
-  val lxListed = programs.any { it.id == "sing-box-lx" }
-  val lxAvailable = singBoxLx.installed || lxListed
-  val lxAvailabilityKnown = singBoxLx.statusResolved || lxListed
-
-  if (lxRouteRequested && !lxAvailabilityKnown) {
+  if (componentBoundRoute && daemonOnline && !componentsResolved) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
       CircularProgressIndicator()
     }
     return
   }
 
-  if (lxRouteRequested && !lxAvailable) {
-    SingBoxLxInstallRequiredDialog(
-      onDismiss = onOpenOptionalTools,
+  if (componentBoundRoute && componentsResolved && routeComponent?.installed == false) {
+    val componentName = RootBinaryComponentCatalog.moduleComponents
+      .firstOrNull { spec -> routeProgramId in spec.programIds }
+      ?.displayName
+      ?: when (routeProgramId) {
+        "sing-box-lx" -> "sing-box-lx"
+        "tgwsproxy" -> "Telegram WS Proxy"
+        else -> routeProgramId.orEmpty()
+      }
+    ComponentInstallRequiredDialog(
+      componentName = componentName,
+      onDismiss = onOpenAppsList,
       onOpenOptionalTools = onOpenOptionalTools,
     )
     return
@@ -158,6 +184,8 @@ fun AppsHost(
         daemonOnline = daemonOnline,
         tgWsProxy = tgWsProxy,
         singBoxLx = singBoxLx,
+        components = components,
+        componentsResolved = componentsResolved,
         onOpenProgram = onOpenProgram,
         onOpenAnalysisTools = onOpenAnalysisTools,
         onOpenOptionalTools = onOpenOptionalTools,
@@ -221,6 +249,8 @@ fun AppsHost(
       AppsRoute.OptionalTools -> OptionalToolsScreen(
         tgWsProxyState = tgWsProxy,
         singBoxLxState = singBoxLx,
+        components = components,
+        rootComponentStates = rootComponents,
         actions = actions,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,

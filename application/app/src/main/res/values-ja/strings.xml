@@ -1201,7 +1201,7 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="myproxy_user_hint">SOCKS5ユーザー名。認証が不要な場合は空欄にします。</string>
     <string name="myproxy_pass_hint">SOCKS5パスワード。認証が不要な場合は空欄にします。</string>
 
-    <string name="optional_tools_title">追加ユーティリティ</string>
+    <string name="optional_tools_title">追加コンポーネント</string>
     <string name="optional_tools_entry_desc">ここでは、プロジェクト作者がサポートする利用可能なツールをダウンロードできます。</string>
     <string name="optional_tools_screen_desc">ここでは、プロジェクト作者がサポートする利用可能なツールをダウンロードできます。</string>
     <string name="optional_tools_available">インストール可能</string>
@@ -2689,4 +2689,15 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="singbox_import_requires_lx_feature_message">この構成は %1$s を使用しているため、sing-box-lx が必要です。sing-box-lx ツールからインポートしてください。</string>
     <string name="singbox_import_invalid_vless_encryption">VLESS encryption の値の形式が正しくありません。ML-KEM は mlkem768x25519plus… 形式を使用する必要があります。</string>
     <string name="singbox_lx_advanced_json_hint">sing-box-lx の高度な JSON フィールドは保持されます。ZDT-D はローカル mixed inbound のみを管理し、不足している場合に安全な DNS/ルーティング既定値を追加します。</string>
+
+    <string name="setup_components_title">モジュールコンポーネント</string>
+    <string name="setup_components_selected_fmt">選択済み: %1$d / %2$d ツール</string>
+    <string name="setup_components_configure">選択</string>
+    <string name="setup_components_dialog_title">ツールを選択</string>
+    <string name="setup_components_dialog_body">オンラインモジュールと一緒にインストールするツールを選択します。ルーティング基盤は常にインストールされ、この一覧には表示されません。</string>
+    <string name="component_selection_save_failed">選択したモジュールコンポーネントを保存できませんでした。</string>
+    <string name="component_install_required_title">コンポーネントが未インストールです</string>
+    <string name="component_install_required_message">%1$s コンポーネントがインストールされていません。追加コンポーネントからインストールしますか？</string>
+    <string name="component_install_required_action">インストール</string>
+    <string name="optional_component_generic_desc">モジュールの再インストールや再起動なしで、このツールをインストール、更新、削除できます。</string>
 </resources>

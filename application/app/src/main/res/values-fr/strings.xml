@@ -1201,7 +1201,7 @@ La protection ne fonctionne pas en mode point d’accès. Si le point d’accès
     <string name="myproxy_user_hint">Nom d’utilisateur SOCKS5. Laissez vide si l’authentification n’est pas requise.</string>
     <string name="myproxy_pass_hint">Mot de passe SOCKS5. Laissez vide si l’authentification n’est pas requise.</string>
 
-    <string name="optional_tools_title">Outils supplémentaires</string>
+    <string name="optional_tools_title">Composants supplémentaires</string>
     <string name="optional_tools_entry_desc">Vous pouvez télécharger ici les outils disponibles pris en charge par l’auteur du projet.</string>
     <string name="optional_tools_screen_desc">Vous pouvez télécharger ici les outils disponibles pris en charge par l’auteur du projet.</string>
     <string name="optional_tools_available">Disponible à l’installation</string>
@@ -2690,4 +2690,15 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="singbox_import_requires_lx_feature_message">Cette configuration utilise %1$s, qui nécessite sing-box-lx. Importez-la via l’outil sing-box-lx.</string>
     <string name="singbox_import_invalid_vless_encryption">La valeur de chiffrement VLESS est mal formée. ML-KEM doit utiliser le format mlkem768x25519plus….</string>
     <string name="singbox_lx_advanced_json_hint">Les champs JSON avancés de sing-box-lx sont conservés. ZDT-D gère uniquement l’inbound mixed local et ajoute des valeurs DNS/routage sûres lorsqu’elles sont absentes.</string>
+
+    <string name="setup_components_title">Composants du module</string>
+    <string name="setup_components_selected_fmt">Sélectionnés : %1$d sur %2$d outils</string>
+    <string name="setup_components_configure">Choisir</string>
+    <string name="setup_components_dialog_title">Choisir les outils</string>
+    <string name="setup_components_dialog_body">Choisissez les outils à installer avec le module en ligne. La base de routage est toujours installée et n’apparaît pas dans cette liste.</string>
+    <string name="component_selection_save_failed">Impossible d’enregistrer les composants du module sélectionnés.</string>
+    <string name="component_install_required_title">Composant non installé</string>
+    <string name="component_install_required_message">Le composant %1$s n’est pas installé. L’installer depuis Composants supplémentaires ?</string>
+    <string name="component_install_required_action">Installer</string>
+    <string name="optional_component_generic_desc">Installez, mettez à jour ou supprimez cet outil sans réinstaller le module ni redémarrer.</string>
 </resources>

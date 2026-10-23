@@ -77,6 +77,7 @@ fail_code() {
 }
 
 ZYGISK_MARKER="/data/adb/ZDT-D/zygisk"
+ZDTD_COMPONENTS_FILE="/data/adb/ZDT-D/components"
 
 if [ -f "$ZYGISK_MARKER" ]; then
   MAGISK_CODE="$(num_or_zero "${MAGISK_VER_CODE:-0}")"
@@ -236,13 +237,105 @@ SERVICE="$MODDIR/service.sh"
 if [ ! -d "$ARCH_BINDIR" ]; then
   fail "Architecture binary folder not found: $ARCH_BINDIR"
 fi
+
+# Preserve separately downloaded components before touching bin/. Some root managers
+# stage updates under modules_update while others can expose the active module path.
+# Snapshotting first makes the behaviour identical in both cases.
+OLD_MODULE_BIN="/data/adb/modules/ZDT-D/bin"
+PRESERVE_DIR="/data/adb/ZDT-D/.component-install-preserve"
+rm -rf "$PRESERVE_DIR" 2>/dev/null || true
+mkdir -p "$PRESERVE_DIR" 2>/dev/null || true
+if [ -f "$ZDTD_COMPONENTS_FILE" ]; then
+  if grep -Fqx "sing-box-lx" "$ZDTD_COMPONENTS_FILE" 2>/dev/null && [ -x "$OLD_MODULE_BIN/sing-box-lx" ]; then
+    cp -pf "$OLD_MODULE_BIN/sing-box-lx" "$PRESERVE_DIR/sing-box-lx" 2>/dev/null || warn "Unable to snapshot sing-box-lx before module update"
+  fi
+  if grep -Fqx "tgwsproxy" "$ZDTD_COMPONENTS_FILE" 2>/dev/null && [ -x "$OLD_MODULE_BIN/tg-ws-proxy" ]; then
+    cp -pf "$OLD_MODULE_BIN/tg-ws-proxy" "$PRESERVE_DIR/tg-ws-proxy" 2>/dev/null || warn "Unable to snapshot tg-ws-proxy before module update"
+  fi
+fi
+
 rm -rf "$BINDIR" 2>/dev/null || true
 mkdir -p "$BINDIR" 2>/dev/null || fail "Unable to create folder: $BINDIR"
+
+# Online/component mode uses a persistent whitelist written by the Android app.
+# If the file does not exist we preserve the historical behaviour and install all
+# bundled tools (full APK/manual ZIP/backward compatibility). Never source the file:
+# component IDs are matched as literal, whole lines only.
+zdt_component_selected() {
+  component_id="$1"
+  [ ! -f "$ZDTD_COMPONENTS_FILE" ] && return 0
+  grep -Fqx "$component_id" "$ZDTD_COMPONENTS_FILE" 2>/dev/null
+}
+
+zdt_binary_selected() {
+  binary="$1"
+  case "$binary" in
+    # Minimal routing/runtime base. These are deliberately invisible in the UI
+    # and can never be excluded by the component state file.
+    zdtd|dnscrypt|d2s|t2s|tun2socks)
+      return 0
+      ;;
+    nfqws) zdt_component_selected "nfqws" ;;
+    nfqws2) zdt_component_selected "nfqws2" ;;
+    byedpi) zdt_component_selected "byedpi" || zdt_component_selected "operaproxy" ;;
+    dpitunnel-cli) zdt_component_selected "dpitunnel" ;;
+    opera-proxy) zdt_component_selected "operaproxy" ;;
+    sing-box) zdt_component_selected "sing-box" ;;
+    hysteria2) zdt_component_selected "hysteria2" ;;
+    wireproxy) zdt_component_selected "wireproxy" ;;
+    openvpn) zdt_component_selected "openvpn" ;;
+    amneziawg-go|awg) zdt_component_selected "amneziawg" ;;
+    mihomo) zdt_component_selected "mihomo" ;;
+    mieru) zdt_component_selected "mieru" ;;
+    torproxy|lyrebird) zdt_component_selected "tor" ;;
+    *)
+      # Unknown future bundled binaries stay installed when no whitelist exists,
+      # but are omitted in explicit component mode until a mapping is added.
+      [ ! -f "$ZDTD_COMPONENTS_FILE" ]
+      ;;
+  esac
+}
+
+if [ -f "$ZDTD_COMPONENTS_FILE" ]; then
+  ui_print "## Component installation mode: selected tools only"
+else
+  ui_print "## Component installation mode: full bundle"
+fi
+
+SELECTED_COUNT=0
+SKIPPED_COUNT=0
 for f in "$ARCH_BINDIR"/*; do
   [ -e "$f" ] || continue
   [ -f "$f" ] || continue
-  cp -f "$f" "$BINDIR/$(basename "$f")" 2>/dev/null || fail "Unable to install binary: $(basename "$f")"
+  binary_name="$(basename "$f")"
+  if zdt_binary_selected "$binary_name"; then
+    cp -f "$f" "$BINDIR/$binary_name" 2>/dev/null || fail "Unable to install binary: $binary_name"
+    SELECTED_COUNT=$((SELECTED_COUNT + 1))
+  else
+    ui_print "- skipped optional component binary: $binary_name"
+    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+  fi
 done
+
+# Restore separately distributed optional components from the pre-update snapshot.
+if zdt_component_selected "sing-box-lx" && [ -f "$PRESERVE_DIR/sing-box-lx" ]; then
+  cp -pf "$PRESERVE_DIR/sing-box-lx" "$BINDIR/sing-box-lx" 2>/dev/null || fail "Unable to restore sing-box-lx after module update"
+fi
+if zdt_component_selected "tgwsproxy" && [ -f "$PRESERVE_DIR/tg-ws-proxy" ]; then
+  cp -pf "$PRESERVE_DIR/tg-ws-proxy" "$BINDIR/tg-ws-proxy" 2>/dev/null || fail "Unable to restore tg-ws-proxy after module update"
+fi
+rm -rf "$PRESERVE_DIR" 2>/dev/null || true
+
+ui_print "## Installed bundled binaries: $SELECTED_COUNT; skipped: $SKIPPED_COUNT"
+
+# A module update may replace a component that was previously installed from its standalone
+# Technical_Assets archive. Drop only the generic standalone metadata so the Android UI never
+# displays an old standalone version next to the freshly packaged module binary.
+GENERIC_COMPONENT_INFO_DIR="/data/adb/ZDT-D/component-info"
+for component_id in nfqws nfqws2 byedpi dpitunnel operaproxy sing-box hysteria2 wireproxy openvpn amneziawg mihomo mieru tor; do
+  rm -f "$GENERIC_COMPONENT_INFO_DIR/$component_id.json" 2>/dev/null || true
+done
+
 rm -rf "$MODDIR/prebuilt" 2>/dev/null || true
 
 # chmod all regular files in bin

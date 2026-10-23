@@ -2,6 +2,7 @@ mod android;
 mod android_dns;
 mod blockedquic;
 mod capabilities;
+mod components;
 mod captive_portal;
 mod api;
 mod api_status;

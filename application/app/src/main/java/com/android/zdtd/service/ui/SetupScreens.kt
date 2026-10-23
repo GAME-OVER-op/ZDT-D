@@ -61,7 +61,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import com.android.zdtd.service.BuildConfig
 import com.android.zdtd.service.InstallConflictUi
+import com.android.zdtd.service.components.RootBinaryComponentCatalog
 import com.android.zdtd.service.R
 import com.android.zdtd.service.RootState
 import com.android.zdtd.service.SetupUiState
@@ -819,6 +821,8 @@ fun InstallModuleScreen(
   onRefreshConflicts: () -> Unit,
   onToggleConflictRemove: (String, Boolean) -> Unit,
   onRefreshZygiskInstallMarker: () -> Unit,
+  onRefreshInstallComponents: () -> Unit,
+  onToggleInstallComponent: (String, Boolean) -> Unit,
   onToggleZygiskInstall: (Boolean) -> Unit,
   onConfirmZygiskInstall: () -> Unit,
   onDismissZygiskInstallConfirm: () -> Unit,
@@ -865,6 +869,7 @@ fun InstallModuleScreen(
   LaunchedEffect(Unit) {
     onRefreshConflicts()
     onRefreshZygiskInstallMarker()
+    onRefreshInstallComponents()
   }
 
   if (arm64Ok && setup.showManualDialog) {
@@ -990,6 +995,7 @@ fun InstallModuleScreen(
           onInstall = requestInstall,
           onReboot = onReboot,
           onToggleZygiskInstall = onToggleZygiskInstall,
+          onToggleInstallComponent = onToggleInstallComponent,
           onToggleConflictRemove = onToggleConflictRemove,
           onShowInstallLog = { showInstallLog = true },
           onToggleInstallLog = { showInstallLog = !showInstallLog },
@@ -1025,6 +1031,14 @@ fun InstallModuleScreen(
             enabled = setup.installZygiskRequested,
             onToggle = onToggleZygiskInstall,
           )
+
+          if (BuildConfig.USES_ONLINE_MODULE) {
+            OnlineComponentSelectionCard(
+              resolved = setup.installComponentsResolved,
+              selected = setup.installSelectedComponents,
+              onToggle = onToggleInstallComponent,
+            )
+          }
 
           AnimatedVisibility(
             visible = setup.showKsuApatchZygiskWarning,
@@ -1141,6 +1155,7 @@ private fun TabletInstallLayout(
   onInstall: () -> Unit,
   onReboot: () -> Unit,
   onToggleZygiskInstall: (Boolean) -> Unit,
+  onToggleInstallComponent: (String, Boolean) -> Unit,
   onToggleConflictRemove: (String, Boolean) -> Unit,
   onShowInstallLog: () -> Unit,
   onToggleInstallLog: () -> Unit,
@@ -1222,6 +1237,15 @@ private fun TabletInstallLayout(
             onToggle = onToggleZygiskInstall,
             dense = true,
           )
+
+          if (BuildConfig.USES_ONLINE_MODULE) {
+            OnlineComponentSelectionCard(
+              resolved = setup.installComponentsResolved,
+              selected = setup.installSelectedComponents,
+              onToggle = onToggleInstallComponent,
+              dense = true,
+            )
+          }
 
           if (setup.showKsuApatchZygiskWarning) {
             InstallerNoticeCard(
@@ -2345,6 +2369,129 @@ private fun KsuApatchZygiskWarningCard() {
         )
       }
     }
+  }
+}
+
+@Composable
+private fun OnlineComponentSelectionCard(
+  resolved: Boolean,
+  selected: Set<String>,
+  onToggle: (String, Boolean) -> Unit,
+  dense: Boolean = false,
+) {
+  var showDialog by rememberSaveable { mutableStateOf(false) }
+  val all = RootBinaryComponentCatalog.moduleComponents
+  val selectedCount = selected.intersect(RootBinaryComponentCatalog.moduleIds).size
+  val accent = MaterialTheme.colorScheme.secondary
+
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(20.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = if (setupIsLightTheme()) 0.90f else 0.62f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = if (dense) 10.dp else 12.dp, vertical = if (dense) 8.dp else 10.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(if (dense) 8.dp else 10.dp),
+    ) {
+      Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = accent.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
+      ) {
+        Icon(
+          imageVector = Icons.Filled.SystemUpdateAlt,
+          contentDescription = null,
+          tint = accent,
+          modifier = Modifier.padding(if (dense) 7.dp else 9.dp).size(if (dense) 18.dp else 20.dp),
+        )
+      }
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+          text = stringResource(R.string.setup_components_title),
+          style = MaterialTheme.typography.bodyMedium,
+          fontWeight = FontWeight.Bold,
+        )
+        Text(
+          text = if (resolved) {
+            stringResource(R.string.setup_components_selected_fmt, selectedCount, all.size)
+          } else {
+            stringResource(R.string.common_loading)
+          },
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+        )
+      }
+      OutlinedButton(
+        onClick = { showDialog = true },
+        enabled = resolved,
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
+      ) {
+        Text(stringResource(R.string.setup_components_configure))
+      }
+    }
+  }
+
+  if (showDialog) {
+    AlertDialog(
+      onDismissRequest = { showDialog = false },
+      title = { Text(stringResource(R.string.setup_components_dialog_title)) },
+      text = {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 440.dp)
+            .verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          Text(
+            text = stringResource(R.string.setup_components_dialog_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+            modifier = Modifier.padding(bottom = 6.dp),
+          )
+          all.forEach { spec ->
+            val checked = spec.id in selected
+            Surface(
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(14.dp),
+              color = MaterialTheme.colorScheme.surfaceContainerLow,
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+              ) {
+                Checkbox(
+                  checked = checked,
+                  onCheckedChange = { value -> onToggle(spec.id, value) },
+                )
+                Text(
+                  text = spec.displayName,
+                  modifier = Modifier.weight(1f),
+                  style = MaterialTheme.typography.bodyMedium,
+                  fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal,
+                )
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = { showDialog = false }) {
+          Text(stringResource(R.string.common_close))
+        }
+      },
+    )
   }
 }
 

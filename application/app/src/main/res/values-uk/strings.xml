@@ -1201,7 +1201,7 @@ APatch: 10700+</string>
     <string name="myproxy_user_hint">Ім’я користувача SOCKS5. Залиште порожнім, якщо автентифікація не потрібна.</string>
     <string name="myproxy_pass_hint">Пароль SOCKS5. Залиште порожнім, якщо автентифікація не потрібна.</string>
 
-    <string name="optional_tools_title">Додаткові утиліти</string>
+    <string name="optional_tools_title">Додаткові компоненти</string>
     <string name="optional_tools_entry_desc">Тут можна завантажити доступні інструменти, які підтримує автор проєкту.</string>
     <string name="optional_tools_screen_desc">Тут можна завантажити доступні інструменти, які підтримує автор проєкту.</string>
     <string name="optional_tools_available">Доступно для встановлення</string>
@@ -2692,4 +2692,15 @@ APatch: 10700+</string>
     <string name="singbox_import_requires_lx_feature_message">Ця конфігурація використовує %1$s, для чого потрібен sing-box-lx. Імпортуйте її через інструмент sing-box-lx.</string>
     <string name="singbox_import_invalid_vless_encryption">Значення шифрування VLESS має неправильний формат. ML-KEM має використовувати формат mlkem768x25519plus….</string>
     <string name="singbox_lx_advanced_json_hint">Розширені поля JSON sing-box-lx зберігаються. ZDT-D керує лише локальним mixed-входом і додає безпечні типові значення DNS/маршрутизації, якщо вони відсутні.</string>
+
+    <string name="setup_components_title">Компоненти модуля</string>
+    <string name="setup_components_selected_fmt">Вибрано: %1$d із %2$d інструментів</string>
+    <string name="setup_components_configure">Вибрати</string>
+    <string name="setup_components_dialog_title">Вибір інструментів</string>
+    <string name="setup_components_dialog_body">Виберіть інструменти, які буде встановлено разом з онлайн-модулем. База маршрутизації встановлюється завжди й у цьому списку не показується.</string>
+    <string name="component_selection_save_failed">Не вдалося зберегти вибрані компоненти модуля.</string>
+    <string name="component_install_required_title">Компонент не встановлено</string>
+    <string name="component_install_required_message">Компонент %1$s не встановлено. Встановити його з розділу «Додаткові компоненти»?</string>
+    <string name="component_install_required_action">Встановити</string>
+    <string name="optional_component_generic_desc">Встановлення, оновлення або видалення інструмента без перевстановлення модуля та перезавантаження.</string>
 </resources>

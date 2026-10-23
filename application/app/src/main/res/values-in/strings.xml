@@ -1201,7 +1201,7 @@ Perlindungan tidak berfungsi dalam mode hotspot. Jika hotspot diaktifkan dan sin
     <string name="myproxy_user_hint">Nama pengguna SOCKS5. Biarkan kosong jika autentikasi tidak diperlukan.</string>
     <string name="myproxy_pass_hint">Kata sandi SOCKS5. Biarkan kosong jika autentikasi tidak diperlukan.</string>
 
-    <string name="optional_tools_title">Utilitas tambahan</string>
+    <string name="optional_tools_title">Komponen tambahan</string>
     <string name="optional_tools_entry_desc">Di sini Anda dapat mengunduh alat yang tersedia dan didukung oleh pembuat proyek.</string>
     <string name="optional_tools_screen_desc">Di sini Anda dapat mengunduh alat yang tersedia dan didukung oleh pembuat proyek.</string>
     <string name="optional_tools_available">Tersedia untuk dipasang</string>
@@ -2689,4 +2689,15 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="singbox_import_requires_lx_feature_message">Konfigurasi ini menggunakan %1$s yang memerlukan sing-box-lx. Impor melalui alat sing-box-lx.</string>
     <string name="singbox_import_invalid_vless_encryption">Nilai enkripsi VLESS memiliki format yang salah. ML-KEM harus menggunakan format mlkem768x25519plus….</string>
     <string name="singbox_lx_advanced_json_hint">Kolom JSON lanjutan sing-box-lx dipertahankan. ZDT-D hanya mengelola mixed inbound lokal dan menambahkan nilai default DNS/routing yang aman jika belum ada.</string>
+
+    <string name="setup_components_title">Komponen modul</string>
+    <string name="setup_components_selected_fmt">Dipilih: %1$d dari %2$d alat</string>
+    <string name="setup_components_configure">Pilih</string>
+    <string name="setup_components_dialog_title">Pilih alat</string>
+    <string name="setup_components_dialog_body">Pilih alat yang akan dipasang bersama modul online. Basis perutean selalu dipasang dan tidak ditampilkan dalam daftar ini.</string>
+    <string name="component_selection_save_failed">Tidak dapat menyimpan komponen modul yang dipilih.</string>
+    <string name="component_install_required_title">Komponen belum dipasang</string>
+    <string name="component_install_required_message">Komponen %1$s belum dipasang. Pasang dari Komponen tambahan?</string>
+    <string name="component_install_required_action">Pasang</string>
+    <string name="optional_component_generic_desc">Pasang, perbarui, atau hapus alat ini tanpa memasang ulang modul atau memulai ulang perangkat.</string>
 </resources>

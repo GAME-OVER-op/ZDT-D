@@ -1201,7 +1201,7 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="myproxy_user_hint">Tên người dùng SOCKS5. Để trống nếu không cần xác thực.</string>
     <string name="myproxy_pass_hint">Mật khẩu SOCKS5. Để trống nếu không cần xác thực.</string>
 
-    <string name="optional_tools_title">Tiện ích bổ sung</string>
+    <string name="optional_tools_title">Thành phần bổ sung</string>
     <string name="optional_tools_entry_desc">Tại đây bạn có thể tải xuống các công cụ được tác giả dự án hỗ trợ.</string>
     <string name="optional_tools_screen_desc">Tại đây bạn có thể tải xuống các công cụ được tác giả dự án hỗ trợ.</string>
     <string name="optional_tools_available">Có thể cài đặt</string>
@@ -2689,4 +2689,15 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="singbox_import_requires_lx_feature_message">Cấu hình này sử dụng %1$s, nên cần sing-box-lx. Hãy nhập cấu hình qua công cụ sing-box-lx.</string>
     <string name="singbox_import_invalid_vless_encryption">Giá trị mã hóa VLESS không đúng định dạng. ML-KEM phải dùng định dạng mlkem768x25519plus….</string>
     <string name="singbox_lx_advanced_json_hint">Các trường JSON nâng cao của sing-box-lx được giữ nguyên. ZDT-D chỉ quản lý mixed inbound cục bộ và thêm mặc định DNS/định tuyến an toàn khi còn thiếu.</string>
+
+    <string name="setup_components_title">Thành phần mô-đun</string>
+    <string name="setup_components_selected_fmt">Đã chọn: %1$d / %2$d công cụ</string>
+    <string name="setup_components_configure">Chọn</string>
+    <string name="setup_components_dialog_title">Chọn công cụ</string>
+    <string name="setup_components_dialog_body">Chọn các công cụ sẽ được cài cùng mô-đun trực tuyến. Nền tảng định tuyến luôn được cài và không hiển thị trong danh sách này.</string>
+    <string name="component_selection_save_failed">Không thể lưu các thành phần mô-đun đã chọn.</string>
+    <string name="component_install_required_title">Thành phần chưa được cài</string>
+    <string name="component_install_required_message">Thành phần %1$s chưa được cài. Cài từ Thành phần bổ sung?</string>
+    <string name="component_install_required_action">Cài đặt</string>
+    <string name="optional_component_generic_desc">Cài, cập nhật hoặc xóa công cụ này mà không cần cài lại mô-đun hay khởi động lại.</string>
 </resources>

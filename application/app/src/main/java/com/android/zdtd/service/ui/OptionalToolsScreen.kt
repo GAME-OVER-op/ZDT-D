@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.DownloadDone
+import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material3.Button
@@ -44,6 +45,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.api.ApiModels
+import com.android.zdtd.service.components.RootBinaryComponentCatalog
+import com.android.zdtd.service.components.RootBinaryComponentStage
+import com.android.zdtd.service.components.RootBinaryComponentState
 import com.android.zdtd.service.singboxlx.SingBoxLxComponentError
 import com.android.zdtd.service.singboxlx.SingBoxLxComponentStage
 import com.android.zdtd.service.singboxlx.SingBoxLxComponentState
@@ -54,6 +59,8 @@ import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
 fun OptionalToolsScreen(
   tgWsProxyState: TgWsProxyComponentState,
   singBoxLxState: SingBoxLxComponentState,
+  components: List<ApiModels.Component>,
+  rootComponentStates: Map<String, RootBinaryComponentState>,
   actions: ZdtdActions,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
@@ -83,6 +90,20 @@ fun OptionalToolsScreen(
         onInstall = actions::installSingBoxLx,
         onRemove = actions::removeSingBoxLx,
       )
+    }
+    RootBinaryComponentCatalog.moduleComponents.forEach { spec ->
+      item(key = "component-${spec.id}") {
+        val daemonState = components.firstOrNull { it.id == spec.id }
+        val localState = rootComponentStates[spec.id] ?: RootBinaryComponentState(id = spec.id)
+        val installed = if (localState.isWorking) localState.installed else daemonState?.installed ?: localState.installed
+        GenericRootComponentCard(
+          title = spec.displayName,
+          state = localState,
+          installed = installed,
+          onInstall = { actions.installRootComponent(spec.id) },
+          onRemove = { actions.removeRootComponent(spec.id) },
+        )
+      }
     }
     item { Spacer(Modifier.height(4.dp)) }
   }
@@ -161,6 +182,42 @@ private fun SingBoxLxUtilityCard(
     selectedAbi = state.selectedAbi,
     installedVersion = state.installedVersion,
     errorText = singBoxLxErrorText(state),
+    onInstall = onInstall,
+    onRemove = onRemove,
+  )
+}
+
+@Composable
+private fun GenericRootComponentCard(
+  title: String,
+  state: RootBinaryComponentState,
+  installed: Boolean,
+  onInstall: () -> Unit,
+  onRemove: () -> Unit,
+) {
+  val statusText = when {
+    installed && state.stage != RootBinaryComponentStage.FAILED -> stringResource(R.string.optional_tools_status_installed)
+    state.stage == RootBinaryComponentStage.DOWNLOADING -> stringResource(R.string.optional_tools_status_downloading)
+    state.stage == RootBinaryComponentStage.UNPACKING -> stringResource(R.string.optional_tools_status_unpacking)
+    state.stage == RootBinaryComponentStage.VERIFYING -> stringResource(R.string.optional_tools_status_verifying)
+    state.stage == RootBinaryComponentStage.INSTALLING -> stringResource(R.string.optional_tools_status_installing)
+    state.stage == RootBinaryComponentStage.FAILED -> stringResource(R.string.optional_tools_status_failed)
+    else -> stringResource(R.string.optional_tools_status_not_installed)
+  }
+  OptionalBinaryUtilityCard(
+    title = title,
+    description = stringResource(R.string.optional_component_generic_desc),
+    icon = Icons.Outlined.Extension,
+    installed = installed,
+    isWorking = state.isWorking,
+    statusText = statusText,
+    progressPercent = state.progressPercent,
+    downloadedBytes = state.downloadedBytes,
+    totalBytes = state.totalBytes,
+    isDownloading = state.stage == RootBinaryComponentStage.DOWNLOADING,
+    selectedAbi = state.selectedAbi,
+    installedVersion = state.installedVersion,
+    errorText = state.errorMessage,
     onInstall = onInstall,
     onRemove = onRemove,
   )

@@ -57,6 +57,11 @@ class ApiClient(
     return ApiModels.parsePrograms(obj)
   }
 
+  fun getComponents(): List<ApiModels.Component> {
+    val obj = requestJson("GET", "/api/system/components", null)
+    return ApiModels.parseComponents(obj)
+  }
+
   fun getTrafficRules(): ApiModels.TrafficReport {
     val obj = requestJson("GET", "/api/traffic/rules", null)
     return ApiModels.parseTrafficReport(obj)

@@ -1201,7 +1201,7 @@ APatch: 10700+</string>
     <string name="myproxy_user_hint">نام کاربری SOCKS5. اگر احراز هویت لازم نیست خالی بگذارید.</string>
     <string name="myproxy_pass_hint">گذرواژه SOCKS5. اگر احراز هویت لازم نیست خالی بگذارید.</string>
 
-    <string name="optional_tools_title">ابزارهای اضافی</string>
+    <string name="optional_tools_title">اجزای اضافی</string>
     <string name="optional_tools_entry_desc">در اینجا می‌توانید ابزارهای موجود و پشتیبانی‌شده توسط نویسنده پروژه را دانلود کنید.</string>
     <string name="optional_tools_screen_desc">در اینجا می‌توانید ابزارهای موجود و پشتیبانی‌شده توسط نویسنده پروژه را دانلود کنید.</string>
     <string name="optional_tools_available">آماده نصب</string>
@@ -2690,4 +2690,15 @@ APatch: 10700+</string>
     <string name="singbox_import_requires_lx_feature_message">این پیکربندی از %1$s استفاده می‌کند که به sing-box-lx نیاز دارد. آن را از طریق ابزار sing-box-lx وارد کنید.</string>
     <string name="singbox_import_invalid_vless_encryption">مقدار رمزنگاری VLESS قالب معتبری ندارد. ML-KEM باید از قالب mlkem768x25519plus… استفاده کند.</string>
     <string name="singbox_lx_advanced_json_hint">فیلدهای پیشرفته JSON مربوط به sing-box-lx حفظ می‌شوند. ZDT-D فقط ورودی mixed محلی را مدیریت می‌کند و در صورت نبودن، پیش‌فرض‌های امن DNS/مسیریابی را اضافه می‌کند.</string>
+
+    <string name="setup_components_title">اجزای ماژول</string>
+    <string name="setup_components_selected_fmt">انتخاب‌شده: %1$d از %2$d ابزار</string>
+    <string name="setup_components_configure">انتخاب</string>
+    <string name="setup_components_dialog_title">انتخاب ابزارها</string>
+    <string name="setup_components_dialog_body">ابزارهایی را که باید همراه ماژول آنلاین نصب شوند انتخاب کنید. پایه مسیریابی همیشه نصب می‌شود و در این فهرست نمایش داده نمی‌شود.</string>
+    <string name="component_selection_save_failed">ذخیره اجزای انتخاب‌شده ماژول ممکن نشد.</string>
+    <string name="component_install_required_title">جزء نصب نشده است</string>
+    <string name="component_install_required_message">جزء %1$s نصب نشده است. از بخش اجزای اضافی نصب شود؟</string>
+    <string name="component_install_required_action">نصب</string>
+    <string name="optional_component_generic_desc">این ابزار را بدون نصب مجدد ماژول یا راه‌اندازی دوباره، نصب، به‌روزرسانی یا حذف کنید.</string>
 </resources>

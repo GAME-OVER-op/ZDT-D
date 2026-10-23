@@ -21,6 +21,11 @@ import androidx.core.content.ContextCompat
 import com.android.zdtd.service.api.ApiClient
 import com.android.zdtd.service.api.ApiModels
 import com.android.zdtd.service.api.DeviceInfo
+import com.android.zdtd.service.components.ComponentSelectionStore
+import com.android.zdtd.service.components.RootBinaryComponentCatalog
+import com.android.zdtd.service.components.RootBinaryComponentRepository
+import com.android.zdtd.service.components.RootBinaryComponentStage
+import com.android.zdtd.service.components.RootBinaryComponentState
 import com.android.zdtd.service.remote.RemoteControlCenter
 import com.android.zdtd.service.remote.RemoteRootClient
 import com.android.zdtd.service.singboxlx.SingBoxLxComponentError
@@ -158,6 +163,9 @@ data class SetupUiState(
   val preInstallWarning: String? = null,
   val installConflicts: List<InstallConflictUi> = emptyList(),
   val installZygiskRequested: Boolean = false,
+  /** Online distribution only: logical tools selected for the initial module install. */
+  val installComponentsResolved: Boolean = false,
+  val installSelectedComponents: Set<String> = emptySet(),
   val showZygiskInstallConfirm: Boolean = false,
   val showKsuApatchZygiskWarning: Boolean = false,
   val showZygiskInstallRecoveryDialog: Boolean = false,
@@ -233,6 +241,11 @@ data class UiState(
   val daemonLogDetailedTail: String = "",
   val tgWsProxy: TgWsProxyComponentState = TgWsProxyComponentState(),
   val singBoxLx: SingBoxLxComponentState = SingBoxLxComponentState(),
+  /** Logical component availability reported by zdtd. */
+  val components: List<ApiModels.Component> = emptyList(),
+  val componentsResolved: Boolean = false,
+  /** Download/install state for module-delivered components. */
+  val rootComponents: Map<String, RootBinaryComponentState> = emptyMap(),
 )
 
 private data class StartupTimingPlan(
@@ -349,6 +362,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private val remoteRoot = RemoteRootClient()
   private val tgWsProxyRepository = TgWsProxyComponentRepository(ctx, root)
   private val singBoxLxRepository = SingBoxLxComponentRepository(ctx, root)
+  private val componentSelectionStore = ComponentSelectionStore(root)
+  private val rootBinaryComponentRepository = RootBinaryComponentRepository(ctx, root, componentSelectionStore)
+  private val componentSelectionMutex = Mutex()
 
   private val hotspotSettingsMutex = Mutex()
 
@@ -2242,6 +2258,74 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
+  private fun inferInstalledModuleComponents(): Set<String> {
+    val installed = RootBinaryComponentCatalog.moduleComponents
+      .asSequence()
+      .filter { spec -> runCatching { rootBinaryComponentRepository.isInstalled(spec) }.getOrDefault(false) }
+      .map { it.id }
+      .toMutableSet()
+    RootBinaryComponentCatalog.moduleComponents
+      .filter { it.id in installed }
+      .flatMapTo(installed) { it.dependencies }
+    return installed
+  }
+
+  override fun refreshInstallComponentSelection() {
+    if (!isOnlineModuleDistribution()) {
+      _setup.update {
+        it.copy(
+          installComponentsResolved = true,
+          installSelectedComponents = RootBinaryComponentCatalog.moduleIds,
+        )
+      }
+      return
+    }
+    if (_rootState.value != RootState.GRANTED) return
+    launchIO {
+      val saved = runCatching { componentSelectionStore.read() }.getOrNull()
+      val selected = (saved ?: inferInstalledModuleComponents())
+        .intersect(RootBinaryComponentCatalog.moduleIds)
+      _setup.update {
+        it.copy(
+          installComponentsResolved = true,
+          installSelectedComponents = selected,
+        )
+      }
+    }
+  }
+
+  override fun setInstallComponentSelected(componentId: String, selected: Boolean) {
+    if (!isOnlineModuleDistribution() || _rootState.value != RootState.GRANTED || _setup.value.installing) return
+    if (componentId !in RootBinaryComponentCatalog.moduleIds) return
+    val previous = if (_setup.value.installComponentsResolved) {
+      _setup.value.installSelectedComponents
+    } else {
+      inferInstalledModuleComponents()
+    }
+    val next = previous.toMutableSet().apply {
+      val spec = RootBinaryComponentCatalog.find(componentId)
+      if (selected) {
+        add(componentId)
+        spec?.dependencies.orEmpty().forEach(::add)
+      } else {
+        remove(componentId)
+        // Keep the persisted set self-consistent: removing a dependency also removes
+        // tools that cannot work without it (currently Opera Proxy -> ByeDPI).
+        RootBinaryComponentCatalog.moduleComponents
+          .filter { componentId in it.dependencies }
+          .forEach { remove(it.id) }
+      }
+    }.toSet()
+    _setup.update { it.copy(installComponentsResolved = true, installSelectedComponents = next) }
+    launchIO {
+      componentSelectionMutex.withLock {
+        val latest = _setup.value.installSelectedComponents.intersect(RootBinaryComponentCatalog.moduleIds)
+        val ok = runCatching { componentSelectionStore.writeModuleSelection(latest) }.getOrDefault(false)
+        if (!ok) log("ERR", "failed to save online component selection")
+      }
+    }
+  }
+
   override fun dismissInstallZygiskConfirm() {
     _setup.update { it.copy(showZygiskInstallConfirm = false) }
   }
@@ -2254,6 +2338,33 @@ private fun clearDownloadedUpdateApk() {
 
     if (_setup.value.installing) return
     launchIO {
+      if (isOnlineModuleDistribution()) {
+        val selected = if (_setup.value.installComponentsResolved) {
+          _setup.value.installSelectedComponents.intersect(RootBinaryComponentCatalog.moduleIds)
+        } else {
+          componentSelectionStore.read()?.intersect(RootBinaryComponentCatalog.moduleIds)
+            ?: inferInstalledModuleComponents()
+        }
+        val selectionSaved = componentSelectionMutex.withLock { componentSelectionStore.writeModuleSelection(selected) }
+        if (!selectionSaved) {
+          _setup.update { it.copy(installError = str(R.string.component_selection_save_failed)) }
+          log("ERR", "unable to save component selection before module install")
+          return@launchIO
+        }
+      } else {
+        // A bundled/full installation always installs every bundled tool, but keep separately
+        // downloaded components (sing-box-lx/TGWS) in the persistent state so customize.sh can
+        // carry them across the module replacement instead of deleting them with the old bin/.
+        val selectionSaved = componentSelectionMutex.withLock {
+          componentSelectionStore.writeModuleSelection(RootBinaryComponentCatalog.moduleIds)
+        }
+        if (!selectionSaved) {
+          _setup.update { it.copy(installError = str(R.string.component_selection_save_failed)) }
+          log("ERR", "unable to prepare full component state before module install")
+          return@launchIO
+        }
+      }
+
       val oldVer = runCatching { root.hasOldModuleVersionWebroot() }.getOrDefault(false)
       val installer = runCatching { root.detectModuleInstaller() }.getOrDefault(RootConfigManager.ModuleInstaller.UNKNOWN)
       val label = moduleInstallerLabel(installer)
@@ -6893,6 +7004,8 @@ private fun shQuote(s: String): String {
     programsRefreshInFlight = true
     try {
       val list = api.getPrograms()
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
       // Some programs (dnscrypt / operaproxy) use active.json under working_folder for enable state.
       val remoteActive = RemoteControlCenter.target.value != null
       if (remoteActive && list.isEmpty()) {
@@ -6912,7 +7025,13 @@ private fun shQuote(s: String): String {
         }
       }
       lastProgramsFetchAtMs = System.currentTimeMillis()
-      _uiState.update { it.copy(programs = patched) }
+      _uiState.update {
+        it.copy(
+          programs = patched,
+          components = componentReport,
+          componentsResolved = componentResult.isSuccess || it.componentsResolved,
+        )
+      }
     } catch (e: Throwable) {
       log("ERR", "programs failed: ${e.message ?: e}")
     } finally {
@@ -6939,7 +7058,27 @@ private fun shQuote(s: String): String {
             error = SingBoxLxComponentError.STATUS,
           )
         )
-      _uiState.update { it.copy(tgWsProxy = tgWsState, singBoxLx = lxState) }
+      val genericStates = RootBinaryComponentCatalog.moduleComponents.associate { spec ->
+        spec.id to runCatching { rootBinaryComponentRepository.currentState(spec) }.getOrElse { error ->
+          RootBinaryComponentState(
+            id = spec.id,
+            stage = RootBinaryComponentStage.FAILED,
+            statusResolved = true,
+            errorMessage = error.message ?: error.javaClass.simpleName,
+          )
+        }
+      }
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update {
+        it.copy(
+          tgWsProxy = tgWsState,
+          singBoxLx = lxState,
+          rootComponents = genericStates,
+          components = componentReport,
+          componentsResolved = componentResult.isSuccess || it.componentsResolved,
+        )
+      }
     }
   }
 
@@ -6951,6 +7090,10 @@ private fun shQuote(s: String): String {
         _uiState.update { it.copy(tgWsProxy = state) }
       }
       _uiState.update { it.copy(tgWsProxy = finalState) }
+      if (finalState.installed) componentSelectionStore.add("tgwsproxy")
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update { it.copy(components = componentReport, componentsResolved = componentResult.isSuccess || it.componentsResolved) }
       if (finalState.installed) {
         log("OK", "tg-ws-proxy installed (${finalState.selectedAbi})")
       } else {
@@ -6969,6 +7112,10 @@ private fun shQuote(s: String): String {
         )
       }
       _uiState.update { it.copy(tgWsProxy = state) }
+      if (!state.installed && state.stage != TgWsProxyComponentStage.FAILED) componentSelectionStore.remove("tgwsproxy")
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update { it.copy(components = componentReport, componentsResolved = componentResult.isSuccess || it.componentsResolved) }
       if (!state.installed && state.stage != TgWsProxyComponentStage.FAILED) {
         log("OK", "tg-ws-proxy removed")
       } else if (state.stage == TgWsProxyComponentStage.FAILED) {
@@ -6990,6 +7137,10 @@ private fun shQuote(s: String): String {
         _uiState.update { it.copy(singBoxLx = state) }
       }
       _uiState.update { it.copy(singBoxLx = finalState) }
+      if (finalState.installed && finalState.stage == SingBoxLxComponentStage.INSTALLED) componentSelectionStore.add("sing-box-lx")
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update { it.copy(components = componentReport, componentsResolved = componentResult.isSuccess || it.componentsResolved) }
       if (finalState.installed && finalState.stage == SingBoxLxComponentStage.INSTALLED) {
         log("OK", "sing-box-lx installed (${finalState.selectedAbi}, ${finalState.installedVersion})")
       } else {
@@ -7017,6 +7168,10 @@ private fun shQuote(s: String): String {
         )
       }
       _uiState.update { it.copy(singBoxLx = state) }
+      if (!state.installed && state.stage != SingBoxLxComponentStage.FAILED) componentSelectionStore.remove("sing-box-lx")
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update { it.copy(components = componentReport, componentsResolved = componentResult.isSuccess || it.componentsResolved) }
       if (!state.installed && state.stage != SingBoxLxComponentStage.FAILED) {
         log("OK", "sing-box-lx removed")
       } else if (state.stage == SingBoxLxComponentStage.FAILED) {
@@ -7027,6 +7182,91 @@ private fun shQuote(s: String): String {
       }
       lastProgramsFetchAtMs = 0L
       refreshProgramsNow(force = true)
+    }
+  }
+
+  override fun installRootComponent(componentId: String) {
+    val spec = RootBinaryComponentCatalog.find(componentId) ?: return
+    launchIO {
+      // Install logical dependencies first. They use their own verified Technical_Assets
+      // archives and are persisted independently so later module updates keep them too.
+      for (dependencyId in spec.dependencies) {
+        val dependency = RootBinaryComponentCatalog.find(dependencyId) ?: continue
+        if (!rootBinaryComponentRepository.isInstalled(dependency)) {
+          val depFinal = rootBinaryComponentRepository.downloadAndInstall(dependency) { state ->
+            _uiState.update { it.copy(rootComponents = it.rootComponents + (dependencyId to state)) }
+          }
+          _uiState.update { it.copy(rootComponents = it.rootComponents + (dependencyId to depFinal)) }
+          if (!depFinal.installed) {
+            log("ERR", "component ${spec.id} dependency ${dependency.id} install failed: ${depFinal.errorMessage ?: "unknown"}")
+            val componentResult = runCatching { api.getComponents() }
+            val componentReport = componentResult.getOrElse { _uiState.value.components }
+            _uiState.update {
+              it.copy(
+                components = componentReport,
+                componentsResolved = componentResult.isSuccess || it.componentsResolved,
+              )
+            }
+            return@launchIO
+          }
+        }
+      }
+
+      val current = _uiState.value.rootComponents[componentId]
+      val initial = RootBinaryComponentState(
+        id = componentId,
+        stage = RootBinaryComponentStage.DOWNLOADING,
+        installed = current?.installed == true,
+        statusResolved = true,
+        selectedAbi = current?.selectedAbi.orEmpty(),
+      )
+      _uiState.update { it.copy(rootComponents = it.rootComponents + (componentId to initial)) }
+      val finalState = rootBinaryComponentRepository.downloadAndInstall(spec) { state ->
+        _uiState.update { it.copy(rootComponents = it.rootComponents + (componentId to state)) }
+      }
+      _uiState.update { it.copy(rootComponents = it.rootComponents + (componentId to finalState)) }
+      if (finalState.installed) {
+        log("OK", "component ${spec.id} installed (${finalState.selectedAbi})")
+      } else {
+        log("ERR", "component ${spec.id} install failed: ${finalState.errorMessage ?: "unknown"}")
+      }
+      val componentResult = runCatching { api.getComponents() }
+      val report = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update {
+        it.copy(
+          components = report,
+          componentsResolved = componentResult.isSuccess || it.componentsResolved,
+        )
+      }
+    }
+  }
+
+  override fun removeRootComponent(componentId: String) {
+    val spec = RootBinaryComponentCatalog.find(componentId) ?: return
+    launchIO {
+      val state = runCatching { rootBinaryComponentRepository.remove(spec) }.getOrElse { error ->
+        RootBinaryComponentState(
+          id = spec.id,
+          stage = RootBinaryComponentStage.FAILED,
+          installed = rootBinaryComponentRepository.isInstalled(spec),
+          statusResolved = true,
+          errorMessage = error.message ?: error.javaClass.simpleName,
+        )
+      }
+      _uiState.update { it.copy(rootComponents = it.rootComponents + (componentId to state)) }
+      if (!state.installed && state.stage != RootBinaryComponentStage.FAILED) {
+        log("OK", "component ${spec.id} removed")
+      } else if (state.stage == RootBinaryComponentStage.FAILED) {
+        log("ERR", "component ${spec.id} remove failed: ${state.errorMessage ?: "unknown"}")
+      }
+      val componentResult = runCatching { api.getComponents() }
+      val report = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update {
+        it.copy(
+          components = report,
+          componentsResolved = componentResult.isSuccess || it.componentsResolved,
+        )
+      }
     }
   }
 

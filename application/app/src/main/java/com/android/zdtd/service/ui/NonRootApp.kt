@@ -1252,7 +1252,10 @@ private fun NonRootToolsScreen(
 
     item {
       Row(
-        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(220)),
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = if (television) 12.dp else 0.dp)
+          .animateContentSize(animationSpec = tween(220)),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {

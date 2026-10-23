@@ -2556,6 +2556,7 @@ private fun SingBoxCreateServerDialog(
   val context = LocalContext.current
   val configuration = LocalConfiguration.current
   val scope = rememberCoroutineScope()
+  val snack = createSnackFunction(scope, snackHost)
   val dialogScrollState = rememberScrollState()
   val maxDialogHeight = configuration.screenHeightDp.dp * 0.92f
   val existingNorm = remember(existing) { existing.map { normalizeSingBoxServerName(it) }.toSet() }

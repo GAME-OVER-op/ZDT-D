@@ -2175,10 +2175,14 @@ jobs:
             artifact_suffix: arm64
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
+            clang_prefix: aarch64-linux-android
           - abi: armeabi-v7a
             artifact_suffix: arm32
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
+            clang_prefix: armv7a-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -2191,6 +2195,70 @@ jobs:
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
+
+      - name: Prepare Android SDK paths for sing-box-lx cgo
+        if: matrix.cgo_enabled == '1'
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+      - name: Install Android NDK for sing-box-lx cgo
+        if: matrix.cgo_enabled == '1'
+        run: |
+          set -euo pipefail
+          NDK_VERSION="$NATIVE_NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          test -x "$GO_CXX" || { echo "::error::Android Go cgo C++ compiler not found: $GO_CXX"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
 
       - name: Build sing-box-lx for Android
         run: |
@@ -2211,6 +2279,11 @@ jobs:
           printf '%s\n' "$LX_COMMIT" > "$ARTIFACT_DIR/sing-box-lx.commit"
 
           pushd "$SRC/sing-box-lx" > /dev/null
+          echo "Target: android/${{ matrix.goarch }} GOARM=${{ matrix.goarm }} CGO_ENABLED=${{ matrix.cgo_enabled }}"
+          if [[ "${{ matrix.cgo_enabled }}" == "1" ]]; then
+            test -n "${CC:-}" || { echo "::error::CC is not configured for sing-box-lx cgo"; exit 1; }
+            "$CC" --version | head -1
+          fi
           EXPECTED_GO="$(tr -d '[:space:]' < go.version)"
           EXPECTED_GO="${EXPECTED_GO#go}"
           CURRENT_GO="$(go env GOVERSION | tr -d '[:space:]')"
@@ -2242,7 +2315,7 @@ jobs:
           GOOS=android \
           GOARCH=${{ matrix.goarch }} \
           GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=0 \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
             go build \
               -v \
               -trimpath \

@@ -2212,7 +2212,11 @@ jobs:
 
           pushd "$SRC/sing-box-lx" > /dev/null
           EXPECTED_GO="$(tr -d '[:space:]' < go.version)"
-          CURRENT_GO="$(go env GOVERSION | sed 's/^go//')"
+          EXPECTED_GO="${EXPECTED_GO#go}"
+          CURRENT_GO="$(go env GOVERSION | tr -d '[:space:]')"
+          CURRENT_GO="${CURRENT_GO#go}"
+          echo "sing-box-lx required Go: $EXPECTED_GO"
+          echo "Workflow installed Go: $CURRENT_GO"
           if [[ "$CURRENT_GO" != "$EXPECTED_GO" ]]; then
             echo "::error::sing-box-lx $SING_BOX_LX_REF requires Go $EXPECTED_GO, workflow provides $CURRENT_GO"
             exit 1

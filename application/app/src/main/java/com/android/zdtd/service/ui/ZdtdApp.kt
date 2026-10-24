@@ -69,7 +69,9 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -1837,6 +1839,9 @@ private fun LandscapeShellContent(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
+  val appsNavFocusRequester = remember { FocusRequester() }
+  val appsEntryFocusRequester = remember { FocusRequester() }
+
   Box(
     modifier = Modifier
       .fillMaxSize()
@@ -1884,6 +1889,8 @@ private fun LandscapeShellContent(
           snackHost = snackHost,
           tproxyEnabled = appUpdate.tproxyEnabled,
           landscapeControl = true,
+          appsEntryFocusRequester = appsEntryFocusRequester,
+          appsNavFocusRequester = appsNavFocusRequester,
         )
       }
     }
@@ -1913,6 +1920,8 @@ private fun LandscapeShellContent(
       statsTabLabel = statsTabLabel,
       appsTabLabel = appsTabLabel,
       supportTabLabel = supportTabLabel,
+      appsNavFocusRequester = appsNavFocusRequester,
+      appsEntryFocusRequester = appsEntryFocusRequester.takeIf { tab == Tab.APPS && appsRoute == AppsRoute.List },
     )
   }
 }
@@ -2469,6 +2478,8 @@ private fun LandscapeRightNav(
   statsTabLabel: String,
   appsTabLabel: String,
   supportTabLabel: String,
+  appsNavFocusRequester: FocusRequester? = null,
+  appsEntryFocusRequester: FocusRequester? = null,
 ) {
   Surface(
     modifier = modifier
@@ -2499,6 +2510,8 @@ private fun LandscapeRightNav(
       LandscapeNavIcon(
         selected = tab == Tab.APPS,
         onClick = { onTabChange(Tab.APPS) },
+        focusRequester = appsNavFocusRequester,
+        leftFocusRequester = appsEntryFocusRequester,
         icon = { Icon(Icons.Filled.Apps, contentDescription = appsTabLabel, modifier = Modifier.size(30.dp)) },
       )
       LandscapeNavIcon(
@@ -2514,6 +2527,8 @@ private fun LandscapeRightNav(
 private fun LandscapeNavIcon(
   selected: Boolean,
   onClick: () -> Unit,
+  focusRequester: FocusRequester? = null,
+  leftFocusRequester: FocusRequester? = null,
   icon: @Composable () -> Unit,
 ) {
   val bgAlpha by animateFloatAsState(
@@ -2521,9 +2536,20 @@ private fun LandscapeNavIcon(
     animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
     label = "landscape_nav_bg",
   )
+  val focusModifier = Modifier
+    .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+    .then(
+      if (leftFocusRequester != null) {
+        Modifier.focusProperties { left = leftFocusRequester }
+      } else {
+        Modifier
+      },
+    )
+
   Box(
-    modifier = Modifier
+    modifier = focusModifier
       .size(58.dp)
+      .tvFocusHighlight(CircleShape)
       .clip(CircleShape)
       .background(MaterialTheme.colorScheme.primary.copy(alpha = bgAlpha))
       .clickable(onClick = onClick),
@@ -2919,13 +2945,17 @@ private fun TabBody(
   landscapeControl: Boolean = false,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
+  appsEntryFocusRequester: FocusRequester? = null,
+  appsNavFocusRequester: FocusRequester? = null,
 ) {
   val stateHolder = rememberSaveableStateHolder()
   val focusManager = LocalFocusManager.current
   val keyboardController = LocalSoftwareKeyboardController.current
 
-  LaunchedEffect(tab) {
-    focusManager.clearFocus(force = true)
+  LaunchedEffect(tab, landscapeControl) {
+    if (!landscapeControl) {
+      focusManager.clearFocus(force = true)
+    }
     keyboardController?.hide()
   }
 
@@ -2980,6 +3010,8 @@ private fun TabBody(
             landscapeControl = landscapeControl,
             topContentPadding = topContentPadding,
             bottomContentPadding = bottomContentPadding,
+            appsEntryFocusRequester = appsEntryFocusRequester,
+            appsNavFocusRequester = appsNavFocusRequester,
           )
         }
       }

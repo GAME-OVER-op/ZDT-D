@@ -48,6 +48,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
@@ -74,6 +77,8 @@ fun AppsListScreen(
   listState: LazyListState,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
+  entryFocusRequester: FocusRequester? = null,
+  navFocusRequester: FocusRequester? = null,
 ) {
 
   val isCompactWidth = rememberIsCompactWidth()
@@ -162,6 +167,8 @@ fun AppsListScreen(
         installedCount = components.count { it.installed },
         statusResolved = componentsResolved,
         onClick = onOpenOptionalTools,
+        entryFocusRequester = entryFocusRequester,
+        navFocusRequester = navFocusRequester,
       )
     }
 
@@ -296,6 +303,8 @@ private fun OptionalToolsEntryCard(
   installedCount: Int,
   statusResolved: Boolean,
   onClick: () -> Unit,
+  entryFocusRequester: FocusRequester? = null,
+  navFocusRequester: FocusRequester? = null,
 ) {
   val accentColor = MaterialTheme.colorScheme.primary
   Card(
@@ -303,6 +312,10 @@ private fun OptionalToolsEntryCard(
     modifier = Modifier
       .fillMaxWidth()
       .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
+      .then(if (entryFocusRequester != null) Modifier.focusRequester(entryFocusRequester) else Modifier)
+      .then(
+        if (navFocusRequester != null) Modifier.focusProperties { right = navFocusRequester } else Modifier,
+      )
       .tvFocusHighlight(RoundedCornerShape(18.dp)),
     shape = RoundedCornerShape(18.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -367,7 +380,8 @@ private fun VpsServersEntryCard(
     onClick = onClick,
     modifier = Modifier
       .fillMaxWidth()
-      .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp),
+      .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
+      .tvFocusHighlight(RoundedCornerShape(18.dp)),
     shape = RoundedCornerShape(18.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -425,7 +439,10 @@ private fun SubscriptionsEntryCard(
   val accentColor = MaterialTheme.colorScheme.primary
   Card(
     onClick = onClick,
-    modifier = Modifier.fillMaxWidth().padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp),
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
+      .tvFocusHighlight(RoundedCornerShape(18.dp)),
     shape = RoundedCornerShape(18.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),

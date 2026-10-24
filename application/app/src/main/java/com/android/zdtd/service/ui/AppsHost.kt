@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -67,6 +68,8 @@ fun AppsHost(
   landscapeControl: Boolean = false,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
+  appsEntryFocusRequester: FocusRequester? = null,
+  appsNavFocusRequester: FocusRequester? = null,
 ) {
   val context = LocalContext.current
   val application = context.applicationContext as android.app.Application
@@ -192,6 +195,8 @@ fun AppsHost(
         listState = listState,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
+        entryFocusRequester = if (landscapeControl) appsEntryFocusRequester else null,
+        navFocusRequester = if (landscapeControl) appsNavFocusRequester else null,
       )
       AppsRoute.VpsServers -> VpsServersScreen(
         viewModel = vpsViewModel,

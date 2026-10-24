@@ -102,7 +102,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -218,6 +220,8 @@ fun NonRootApp(
   onRefreshTgWsPlugin: () -> Unit,
   onImportVpsConfig: (VpsConfigResult, String, String?) -> Unit,
 ) {
+  val toolsNavFocusRequester = remember { FocusRequester() }
+  val toolsEntryFocusRequester = remember { FocusRequester() }
   val context = LocalContext.current
   val nonRootLogsDir = remember(context) { NonRootRuntimeStore(context.applicationContext).logsDir.absolutePath }
   var tab by remember { mutableStateOf(Tab.HOME) }
@@ -464,6 +468,8 @@ fun NonRootApp(
           profileFailures = vpnProfileFailures,
           wideLayout = wideLayout,
           television = television,
+          entryFocusRequester = if (wideLayout && television) toolsEntryFocusRequester else null,
+          navFocusRequester = if (wideLayout && television) toolsNavFocusRequester else null,
           onWorkModeChange = onWorkModeChange,
           onDirectSelectedProfileChange = onDirectSelectedProfileChange,
           onCreateCascadeProfile = onCreateCascadeProfile,
@@ -518,6 +524,10 @@ fun NonRootApp(
           tab = tab,
           showStats = workMode == NonRootWorkMode.CASCADE,
           showToolsWarning = showProfileFailureAttention && tab != Tab.APPS,
+          toolsNavFocusRequester = if (television) toolsNavFocusRequester else null,
+          toolsEntryFocusRequester = if (
+            television && tab == Tab.APPS && (vpnState == NonRootVpnState.STOPPED || vpnState == NonRootVpnState.ERROR)
+          ) toolsEntryFocusRequester else null,
           onTabChange = { tab = it },
         )
       }
@@ -1187,6 +1197,8 @@ private fun NonRootToolsScreen(
   profileFailures: List<NonRootProfileFailure>,
   wideLayout: Boolean,
   television: Boolean,
+  entryFocusRequester: FocusRequester? = null,
+  navFocusRequester: FocusRequester? = null,
   onWorkModeChange: (NonRootWorkMode) -> Unit,
   onDirectSelectedProfileChange: (String?) -> Unit,
   onCreateCascadeProfile: (String, String) -> Unit,
@@ -1252,6 +1264,8 @@ private fun NonRootToolsScreen(
       NonRootModeCard(
         workMode = workMode,
         enabled = configurationEnabled,
+        entryFocusRequester = entryFocusRequester,
+        navFocusRequester = navFocusRequester,
         onWorkModeChange = onWorkModeChange,
       )
     }
@@ -1572,6 +1586,8 @@ private fun NonRootStandaloneToolCard(
 private fun NonRootModeCard(
   workMode: NonRootWorkMode,
   enabled: Boolean,
+  entryFocusRequester: FocusRequester? = null,
+  navFocusRequester: FocusRequester? = null,
   onWorkModeChange: (NonRootWorkMode) -> Unit,
 ) {
   Surface(
@@ -1640,7 +1656,12 @@ private fun NonRootModeCard(
             onClick = { onWorkModeChange(NonRootWorkMode.DIRECT) },
           )
           NonRootModeChoice(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+              .weight(1f)
+              .then(if (enabled && entryFocusRequester != null) Modifier.focusRequester(entryFocusRequester) else Modifier)
+              .then(
+                if (enabled && navFocusRequester != null) Modifier.focusProperties { right = navFocusRequester } else Modifier,
+              ),
             selected = workMode == NonRootWorkMode.CASCADE,
             enabled = enabled,
             title = stringResource(R.string.non_root_mode_cascade),
@@ -2739,6 +2760,8 @@ private fun NonRootWideNavigation(
   tab: Tab,
   showStats: Boolean,
   showToolsWarning: Boolean,
+  toolsNavFocusRequester: FocusRequester? = null,
+  toolsEntryFocusRequester: FocusRequester? = null,
   onTabChange: (Tab) -> Unit,
 ) {
   val homeLabel = stringResource(R.string.nav_home)
@@ -2776,6 +2799,8 @@ private fun NonRootWideNavigation(
       NonRootWideNavItem(
         selected = tab == Tab.APPS,
         onClick = { onTabChange(Tab.APPS) },
+        focusRequester = toolsNavFocusRequester,
+        leftFocusRequester = toolsEntryFocusRequester,
       ) {
         Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
           Icon(Icons.Filled.Apps, contentDescription = toolsLabel, modifier = Modifier.size(30.dp))
@@ -2799,6 +2824,8 @@ private fun NonRootWideNavigation(
 private fun NonRootWideNavItem(
   selected: Boolean,
   onClick: () -> Unit,
+  focusRequester: FocusRequester? = null,
+  leftFocusRequester: FocusRequester? = null,
   icon: @Composable () -> Unit,
 ) {
   val backgroundAlpha by animateFloatAsState(
@@ -2808,6 +2835,10 @@ private fun NonRootWideNavItem(
   )
   Box(
     modifier = Modifier
+      .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+      .then(
+        if (leftFocusRequester != null) Modifier.focusProperties { left = leftFocusRequester } else Modifier,
+      )
       .size(58.dp)
       .nonRootFocusHighlight(RoundedCornerShape(29.dp))
       .clip(RoundedCornerShape(29.dp))

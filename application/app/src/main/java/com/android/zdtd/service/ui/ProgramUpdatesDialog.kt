@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,8 @@ import com.android.zdtd.service.ZdtdActions
 @Composable
 fun ProgramUpdatesDialog(
   state: ProgramUpdatesUiState,
+  installedComponentIds: Set<String>,
+  componentsResolved: Boolean,
   onDismiss: () -> Unit,
   actions: ZdtdActions,
 ) {
@@ -68,9 +71,20 @@ fun ProgramUpdatesDialog(
   val compact = !landscape && (rememberIsCompactWidth() || rememberIsShortHeight())
   val contentPadding = if (compact) 12.dp else 16.dp
   var picking by remember { mutableStateOf<String?>(null) }
+  val visibleUpdaterIds = remember(installedComponentIds) {
+    listOf("nfqws", "nfqws2", "mihomo", "mieru", "operaproxy").filter { it in installedComponentIds }
+  }
 
-  fun enabledFor(item: ProgramUpdateItemUi): Boolean {
-    return !item.updating && !item.checking && !state.bulkChecking && !state.bulkUpdating
+  LaunchedEffect(visibleUpdaterIds, picking) {
+    val selectedComponentId = when (picking) {
+      "zapret" -> "nfqws"
+      "zapret2" -> "nfqws2"
+      "mihomo" -> "mihomo"
+      "mieru" -> "mieru"
+      "operaproxy" -> "operaproxy"
+      else -> null
+    }
+    if (selectedComponentId != null && selectedComponentId !in visibleUpdaterIds) picking = null
   }
 
   Dialog(
@@ -134,162 +148,55 @@ fun ProgramUpdatesDialog(
                 .weight(1f),
               verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-              item(key = "bulk_action") {
-                ProgramUpdatesBulkActionCard(
-                  state = state,
-                  onCheckAll = actions::checkAllProgramUpdates,
-                  onUpdateAll = actions::updateAllProgramUpdates,
-                )
-              }
+              if (!componentsResolved) {
+                item(key = "components_loading") {
+                  Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    CircularProgressIndicator()
+                  }
+                }
+              } else if (visibleUpdaterIds.isNotEmpty()) {
+                item(key = "bulk_action") {
+                  ProgramUpdatesBulkActionCard(
+                    state = state,
+                    componentIds = visibleUpdaterIds,
+                    onCheckAll = actions::checkAllProgramUpdates,
+                    onUpdateAll = actions::updateAllProgramUpdates,
+                  )
+                }
 
-              if (landscape) {
-                item(key = "updates_row_1") {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                  ) {
-                    ProgramUpdateCard(
-                      modifier = Modifier.weight(1f),
-                      item = state.zapret,
-                      programId = "nfqws",
-                      enabled = enabledFor(state.zapret),
-                      onCheck = actions::checkZapretNow,
-                      onUpdate = actions::updateZapretNow,
-                      onPickVersion = {
-                        picking = "zapret"
-                        if (state.zapret.releases.isEmpty() && !state.zapret.releasesLoading) actions.loadZapretReleases()
-                      },
-                    )
-                    ProgramUpdateCard(
-                      modifier = Modifier.weight(1f),
-                      item = state.zapret2,
-                      programId = "nfqws2",
-                      enabled = enabledFor(state.zapret2),
-                      onCheck = actions::checkZapret2Now,
-                      onUpdate = actions::updateZapret2Now,
-                      onPickVersion = {
-                        picking = "zapret2"
-                        if (state.zapret2.releases.isEmpty() && !state.zapret2.releasesLoading) actions.loadZapret2Releases()
-                      },
+                if (landscape) {
+                  items(
+                    items = visibleUpdaterIds.chunked(2),
+                    key = { row -> row.joinToString("|") },
+                  ) { row ->
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                      row.forEach { componentId ->
+                        ProgramUpdateEntry(
+                          modifier = Modifier.weight(1f),
+                          componentId = componentId,
+                          state = state,
+                          actions = actions,
+                          onPick = { picking = it },
+                        )
+                      }
+                      if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
+                    }
+                  }
+                } else {
+                  items(visibleUpdaterIds, key = { it }) { componentId ->
+                    ProgramUpdateEntry(
+                      componentId = componentId,
+                      state = state,
+                      actions = actions,
+                      onPick = { picking = it },
                     )
                   }
-                }
-                item(key = "updates_row_2") {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                  ) {
-                    ProgramUpdateCard(
-                      modifier = Modifier.weight(1f),
-                      item = state.mihomo,
-                      programId = "mihomo",
-                      enabled = enabledFor(state.mihomo),
-                      onCheck = actions::checkMihomoNow,
-                      onUpdate = actions::updateMihomoNow,
-                      onPickVersion = {
-                        picking = "mihomo"
-                        if (state.mihomo.releases.isEmpty() && !state.mihomo.releasesLoading) actions.loadMihomoReleases()
-                      },
-                    )
-                    ProgramUpdateCard(
-                      modifier = Modifier.weight(1f),
-                      item = state.mieru,
-                      programId = "mieru",
-                      enabled = enabledFor(state.mieru),
-                      onCheck = actions::checkMieruNow,
-                      onUpdate = actions::updateMieruNow,
-                      onPickVersion = {
-                        picking = "mieru"
-                        if (state.mieru.releases.isEmpty() && !state.mieru.releasesLoading) actions.loadMieruReleases()
-                      },
-                    )
-                  }
-                }
-                item(key = "updates_row_3") {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                  ) {
-                    ProgramUpdateCard(
-                      modifier = Modifier.weight(1f),
-                      item = state.operaProxy,
-                      programId = "operaproxy",
-                      enabled = enabledFor(state.operaProxy),
-                      onCheck = actions::checkOperaProxyNow,
-                      onUpdate = actions::updateOperaProxyNow,
-                      onPickVersion = {
-                        picking = "operaproxy"
-                        if (state.operaProxy.releases.isEmpty() && !state.operaProxy.releasesLoading) actions.loadOperaProxyReleases()
-                      },
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                  }
-                }
-              } else {
-                item(key = "zapret") {
-                  ProgramUpdateCard(
-                    item = state.zapret,
-                      programId = "nfqws",
-                    enabled = enabledFor(state.zapret),
-                    onCheck = actions::checkZapretNow,
-                    onUpdate = actions::updateZapretNow,
-                    onPickVersion = {
-                      picking = "zapret"
-                      if (state.zapret.releases.isEmpty() && !state.zapret.releasesLoading) actions.loadZapretReleases()
-                    },
-                  )
-                }
-                item(key = "zapret2") {
-                  ProgramUpdateCard(
-                    item = state.zapret2,
-                      programId = "nfqws2",
-                    enabled = enabledFor(state.zapret2),
-                    onCheck = actions::checkZapret2Now,
-                    onUpdate = actions::updateZapret2Now,
-                    onPickVersion = {
-                      picking = "zapret2"
-                      if (state.zapret2.releases.isEmpty() && !state.zapret2.releasesLoading) actions.loadZapret2Releases()
-                    },
-                  )
-                }
-                item(key = "mihomo") {
-                  ProgramUpdateCard(
-                    item = state.mihomo,
-                      programId = "mihomo",
-                    enabled = enabledFor(state.mihomo),
-                    onCheck = actions::checkMihomoNow,
-                    onUpdate = actions::updateMihomoNow,
-                    onPickVersion = {
-                      picking = "mihomo"
-                      if (state.mihomo.releases.isEmpty() && !state.mihomo.releasesLoading) actions.loadMihomoReleases()
-                    },
-                  )
-                }
-                item(key = "mieru") {
-                  ProgramUpdateCard(
-                    item = state.mieru,
-                      programId = "mieru",
-                    enabled = enabledFor(state.mieru),
-                    onCheck = actions::checkMieruNow,
-                    onUpdate = actions::updateMieruNow,
-                    onPickVersion = {
-                      picking = "mieru"
-                      if (state.mieru.releases.isEmpty() && !state.mieru.releasesLoading) actions.loadMieruReleases()
-                    },
-                  )
-                }
-                item(key = "operaproxy") {
-                  ProgramUpdateCard(
-                    item = state.operaProxy,
-                      programId = "operaproxy",
-                    enabled = enabledFor(state.operaProxy),
-                    onCheck = actions::checkOperaProxyNow,
-                    onUpdate = actions::updateOperaProxyNow,
-                    onPickVersion = {
-                      picking = "operaproxy"
-                      if (state.operaProxy.releases.isEmpty() && !state.operaProxy.releasesLoading) actions.loadOperaProxyReleases()
-                    },
-                  )
                 }
               }
             }
@@ -402,15 +309,27 @@ private fun ProgramUpdatesHeader() {
 @Composable
 private fun ProgramUpdatesBulkActionCard(
   state: ProgramUpdatesUiState,
+  componentIds: List<String>,
   onCheckAll: () -> Unit,
   onUpdateAll: () -> Unit,
 ) {
-  val items = listOf(state.zapret, state.zapret2, state.mihomo, state.mieru, state.operaProxy)
+  val items = componentIds.mapNotNull { componentId ->
+    when (componentId) {
+      "nfqws" -> state.zapret
+      "nfqws2" -> state.zapret2
+      "mihomo" -> state.mihomo
+      "mieru" -> state.mieru
+      "operaproxy" -> state.operaProxy
+      else -> null
+    }
+  }
   val availableCount = items.count { it.updateAvailable }
   val anyItemBusy = items.any { it.checking || it.updating }
-  val allKnownAndCurrent = state.bulkCheckCompleted && !state.bulkCheckHadFailures && availableCount == 0
-  val retryCheck = state.bulkCheckCompleted && state.bulkCheckHadFailures && availableCount == 0
-  val actionIsUpdate = state.bulkCheckCompleted && availableCount > 0
+  val visibleCheckCompleted = state.bulkCheckCompleted && items.all { it.latestVersion != null || it.errorText != null }
+  val visibleHadFailures = items.any { it.errorText != null }
+  val allKnownAndCurrent = visibleCheckCompleted && !visibleHadFailures && availableCount == 0
+  val retryCheck = visibleCheckCompleted && visibleHadFailures && availableCount == 0
+  val actionIsUpdate = visibleCheckCompleted && availableCount > 0
   val busy = state.bulkChecking || state.bulkUpdating || anyItemBusy
   val labelRes = when {
     state.bulkChecking -> R.string.program_updates_checking_all
@@ -465,6 +384,78 @@ private fun ProgramUpdatesBulkActionCard(
       }
     }
   }
+}
+
+@Composable
+private fun ProgramUpdateEntry(
+  modifier: Modifier = Modifier,
+  componentId: String,
+  state: ProgramUpdatesUiState,
+  actions: ZdtdActions,
+  onPick: (String) -> Unit,
+) {
+  val item: ProgramUpdateItemUi
+  val programId: String
+  val pickerKey: String
+  val onCheck: () -> Unit
+  val onUpdate: () -> Unit
+  val loadReleases: () -> Unit
+  when (componentId) {
+    "nfqws" -> {
+      item = state.zapret
+      programId = "nfqws"
+      pickerKey = "zapret"
+      onCheck = actions::checkZapretNow
+      onUpdate = actions::updateZapretNow
+      loadReleases = actions::loadZapretReleases
+    }
+    "nfqws2" -> {
+      item = state.zapret2
+      programId = "nfqws2"
+      pickerKey = "zapret2"
+      onCheck = actions::checkZapret2Now
+      onUpdate = actions::updateZapret2Now
+      loadReleases = actions::loadZapret2Releases
+    }
+    "mihomo" -> {
+      item = state.mihomo
+      programId = "mihomo"
+      pickerKey = "mihomo"
+      onCheck = actions::checkMihomoNow
+      onUpdate = actions::updateMihomoNow
+      loadReleases = actions::loadMihomoReleases
+    }
+    "mieru" -> {
+      item = state.mieru
+      programId = "mieru"
+      pickerKey = "mieru"
+      onCheck = actions::checkMieruNow
+      onUpdate = actions::updateMieruNow
+      loadReleases = actions::loadMieruReleases
+    }
+    "operaproxy" -> {
+      item = state.operaProxy
+      programId = "operaproxy"
+      pickerKey = "operaproxy"
+      onCheck = actions::checkOperaProxyNow
+      onUpdate = actions::updateOperaProxyNow
+      loadReleases = actions::loadOperaProxyReleases
+    }
+    else -> return
+  }
+
+  ProgramUpdateCard(
+    modifier = modifier,
+    item = item,
+    programId = programId,
+    enabled = !item.updating && !item.checking && !state.bulkChecking && !state.bulkUpdating,
+    onCheck = onCheck,
+    onUpdate = onUpdate,
+    onPickVersion = {
+      onPick(pickerKey)
+      if (item.releases.isEmpty() && !item.releasesLoading) loadReleases()
+    },
+  )
 }
 
 @Composable

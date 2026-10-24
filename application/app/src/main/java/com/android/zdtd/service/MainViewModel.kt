@@ -3892,6 +3892,45 @@ if (mf.isNotBlank()) {
   }
 
 
+  private val updaterComponentIds = setOf("nfqws", "nfqws2", "mihomo", "mieru", "operaproxy")
+
+  private suspend fun refreshInstalledUpdaterComponentIds(): Set<String> {
+    val report = runCatching { api.getComponents() }.getOrElse { return emptySet() }
+    _uiState.update { it.copy(components = report, componentsResolved = true) }
+    return report.asSequence()
+      .filter { it.installed && it.id in updaterComponentIds }
+      .map { it.id }
+      .toSet()
+  }
+
+  private fun updaterItem(state: ProgramUpdatesUiState, componentId: String): ProgramUpdateItemUi? = when (componentId) {
+    "nfqws" -> state.zapret
+    "nfqws2" -> state.zapret2
+    "mihomo" -> state.mihomo
+    "mieru" -> state.mieru
+    "operaproxy" -> state.operaProxy
+    else -> null
+  }
+
+  private fun resetProgramUpdateStateForComponent(componentId: String) {
+    if (componentId !in updaterComponentIds) return
+    _programUpdates.update { st ->
+      val base = st.copy(
+        bulkCheckCompleted = false,
+        bulkCheckHadFailures = false,
+      )
+      when (componentId) {
+        "nfqws" -> base.copy(zapret = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret_title))
+        "nfqws2" -> base.copy(zapret2 = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret2_title))
+        "mihomo" -> base.copy(mihomo = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_mihomo_title))
+        "mieru" -> base.copy(mieru = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_mieru_title))
+        "operaproxy" -> base.copy(operaProxy = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_operaproxy_title))
+        else -> base
+      }
+    }
+  }
+
+
   override fun checkAllProgramUpdates() {
     if (_rootState.value != RootState.GRANTED) return
     val current = _programUpdates.value
@@ -3904,18 +3943,18 @@ if (mf.isNotBlank()) {
           bulkCheckHadFailures = false,
         )
       }
+      val installed = refreshInstalledUpdaterComponentIds()
       try {
         // Keep checks independent: a broken/changed repository or an unexpected failure
-        // in one tool must never prevent the remaining tools from being checked.
-        runProgramUpdateCheckSafely("zapret") { checkZapretInternal() }
-        runProgramUpdateCheckSafely("zapret2") { checkZapret2Internal() }
-        runProgramUpdateCheckSafely("mihomo") { checkMihomoInternal() }
-        runProgramUpdateCheckSafely("mieru") { checkMieruInternal() }
-        runProgramUpdateCheckSafely("operaproxy") { checkOperaProxyInternal() }
+        // in one installed tool must never prevent the remaining installed tools from being checked.
+        if ("nfqws" in installed) runProgramUpdateCheckSafely("zapret") { checkZapretInternal() }
+        if ("nfqws2" in installed) runProgramUpdateCheckSafely("zapret2") { checkZapret2Internal() }
+        if ("mihomo" in installed) runProgramUpdateCheckSafely("mihomo") { checkMihomoInternal() }
+        if ("mieru" in installed) runProgramUpdateCheckSafely("mieru") { checkMieruInternal() }
+        if ("operaproxy" in installed) runProgramUpdateCheckSafely("operaproxy") { checkOperaProxyInternal() }
       } finally {
         _programUpdates.update { st ->
-          val failed = listOf(st.zapret, st.zapret2, st.mihomo, st.mieru, st.operaProxy)
-            .any { it.errorText != null }
+          val failed = installed.any { updaterItem(st, it)?.errorText != null }
           st.copy(
             bulkChecking = false,
             bulkCheckCompleted = true,
@@ -3928,16 +3967,19 @@ if (mf.isNotBlank()) {
 
   override fun updateAllProgramUpdates() {
     if (_rootState.value != RootState.GRANTED) return
-    val snapshot = _programUpdates.value
-    if (snapshot.bulkChecking || snapshot.bulkUpdating) return
-    val updateZapret = snapshot.zapret.updateAvailable
-    val updateZapret2 = snapshot.zapret2.updateAvailable
-    val updateMihomo = snapshot.mihomo.updateAvailable
-    val updateMieru = snapshot.mieru.updateAvailable
-    val updateOperaProxy = snapshot.operaProxy.updateAvailable
-    if (!listOf(updateZapret, updateZapret2, updateMihomo, updateMieru, updateOperaProxy).any { it }) return
+    val current = _programUpdates.value
+    if (current.bulkChecking || current.bulkUpdating) return
 
     launchIO {
+      val installed = refreshInstalledUpdaterComponentIds()
+      val snapshot = _programUpdates.value
+      val updateZapret = "nfqws" in installed && snapshot.zapret.updateAvailable
+      val updateZapret2 = "nfqws2" in installed && snapshot.zapret2.updateAvailable
+      val updateMihomo = "mihomo" in installed && snapshot.mihomo.updateAvailable
+      val updateMieru = "mieru" in installed && snapshot.mieru.updateAvailable
+      val updateOperaProxy = "operaproxy" in installed && snapshot.operaProxy.updateAvailable
+      if (!listOf(updateZapret, updateZapret2, updateMihomo, updateMieru, updateOperaProxy).any { it }) return@launchIO
+
       _programUpdates.update { it.copy(bulkUpdating = true) }
       try {
         // Sequential updates keep disk/root operations predictable. A failure in one
@@ -3997,52 +4039,52 @@ if (mf.isNotBlank()) {
 
   override fun checkZapretNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { checkZapretInternal() }
+    launchIO { if ("nfqws" in refreshInstalledUpdaterComponentIds()) checkZapretInternal() }
   }
 
   override fun checkZapret2Now() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { checkZapret2Internal() }
+    launchIO { if ("nfqws2" in refreshInstalledUpdaterComponentIds()) checkZapret2Internal() }
   }
 
   override fun updateZapretNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { updateZapretInternal() }
+    launchIO { if ("nfqws" in refreshInstalledUpdaterComponentIds()) updateZapretInternal() }
   }
 
   override fun updateZapret2Now() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { updateZapret2Internal() }
+    launchIO { if ("nfqws2" in refreshInstalledUpdaterComponentIds()) updateZapret2Internal() }
   }
 
   override fun checkMihomoNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { checkMihomoInternal() }
+    launchIO { if ("mihomo" in refreshInstalledUpdaterComponentIds()) checkMihomoInternal() }
   }
 
   override fun updateMihomoNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { updateMihomoInternal() }
+    launchIO { if ("mihomo" in refreshInstalledUpdaterComponentIds()) updateMihomoInternal() }
   }
 
   override fun checkMieruNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { checkMieruInternal() }
+    launchIO { if ("mieru" in refreshInstalledUpdaterComponentIds()) checkMieruInternal() }
   }
 
   override fun updateMieruNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { updateMieruInternal() }
+    launchIO { if ("mieru" in refreshInstalledUpdaterComponentIds()) updateMieruInternal() }
   }
 
   override fun checkOperaProxyNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { checkOperaProxyInternal() }
+    launchIO { if ("operaproxy" in refreshInstalledUpdaterComponentIds()) checkOperaProxyInternal() }
   }
 
   override fun updateOperaProxyNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { updateOperaProxyInternal() }
+    launchIO { if ("operaproxy" in refreshInstalledUpdaterComponentIds()) updateOperaProxyInternal() }
   }
 
 
@@ -7040,10 +7082,19 @@ private fun shQuote(s: String): String {
           }
         }
       }
+      val unavailableProgramIds = if (componentResult.isSuccess) {
+        componentReport.asSequence()
+          .filterNot { it.installed }
+          .flatMap { it.programIds.asSequence() }
+          .toSet()
+      } else {
+        emptySet()
+      }
+      val visiblePrograms = patched.filterNot { it.id in unavailableProgramIds }
       lastProgramsFetchAtMs = System.currentTimeMillis()
       _uiState.update {
         it.copy(
-          programs = patched,
+          programs = visiblePrograms,
           components = componentReport,
           componentsResolved = componentResult.isSuccess || it.componentsResolved,
         )
@@ -7112,6 +7163,8 @@ private fun shQuote(s: String): String {
       _uiState.update { it.copy(components = componentReport, componentsResolved = componentResult.isSuccess || it.componentsResolved) }
       if (finalState.installed) {
         log("OK", "tg-ws-proxy installed (${finalState.selectedAbi})")
+        lastProgramsFetchAtMs = 0L
+        refreshProgramsNow(force = true)
       } else {
         log("ERR", "tg-ws-proxy install failed: ${finalState.errorMessage ?: "unknown"}")
       }
@@ -7134,6 +7187,8 @@ private fun shQuote(s: String): String {
       _uiState.update { it.copy(components = componentReport, componentsResolved = componentResult.isSuccess || it.componentsResolved) }
       if (!state.installed && state.stage != TgWsProxyComponentStage.FAILED) {
         log("OK", "tg-ws-proxy removed")
+        lastProgramsFetchAtMs = 0L
+        refreshProgramsNow(force = true)
       } else if (state.stage == TgWsProxyComponentStage.FAILED) {
         log("ERR", "tg-ws-proxy remove failed: ${state.errorMessage ?: "unknown"}")
       }
@@ -7254,6 +7309,11 @@ private fun shQuote(s: String): String {
           componentsResolved = componentResult.isSuccess || it.componentsResolved,
         )
       }
+      if (finalState.installed) {
+        resetProgramUpdateStateForComponent(spec.id)
+        lastProgramsFetchAtMs = 0L
+        refreshProgramsNow(force = true)
+      }
     }
   }
 
@@ -7282,6 +7342,11 @@ private fun shQuote(s: String): String {
           components = report,
           componentsResolved = componentResult.isSuccess || it.componentsResolved,
         )
+      }
+      if (!state.installed && state.stage != RootBinaryComponentStage.FAILED) {
+        resetProgramUpdateStateForComponent(spec.id)
+        lastProgramsFetchAtMs = 0L
+        refreshProgramsNow(force = true)
       }
     }
   }

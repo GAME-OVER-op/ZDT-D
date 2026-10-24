@@ -1307,8 +1307,13 @@ private fun MainShell(
 
   if (showProgramUpdates) {
     val pu by programUpdatesFlow.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+      actions.refreshOptionalTools()
+    }
     ProgramUpdatesDialog(
       state = pu,
+      installedComponentIds = uiState.components.asSequence().filter { it.installed }.map { it.id }.toSet(),
+      componentsResolved = uiState.componentsResolved,
       onDismiss = { showProgramUpdates = false },
       actions = actions,
     )

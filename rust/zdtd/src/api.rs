@@ -3309,8 +3309,6 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
         }));
     }
 
-    // Keep the card visible even when the optional binary is absent. The Android client uses
-    // /api/system/components to gate the program screen and offer installation.
     {
         let installed = crate::programs::tgwsproxy::is_installed();
         let enabled = installed && crate::programs::tgwsproxy::load_effective_enabled().map(|v| v.enabled).unwrap_or(false);
@@ -3348,7 +3346,6 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
         }));
     }
 
-    // Keep sing-box-lx visible even when its binary is absent; the component API gates access.
     {
         let active: ProfilesActive = read_json(&singbox_lx_active_path()).unwrap_or_default();
         let mut profiles = Vec::new();
@@ -3516,6 +3513,15 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
             "profiles": profiles
         }));
     }
+
+    // Component-bound tools are exposed only when their complete executable set exists.
+    // Core/internal programs are not present in components.rs and therefore remain visible.
+    out.retain(|program| {
+        program["id"]
+            .as_str()
+            .map(crate::components::is_program_installed)
+            .unwrap_or(true)
+    });
 
     write_json(stream, 200, json!({"ok": true, "data": out}))
 }

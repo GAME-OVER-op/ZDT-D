@@ -58,16 +58,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.api.ApiModels
-import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
-import com.android.zdtd.service.singboxlx.SingBoxLxComponentState
 import java.util.Locale
 
 @Composable
 fun AppsListScreen(
   programs: List<ApiModels.Program>,
   daemonOnline: Boolean,
-  tgWsProxy: TgWsProxyComponentState,
-  singBoxLx: SingBoxLxComponentState,
   components: List<ApiModels.Component>,
   componentsResolved: Boolean,
   onOpenProgram: (String) -> Unit,
@@ -89,12 +85,18 @@ fun AppsListScreen(
   var query by rememberSaveable { mutableStateOf("") }
   val q = query.trim()
 
-  val all = remember(programs, tgWsProxy.installed) {
-    if (tgWsProxy.installed && programs.none { it.id == "tgwsproxy" }) {
-      programs + ApiModels.Program(id = "tgwsproxy", name = "Telegram WS Proxy", enabled = true)
+  val unavailableProgramIds = remember(components, componentsResolved) {
+    if (!componentsResolved) {
+      emptySet()
     } else {
-      programs
+      components.asSequence()
+        .filterNot { it.installed }
+        .flatMap { it.programIds.asSequence() }
+        .toSet()
     }
+  }
+  val all = remember(programs, unavailableProgramIds) {
+    programs.filterNot { it.id in unavailableProgramIds }
   }
   val filtered = remember(all, q) {
     if (q.isBlank()) {

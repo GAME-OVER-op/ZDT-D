@@ -1,0 +1,6 @@
+DataDirectory /data/adb/modules/ZDT-D/working_folder/tor/
+SocksPort 127.0.0.1:9050
+Log notice stdout
+
+UseBridges 1
+ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules/ZDT-D/bin/lyrebird

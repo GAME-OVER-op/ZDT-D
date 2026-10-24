@@ -5,6 +5,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.layout.size
@@ -2499,6 +2500,11 @@ private fun SingBoxServerCard(
           }
         }
 
+        val lightSurface = MaterialTheme.colorScheme.surface.luminance() > 0.55f
+        val editAccent = Color(0xFF0284C7)
+        val deleteAccent = Color(0xFFDC2626)
+        val editContent = if (lightSurface) Color(0xFF075985) else Color(0xFF7DD3FC)
+        val deleteContent = if (lightSurface) Color(0xFF991B1B) else Color(0xFFFCA5A5)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           Surface(
             modifier = Modifier
@@ -2506,9 +2512,9 @@ private fun SingBoxServerCard(
               .tvFocusHighlight(RoundedCornerShape(100.dp))
               .clickable { onEditConfig() },
             shape = RoundedCornerShape(100.dp),
-            color = Color(0xFF38BDF8).copy(alpha = 0.13f),
-            contentColor = Color(0xFF7DD3FC),
-            border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.28f)),
+            color = editAccent.copy(alpha = if (lightSurface) 0.12f else 0.13f),
+            contentColor = editContent,
+            border = BorderStroke(1.dp, editAccent.copy(alpha = if (lightSurface) 0.50f else 0.28f)),
           ) {
             Row(
               modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -2526,9 +2532,9 @@ private fun SingBoxServerCard(
               .tvFocusHighlight(RoundedCornerShape(100.dp))
               .clickable { askDelete = true },
             shape = RoundedCornerShape(100.dp),
-            color = Color(0xFFEF4444).copy(alpha = 0.13f),
-            contentColor = Color(0xFFFCA5A5),
-            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.30f)),
+            color = deleteAccent.copy(alpha = if (lightSurface) 0.10f else 0.13f),
+            contentColor = deleteContent,
+            border = BorderStroke(1.dp, deleteAccent.copy(alpha = if (lightSurface) 0.48f else 0.30f)),
           ) {
             Row(
               modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),

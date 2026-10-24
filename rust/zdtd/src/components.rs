@@ -45,6 +45,15 @@ fn executable_exact(name: &str) -> bool {
     meta.is_file() && (meta.permissions().mode() & 0o111 != 0)
 }
 
+
+pub fn is_program_installed(program_id: &str) -> bool {
+    COMPONENTS
+        .iter()
+        .find(|component| component.program_ids.iter().any(|id| *id == program_id))
+        .map(|component| component.files.iter().all(|name| executable(name)))
+        .unwrap_or(true)
+}
+
 pub fn collect() -> Value {
     let components = COMPONENTS.iter().map(|component| {
         let missing: Vec<&str> = component.files.iter().copied().filter(|name| !executable(name)).collect();

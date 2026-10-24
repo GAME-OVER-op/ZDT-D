@@ -182,8 +182,6 @@ fun AppsHost(
       AppsRoute.List -> AppsListScreen(
         programs = programs,
         daemonOnline = daemonOnline,
-        tgWsProxy = tgWsProxy,
-        singBoxLx = singBoxLx,
         components = components,
         componentsResolved = componentsResolved,
         onOpenProgram = onOpenProgram,

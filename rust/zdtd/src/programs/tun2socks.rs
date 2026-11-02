@@ -1,5 +1,10 @@
 use anyhow::{bail, Context, Result};
-use super::common::*;
+use crate::common::apps::{enabled_app_list_empty};
+use crate::common::network::{is_ipv4, IP_TIMEOUT, is_valid_ifname, is_forbidden_tun_name, NETID_TUN2SOCKS, configure_tun_addr, wait_tun_link};
+use crate::common::process::{filter_live_pids, pgrep_full_regex, ps_ef_pids_where, any_live_ps_ef_where};
+use crate::programs::registry::{ProgramId};
+use crate::network::vpn::{VpnProfileCore, VpnNetdProfileSpec};
+pub use crate::common::profile::{ActiveProfiles, ProfileState};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -13,42 +18,19 @@ use std::{
 };
 
 use crate::{
-    shell::{self, Capture},
-    vpn_netd::VpnNetdProfile,
+    common::process::shell::{self, Capture},
+    network::vpn::netd::VpnNetdProfile,
 };
 
 const TUN2SOCKS_BIN: &str = "/data/adb/modules/ZDT-D/bin/tun2socks";
 const TUN2SOCKS_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/tun2socks";
-const TUN2SOCKS_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/tun2socks/profile";
-const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/tun2socks/active.json";
-const NETID_BASE: u32 = NETID_TUN2SOCKS.0;
-const NETID_MAX: u32 = NETID_TUN2SOCKS.1;
-
-// Стабильный netid: индекс профиля в полном списке профилей движка (включая
-// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
-// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
-fn all_netd_profile_names() -> Vec<String> {
-    read_active().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
-}
+const VPN_CORE: VpnProfileCore = VpnProfileCore::new(ProgramId::Tun2Socks, NETID_TUN2SOCKS);
 
 fn stable_netid_for(profile: &str) -> Result<u32> {
-    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+    VPN_CORE.stable_netid(&read_active().unwrap_or_default(), profile)
 }
 const TUN_WAIT: Duration = Duration::from_secs(15);
-const IP_TIMEOUT: Duration = Duration::from_secs(3);
 const TUN2SOCKS_NET_BASE: u32 = 0xC612_6400; // 198.18.100.0
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ProfileState {
-    #[serde(default)]
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ActiveProfiles {
-    #[serde(default)]
-    pub profiles: BTreeMap<String, ProfileState>,
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProfileSetting {
@@ -93,14 +75,18 @@ struct ProfilePlan {
 }
 
 pub fn root_path() -> PathBuf { PathBuf::from(TUN2SOCKS_ROOT) }
-pub fn active_path() -> PathBuf { PathBuf::from(ACTIVE_JSON) }
-pub fn profiles_root() -> PathBuf { PathBuf::from(TUN2SOCKS_PROFILE_ROOT) }
-pub fn profile_root(profile: &str) -> PathBuf { profiles_root().join(profile) }
+pub fn active_path() -> PathBuf {
+    crate::common::profile::active_json_path(Path::new(TUN2SOCKS_ROOT))
+}
+pub fn profiles_root() -> PathBuf {
+    crate::common::profile::profiles_root_path(Path::new(TUN2SOCKS_ROOT))
+}
+pub fn profile_root(profile: &str) -> PathBuf {
+    crate::common::profile::profile_dir(&profiles_root(), profile)
+}
 
 pub fn is_valid_profile_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 10
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    crate::common::profile::is_valid_ascii_profile_name(name, 10)
 }
 
 pub fn ensure_valid_profile_name(name: &str) -> Result<()> {
@@ -113,46 +99,47 @@ pub fn ensure_valid_profile_name(name: &str) -> Result<()> {
 pub fn ensure_profile_layout(profile: &str) -> Result<()> {
     ensure_valid_profile_name(profile)?;
     let root = profile_root(profile);
-    fs::create_dir_all(root.join("app/uid"))?;
-    fs::create_dir_all(root.join("app/out"))?;
-    fs::create_dir_all(root.join("log"))?;
-    ensure_file_empty(&root.join("app/uid/user_program"))?;
-    let setting_path = root.join("setting.json");
-    if !setting_path.exists() {
-        write_json_pretty(&setting_path, &ProfileSetting::default())?;
-    }
+    crate::common::profile::ensure_relative_dirs(
+        &root,
+        &[
+            crate::common::profile::APP_UID_DIR,
+            crate::common::profile::APP_OUT_DIR,
+            crate::common::profile::LOG_DIR,
+        ],
+    )?;
+    crate::common::fs::ensure_empty_file(&crate::common::profile::app_uid_program_path(&root))?;
+    crate::common::profile::ensure_profile_json(
+        &crate::common::profile::setting_path(&root),
+        &ProfileSetting::default(),
+    )?;
     Ok(())
 }
 
 pub fn ensure_root_layout() -> Result<()> {
-    fs::create_dir_all(TUN2SOCKS_PROFILE_ROOT)?;
-    let active_path = active_path();
-    if !active_path.exists() {
-        write_json_pretty(&active_path, &ActiveProfiles::default())?;
-    }
-    Ok(())
+    crate::common::profile::ensure_active_profiles_file(&profiles_root(), &active_path())
 }
 
 pub fn read_active() -> Result<ActiveProfiles> {
-    ensure_root_layout()?;
-    read_json(&active_path())
+    crate::common::profile::read_active_profiles(&profiles_root(), &active_path())
 }
 
 pub fn write_active(active: &ActiveProfiles) -> Result<()> {
-    ensure_root_layout()?;
-    write_json_pretty(&active_path(), active)
+    crate::common::profile::write_active_profiles(&profiles_root(), &active_path(), active)
 }
 
 pub fn read_setting(profile: &str) -> Result<ProfileSetting> {
     ensure_valid_profile_name(profile)?;
-    read_json(&profile_root(profile).join("setting.json"))
+    crate::common::profile::read_profile_json(&crate::common::profile::setting_path(&profile_root(profile)))
 }
 
 pub fn write_setting(profile: &str, setting: &ProfileSetting) -> Result<()> {
     ensure_valid_profile_name(profile)?;
     validate_setting(setting)?;
     ensure_profile_layout(profile)?;
-    write_json_pretty(&profile_root(profile).join("setting.json"), setting)
+    crate::common::profile::write_profile_json(
+        &crate::common::profile::setting_path(&profile_root(profile)),
+        setting,
+    )
 }
 
 pub fn normalize_setting_value(value: serde_json::Value) -> Result<ProfileSetting> {
@@ -236,7 +223,7 @@ pub fn enabled_tun_claims() -> Vec<(String, String)> {
     for (name, st) in active.profiles {
         if !st.enabled { continue; }
         if let Ok(setting) = read_setting(&name) {
-            out.push((format!("tun2socks/{name}"), setting.tun));
+            out.push(VPN_CORE.claim(&name, setting.tun));
         }
     }
     out
@@ -245,38 +232,28 @@ pub fn enabled_tun_claims() -> Vec<(String, String)> {
 pub fn enabled_cidr_claims() -> Vec<(String, String)> {
     let mut out = Vec::new();
     let Ok(active) = read_active() else { return out; };
-    let all_names: Vec<String> = active.profiles.keys().cloned().collect();
-    for (name, st) in active.profiles {
+    for (name, st) in &active.profiles {
         if !st.enabled { continue; }
-        let Ok(setting) = read_setting(&name) else { continue; };
-        if validate_setting(&setting).is_err() || enabled_app_list_empty(&profile_root(&name).join("app/uid/user_program")) { continue; }
-        let Ok(netid) = stable_netid(NETID_BASE, NETID_MAX, &all_names, &name) else { continue; };
-        if let Ok((_, cidr)) = generated_tun_addr_and_cidr(netid) {
-            out.push((format!("tun2socks/{name}"), cidr));
+        let Ok(setting) = read_setting(name) else { continue; };
+        if validate_setting(&setting).is_err() || enabled_app_list_empty(&crate::common::profile::app_uid_program_path(&profile_root(name))) { continue; }
+        let Ok(netid) = VPN_CORE.stable_netid(&active, name) else { continue; };
+        if let Ok((_, cidr)) = VPN_CORE.generated_tun_addr_and_cidr(TUN2SOCKS_NET_BASE, netid) {
+            out.push(VPN_CORE.claim(name, cidr));
         }
     }
     out
 }
 
 fn validate_plan_tuns_unique(plans: &[ProfilePlan]) -> Result<()> {
-    let mut seen: BTreeMap<String, String> = BTreeMap::new();
-    for plan in plans {
-        if let Some(other) = seen.insert(plan.setting.tun.clone(), plan.name.clone()) {
-            bail!("tun2socks tun conflict: tun {} is used by enabled profiles {} and {}", plan.setting.tun, other, plan.name);
-        }
-    }
-    Ok(())
+    VPN_CORE.validate_unique_tuns(
+        plans.iter().map(|plan| (plan.name.as_str(), plan.setting.tun.as_str())),
+    )
 }
 
 pub fn validate_start_plan() -> Result<()> {
     ensure_root_layout()?;
     let active = read_active().unwrap_or_default();
-    let enabled_names: Vec<String> = active
-        .profiles
-        .iter()
-        .filter(|(_, st)| st.enabled)
-        .map(|(name, _)| name.clone())
-        .collect();
+    let enabled_names = VPN_CORE.enabled_profile_names(&active);
 
     if enabled_names.is_empty() {
         return Ok(());
@@ -301,7 +278,7 @@ pub fn validate_start_plan() -> Result<()> {
                 bail!("tun {} is used by enabled profiles {} and {}", setting.tun, other, name);
             }
 
-            let app_in = profile_dir.join("app/uid/user_program");
+            let app_in = crate::common::profile::app_uid_program_path(&profile_dir);
             let apps_raw = fs::read_to_string(&app_in)
                 .with_context(|| format!("read {}", app_in.display()))?;
             if apps_raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')) {
@@ -330,7 +307,7 @@ pub fn is_running() -> bool { !main_pids_exact().is_empty() }
 
 pub fn start_if_enabled() -> Result<()> {
     let profiles = start_profiles_for_netd()?;
-    crate::vpn_netd::start_profiles(profiles)?;
+    crate::network::vpn::netd::start_profiles(profiles)?;
     Ok(())
 }
 
@@ -338,10 +315,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
     ensure_root_layout()?;
 
     let active = read_active().unwrap_or_default();
-    let enabled_names: Vec<String> = active.profiles.iter()
-        .filter(|(_, st)| st.enabled)
-        .map(|(name, _)| name.clone())
-        .collect();
+    let enabled_names = VPN_CORE.enabled_profile_names(&active);
 
     if enabled_names.is_empty() {
         info!("tun2socks: no enabled profiles");
@@ -352,7 +326,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
 
     if !Path::new(TUN2SOCKS_BIN).is_file() {
         warn!("tun2socks: binary not found: {TUN2SOCKS_BIN} -> skip");
-        crate::programs::common::user_warn_missing_component("tun2socks");
+        crate::programs::components::user_warn_missing_component("tun2socks");
         return Ok(Vec::new());
     }
 
@@ -412,8 +386,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 plan.cidr
             );
 
-            Ok(VpnNetdProfile {
-                owner_program: "tun2socks".to_string(),
+            Ok(VPN_CORE.netd_profile(VpnNetdProfileSpec {
                 profile: plan.name.clone(),
                 netid: plan.netid,
                 tun: plan.setting.tun.clone(),
@@ -423,7 +396,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 app_list_path: plan.app_in.clone(),
                 app_out_path: plan.app_out.clone(),
                 endpoint_escape_ips: collect_proxy_escape_ips(&plan.setting.proxy),
-            })
+            }))
         })();
 
         match res {
@@ -450,9 +423,9 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>) -> Result<Prof
     let setting = read_setting(profile)?;
     validate_setting(&setting)?;
 
-    let app_in = profile_dir.join("app/uid/user_program");
-    let app_out = profile_dir.join("app/out/user_program");
-    ensure_file_empty(&app_in)?;
+    let app_in = crate::common::profile::app_uid_program_path(&profile_dir);
+    let app_out = crate::common::profile::app_out_program_path(&profile_dir);
+    crate::common::fs::ensure_empty_file(&app_in)?;
     let apps_raw = fs::read_to_string(&app_in).unwrap_or_default();
     if apps_raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')) {
         bail!("app list is empty: {}", app_in.display());
@@ -462,7 +435,7 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>) -> Result<Prof
     if used_netids.contains(&netid) {
         bail!("netid {netid} is already used by another tun2socks profile");
     }
-    let (tun_addr, cidr) = generated_tun_addr_and_cidr(netid)?;
+    let (tun_addr, cidr) = VPN_CORE.generated_tun_addr_and_cidr(TUN2SOCKS_NET_BASE, netid)?;
 
     Ok(ProfilePlan {
         name: profile.to_string(),
@@ -555,11 +528,7 @@ fn tun2socks_profile_process_running(tun: &str, proxy: &str) -> bool {
         tun,
         proxy
     );
-    let cmd = format!(
-        "ps -ef 2>/dev/null | grep -F {} | grep -v grep >/dev/null 2>&1",
-        shell_quote_for_sh(&pattern)
-    );
-    shell::ok_sh(&cmd).is_ok()
+    any_live_ps_ef_where(|line| line.contains(&pattern))
 }
 
 fn wait_tun_ready(tun: &str) -> Result<()> {
@@ -575,18 +544,6 @@ fn wait_tun_ready(tun: &str) -> Result<()> {
         }
         thread::sleep(Duration::from_millis(300));
     }
-}
-
-fn generated_tun_addr_and_cidr(netid: u32) -> Result<(String, String)> {
-    if !(NETID_BASE..=NETID_MAX).contains(&netid) {
-        bail!("tun2socks netid out of generated range: {netid}");
-    }
-    let offset = (netid - NETID_BASE) * 4;
-    let network = TUN2SOCKS_NET_BASE
-        .checked_add(offset)
-        .ok_or_else(|| anyhow::anyhow!("tun2socks cidr overflow"))?;
-    let addr = network + 1;
-    Ok((format!("{}/30", u32_to_ipv4(addr)), format!("{}/30", u32_to_ipv4(network))))
 }
 
 fn collect_proxy_escape_ips(proxy: &str) -> Vec<String> {
@@ -618,58 +575,17 @@ fn collect_proxy_escape_ips(proxy: &str) -> Vec<String> {
     }
 }
 
-fn is_ipv4(s: &str) -> bool {
-    let parts = s.split('.').collect::<Vec<_>>();
-    if parts.len() != 4 { return false; }
-    parts.iter().all(|p| !p.is_empty() && p.parse::<u8>().is_ok())
-}
-
-fn is_forbidden_tun_name(s: &str) -> bool {
-    s == "lo"
-        || s == "dummy0"
-        || s.starts_with("wlan")
-        || s.starts_with("rmnet")
-        || s.starts_with("ccmni")
-        || s.starts_with("eth")
-        || s.starts_with("ap")
-        || s.starts_with("rndis")
-}
-
-fn ensure_file_empty(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
-    if !path.exists() { fs::write(path, "")?; }
-    Ok(())
-}
-
-fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    crate::jsonfs::read_json_short_ctx(path)
-}
-
-fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {
-    crate::jsonfs::write_json_pretty_tmp_rename(path, v)
-}
-
 pub fn main_pids_exact() -> Vec<i32> {
-    let mut pids = Vec::new();
-    let cmd = r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/tun2socks --device tun://.* --proxy .*$' 2>/dev/null || true""#;
-    if let Ok(out) = shell::capture_quiet(cmd) {
-        pids.extend(parse_pid_lines(&out));
-    }
+    let mut pids = pgrep_full_regex(
+        r#"^/data/adb/modules/ZDT-D/bin/tun2socks --device tun://.* --proxy .*$"#,
+    );
     if pids.is_empty() {
-        let ps_cmd = r#"sh -c "ps -ef 2>/dev/null | grep -F '/data/adb/modules/ZDT-D/bin/tun2socks' | grep -F -- '--device tun://' | grep -F ' --proxy ' | grep -v grep || true""#;
-        if let Ok(out) = shell::capture_quiet(ps_cmd) {
-            for line in out.lines() {
-                let cols: Vec<&str> = line.split_whitespace().collect();
-                if cols.len() > 1 {
-                    if let Ok(pid) = cols[1].parse::<i32>() {
-                        if pid > 1 { pids.push(pid); }
-                    }
-                }
-            }
-        }
+        pids = ps_ef_pids_where(|line| {
+            line.contains("/data/adb/modules/ZDT-D/bin/tun2socks")
+                && line.contains("--device tun://")
+                && line.contains(" --proxy ")
+        });
     }
-    pids.sort_unstable();
-    pids.dedup();
-    pids.retain(|pid| process_pid_is_live(*pid as u32));
+    filter_live_pids(&mut pids);
     pids
 }

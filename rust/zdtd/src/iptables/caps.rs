@@ -1,6 +1,6 @@
 use std::{fs, path::Path, sync::atomic::{AtomicBool, Ordering}};
 
-use crate::{settings, shell::{self, Capture}};
+use crate::{settings, common::process::shell::{self, Capture}};
 
 static MULTIPORT_V4: AtomicBool = AtomicBool::new(false);
 static MULTIPORT_V6: AtomicBool = AtomicBool::new(false);

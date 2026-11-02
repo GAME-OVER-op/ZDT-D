@@ -3,7 +3,7 @@ use log::{info, warn};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     fs::{self, OpenOptions},
     os::unix::process::CommandExt,
     path::{Path, PathBuf},
@@ -12,45 +12,34 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use super::common::*;
-use crate::{
-    android::pkg_uid::{self, Mode as UidMode, Sha256Tracker},
-    iptables::iptables_port::{DpiTunnelOptions, ProtoChoice},
-    settings,
-    shell,
-    vpn_netd::VpnNetdProfile,
-};
+use crate::common::apps::{count_valid_uid_pairs};
+use crate::common::components::{find_module_binary};
+use crate::common::fs::{is_nonempty_file};
+use crate::common::network::{generated_ipv4_30, is_valid_ifname, NETID_HYSTERIA2, configure_tun_addr, wait_tun_link, wait_tcp_port};
+use crate::common::process::{filter_live_pids, read_process_cmdline, ps_ef_pids_where};
+use crate::programs::registry::{ProgramId};
+use crate::network::t2s::{format_ports_csv, apply_t2s_routing_ext, T2sSpawnConfig, spawn_t2s_proxy, build_tun2socks_command};
+use crate::network::vpn::{VpnProfileCore, VpnNetdProfileSpec};
+pub use crate::common::profile::{ActiveProfiles, ProfileState};
+use crate::{platform::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker}, iptables::iptables_port::{DpiTunnelOptions, ProtoChoice}, settings, network::vpn::netd::VpnNetdProfile};
 
+#[allow(dead_code)]
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
+#[allow(dead_code)]
 const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
 const HYSTERIA2_BIN: &str = "/data/adb/modules/ZDT-D/bin/hysteria2";
 const TUN2SOCKS_BIN: &str = "/data/adb/modules/ZDT-D/bin/tun2socks";
 const ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/hysteria2";
-const PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/hysteria2/profile";
-const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/hysteria2/active.json";
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
-const NETID_BASE: u32 = NETID_HYSTERIA2.0;
-const NETID_MAX: u32 = NETID_HYSTERIA2.1;
-
-// Стабильный netid: индекс профиля в полном списке профилей движка (включая
-// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
-// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
-fn all_netd_profile_names() -> Vec<String> {
-    read_active().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
-}
+const VPN_CORE: VpnProfileCore = VpnProfileCore::new(ProgramId::Hysteria2, NETID_HYSTERIA2);
 
 fn stable_netid_for(profile: &str) -> Result<u32> {
-    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+    let active = read_active().unwrap_or_default();
+    VPN_CORE.stable_netid(&active, profile)
 }
 const NET_BASE: u32 = 0xAC1F_E800; // 172.31.232.0/30 pool
 const PORT_WAIT: Duration = Duration::from_secs(25);
 const TUN_WAIT: Duration = Duration::from_secs(25);
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ProfileState { #[serde(default)] pub enabled: bool }
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ActiveProfiles { #[serde(default)] pub profiles: BTreeMap<String, ProfileState> }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Hysteria2Mode { T2s, Vpn }
@@ -101,6 +90,7 @@ pub struct ServerSetting {
 impl Default for ServerSetting { fn default() -> Self { Self { enabled: false, socks5_port: 11590, log_level: default_log_level() } } }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ServerPlan { name: String, setting: ServerSetting, config_path: PathBuf, log_path: PathBuf }
 #[derive(Debug, Clone)]
 struct T2sPlan { name: String, setting: ProfileSetting, uid_out: PathBuf, uid_count: usize, needs_t2s: bool, t2s_log: PathBuf, servers: Vec<ServerPlan> }
@@ -152,26 +142,28 @@ fn validate_setting(setting: &ProfileSetting) -> Result<()> {
     Ok(())
 }
 
-pub fn active_path() -> PathBuf { PathBuf::from(ACTIVE_JSON) }
-pub fn profiles_root() -> PathBuf { PathBuf::from(PROFILE_ROOT) }
-pub fn profile_root(profile: &str) -> PathBuf { profiles_root().join(profile) }
+pub fn active_path() -> PathBuf { crate::common::profile::active_json_path(Path::new(ROOT)) }
+pub fn profiles_root() -> PathBuf { crate::common::profile::profiles_root_path(Path::new(ROOT)) }
+pub fn profile_root(profile: &str) -> PathBuf { crate::common::profile::profile_dir(&profiles_root(), profile) }
 pub fn server_root(profile: &str, server: &str) -> PathBuf { profile_root(profile).join("server").join(server) }
 pub fn ensure_valid_profile_name(name: &str) -> Result<()> { if !is_valid_profile_name(name) { bail!("profile/server name must contain only English letters/digits/_/-"); } Ok(()) }
-pub fn is_valid_profile_name(name: &str) -> bool { !name.is_empty() && name.len() <= 64 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') }
+pub fn is_valid_profile_name(name: &str) -> bool {
+    crate::common::profile::is_valid_ascii_profile_name(name, 64)
+}
 
-pub fn ensure_root_layout() -> Result<()> { fs::create_dir_all(ROOT)?; fs::create_dir_all(PROFILE_ROOT)?; if !active_path().exists() { write_json_atomic(&active_path(), &ActiveProfiles::default())?; } Ok(()) }
+pub fn ensure_root_layout() -> Result<()> { fs::create_dir_all(ROOT)?; fs::create_dir_all(profiles_root())?; if !active_path().exists() { write_json_atomic(&active_path(), &ActiveProfiles::default())?; } Ok(()) }
 pub fn ensure_profile_layout(profile: &str) -> Result<()> {
     ensure_valid_profile_name(profile)?; ensure_root_layout()?;
     let root = profile_root(profile);
-    fs::create_dir_all(root.join("app/uid"))?; fs::create_dir_all(root.join("app/out"))?; fs::create_dir_all(root.join("server"))?; fs::create_dir_all(root.join("log"))?;
-    ensure_text_file(&root.join("app/uid/user_program"), "")?;
-    ensure_text_file(&root.join("app/out/user_program"), "")?;
-    if !root.join("setting.json").exists() { write_json_atomic(&root.join("setting.json"), &ProfileSetting::default())?; }
+    crate::common::profile::ensure_relative_dirs(&root, &["app/uid", "app/out", "server", "log"])?;
+    crate::common::fs::ensure_empty_file(&crate::common::profile::app_uid_program_path(&root))?;
+    crate::common::fs::ensure_empty_file(&crate::common::profile::app_out_program_path(&root))?;
+    if !crate::common::profile::setting_path(&root).exists() { write_json_atomic(&crate::common::profile::setting_path(&root), &ProfileSetting::default())?; }
     Ok(())
 }
 
-pub fn read_setting(profile: &str) -> Result<ProfileSetting> { ensure_valid_profile_name(profile)?; let v: Value = read_json(&profile_root(profile).join("setting.json"))?; normalize_setting_value(v) }
-pub fn write_setting(profile: &str, setting: &ProfileSetting) -> Result<()> { ensure_valid_profile_name(profile)?; let mut s = setting.clone(); normalize_setting_defaults(&mut s)?; validate_setting(&s)?; write_json_atomic(&profile_root(profile).join("setting.json"), &s) }
+pub fn read_setting(profile: &str) -> Result<ProfileSetting> { ensure_valid_profile_name(profile)?; let v: Value = read_json(&crate::common::profile::setting_path(&profile_root(profile)))?; normalize_setting_value(v) }
+pub fn write_setting(profile: &str, setting: &ProfileSetting) -> Result<()> { ensure_valid_profile_name(profile)?; let mut s = setting.clone(); normalize_setting_defaults(&mut s)?; validate_setting(&s)?; write_json_atomic(&crate::common::profile::setting_path(&profile_root(profile)), &s) }
 
 pub fn start_if_enabled() -> Result<()> { start_t2s_if_enabled() }
 
@@ -181,7 +173,7 @@ pub fn start_t2s_if_enabled() -> Result<()> {
     let names = enabled_names(&active);
     if names.is_empty() { return Ok(()); }
     ensure_file(HYSTERIA2_BIN)?;
-    let external = crate::ports::collect_used_ports_for_conflict_check_excluding_hysteria2().unwrap_or_default();
+    let external = crate::programs::ports::collect_used_ports_for_conflict_check_excluding_hysteria2().unwrap_or_default();
     let mut own = BTreeSet::new();
     let mut plans = Vec::new();
     for name in names {
@@ -192,10 +184,10 @@ pub fn start_t2s_if_enabled() -> Result<()> {
         }
     }
     if plans.is_empty() { return Ok(()); }
-    let t2s_bin = if plans.iter().any(|p| p.needs_t2s) { Some(find_bin("t2s")?) } else { None };
+    let t2s_bin = if plans.iter().any(|p| p.needs_t2s) { Some(find_module_binary("t2s")?) } else { None };
     crate::logging::user_info("hysteria2: запуск");
     for plan in &plans {
-        let ports_csv = plan.servers.iter().map(|s| s.setting.socks5_port.to_string()).collect::<Vec<_>>().join(",");
+        let ports_csv = format_ports_csv(plan.servers.iter().map(|server| server.setting.socks5_port));
         for srv in &plan.servers {
             truncate_file(&srv.log_path)?;
             spawn_hysteria2(&srv.config_path, &srv.log_path, &srv.setting.log_level)?;
@@ -218,13 +210,13 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
     let names = enabled_names(&active);
     if names.is_empty() { return Ok(Vec::new()); }
     ensure_file(HYSTERIA2_BIN)?; ensure_file(TUN2SOCKS_BIN)?;
-    let external = crate::ports::collect_used_ports_for_conflict_check_excluding_hysteria2().unwrap_or_default();
+    let external = crate::programs::ports::collect_used_ports_for_conflict_check_excluding_hysteria2().unwrap_or_default();
     let mut used_netids = BTreeSet::new();
     let mut own_ports = collect_enabled_t2s_ports(&names);
     let mut plans = Vec::new();
     for name in names { if let Some(plan) = build_vpn_plan(&name, &used_netids, &external, &own_ports)? { used_netids.insert(plan.netid); own_ports.insert(plan.server.setting.socks5_port); plans.push(plan); } }
     if plans.is_empty() { return Ok(Vec::new()); }
-    let tun2socks_bin = find_bin("tun2socks")?;
+    let tun2socks_bin = find_module_binary("tun2socks")?;
     let mut out = Vec::new();
     crate::logging::user_info("hysteria2 VPN: запуск");
     for plan in &plans {
@@ -235,16 +227,16 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
         spawn_tun2socks_for_vpn(&tun2socks_bin, plan)?;
         wait_tun_link(&plan.setting.tun, TUN_WAIT)?;
         configure_tun_addr(&plan.setting.tun, &plan.tun_address)?;
-        out.push(VpnNetdProfile { owner_program: "hysteria2".to_string(), profile: plan.name.clone(), netid: plan.netid, tun: plan.setting.tun.clone(), cidr: plan.cidr.clone(), gateway: None, dns: plan.setting.dns.clone(), app_list_path: plan.app_in.clone(), app_out_path: plan.app_out.clone(), endpoint_escape_ips: endpoint_escape_ips_from_config(&plan.server.config_path), });
+        out.push(VPN_CORE.netd_profile(VpnNetdProfileSpec { profile: plan.name.clone(), netid: plan.netid, tun: plan.setting.tun.clone(), cidr: plan.cidr.clone(), gateway: None, dns: plan.setting.dns.clone(), app_list_path: plan.app_in.clone(), app_out_path: plan.app_out.clone(), endpoint_escape_ips: endpoint_escape_ips_from_config(&plan.server.config_path), }));
     }
     Ok(out)
 }
 
 fn build_t2s_plan(profile: &str, external: &BTreeSet<u16>, own: &BTreeSet<u16>) -> Result<Option<T2sPlan>> {
     ensure_profile_layout(profile)?; let setting = read_setting(profile)?; if !setting.mode.is_t2s() { return Ok(None); }
-    let root = profile_root(profile); let uid_in = root.join("app/uid/user_program"); let uid_out = root.join("app/out/user_program");
+    let root = profile_root(profile); let uid_in = crate::common::profile::app_uid_program_path(&root); let uid_out = crate::common::profile::app_out_program_path(&root);
     let tracker = Sha256Tracker::new(SHA_FLAG_FILE); let _ = pkg_uid::unified_processing(UidMode::Default, &tracker, &uid_out, &uid_in)?;
-    let uid_count = count_valid_uid_pairs(&uid_out).unwrap_or(0); let has_marker = pkg_uid::file_has_launch_marker(&uid_in).unwrap_or(false);
+    let uid_count = count_valid_uid_pairs(&uid_out).unwrap_or(0); let has_marker = crate::common::apps::file_has_launch_marker(&uid_in).unwrap_or(false);
     if uid_count == 0 && !has_marker { return Ok(None); }
     let needs_t2s = uid_count > 0;
     if needs_t2s { check_port(setting.t2s_port, external, own)?; check_port(setting.t2s_web_port, external, own)?; }
@@ -256,11 +248,11 @@ fn build_t2s_plan(profile: &str, external: &BTreeSet<u16>, own: &BTreeSet<u16>) 
 
 fn build_vpn_plan(profile: &str, used_netids: &BTreeSet<u32>, external: &BTreeSet<u16>, own_ports: &BTreeSet<u16>) -> Result<Option<VpnPlan>> {
     ensure_profile_layout(profile)?; let setting = read_setting(profile)?; if !setting.mode.is_vpn() { return Ok(None); }
-    let root = profile_root(profile); let app_in = root.join("app/uid/user_program"); let app_out = root.join("app/out/user_program");
+    let root = profile_root(profile); let app_in = crate::common::profile::app_uid_program_path(&root); let app_out = crate::common::profile::app_out_program_path(&root);
     if !app_list_has_real_apps(&app_in)? { return Ok(None); }
     let enabled = enabled_servers(profile)?; if enabled.len() != 1 { bail!("vpn mode supports exactly one enabled server, found {}", enabled.len()); }
     let server = enabled.into_iter().next().unwrap(); check_port(server.setting.socks5_port, external, own_ports)?;
-    let netid = stable_netid_for(profile)?; if used_netids.contains(&netid) { bail!("netid {netid} is already used by another hysteria2 profile"); } let (tun_address, cidr, _) = generated_tun_address_for_index(netid - NETID_BASE)?;
+    let netid = stable_netid_for(profile)?; if used_netids.contains(&netid) { bail!("netid {netid} is already used by another hysteria2 profile"); } let (tun_address, cidr) = VPN_CORE.generated_tun_addr_and_cidr(NET_BASE, netid)?;
     Ok(Some(VpnPlan { name: profile.to_string(), setting, server, app_in, app_out, netid, tun_address, cidr, tun2socks_log: root.join("log/tun2socks.log") }))
 }
 
@@ -311,25 +303,33 @@ fn spawn_hysteria2(config: &Path, log: &Path, log_level: &str) -> Result<()> {
 }
 fn spawn_tun2socks_for_vpn(bin: &Path, plan: &VpnPlan) -> Result<()> {
     let proxy = format!("socks5://127.0.0.1:{}", plan.server.setting.socks5_port);
-    let logf = OpenOptions::new().create(true).write(true).truncate(true).open(&plan.tun2socks_log)?; let logf_err = logf.try_clone()?;
-    let mut cmd = Command::new(bin);
-    cmd.arg("--device").arg(format!("tun://{}", plan.setting.tun)).arg("--proxy").arg(proxy).arg("--loglevel").arg(&plan.setting.tun2socks_loglevel).current_dir(profile_root(&plan.name)).stdin(Stdio::null()).stdout(Stdio::from(logf)).stderr(Stdio::from(logf_err));
+    let logf = OpenOptions::new().create(true).write(true).truncate(true).open(&plan.tun2socks_log)?;
+    let logf_err = logf.try_clone()?;
+    let work_dir = profile_root(&plan.name);
+    let mut cmd = build_tun2socks_command(
+        bin,
+        &plan.setting.tun,
+        &proxy,
+        &plan.setting.tun2socks_loglevel,
+        None,
+        &work_dir,
+    );
+    cmd.stdin(Stdio::null()).stdout(Stdio::from(logf)).stderr(Stdio::from(logf_err));
     unsafe { cmd.pre_exec(|| { let _ = libc::setsid(); Ok(()) }); }
-    cmd.spawn().with_context(|| format!("spawn tun2socks for hysteria2 {}", plan.name))?; Ok(())
+    cmd.spawn().with_context(|| format!("spawn tun2socks for hysteria2 {}", plan.name))?;
+    Ok(())
 }
 
 pub fn validate_start_plan() -> Result<()> { ensure_root_layout()?; Ok(()) }
 pub fn has_enabled_profiles() -> bool { read_active().map(|a| a.profiles.values().any(|s| s.enabled)).unwrap_or(false) }
 pub fn has_enabled_vpn_profiles() -> bool { enabled_vpn_profile_names().next().is_some() }
-fn enabled_vpn_profile_names() -> impl Iterator<Item = String> { read_active().unwrap_or_default().profiles.into_iter().filter_map(|(n, st)| { if st.enabled && read_setting(&n).map(|s| s.mode.is_vpn()).unwrap_or(false) && app_list_has_real_apps(&profile_root(&n).join("app/uid/user_program")).unwrap_or(false) { Some(n) } else { None } }) }
-pub fn enabled_tun_claims() -> Vec<(String, String)> { enabled_vpn_profile_names().filter_map(|n| read_setting(&n).ok().map(|s| (format!("hysteria2/{n}"), s.tun))).collect() }
-pub fn enabled_cidr_claims() -> Vec<(String, String)> { let all_names = all_netd_profile_names(); let mut out = Vec::new(); for n in enabled_vpn_profile_names() { if let Ok(id)=stable_netid(NETID_BASE, NETID_MAX, &all_names, &n) { if let Ok((_, cidr, _))=generated_tun_address_for_index(id-NETID_BASE) { out.push((format!("hysteria2/{n}"), cidr)); } } } out }
+fn enabled_vpn_profile_names() -> impl Iterator<Item = String> { read_active().unwrap_or_default().profiles.into_iter().filter_map(|(n, st)| { if st.enabled && read_setting(&n).map(|s| s.mode.is_vpn()).unwrap_or(false) && app_list_has_real_apps(&crate::common::profile::app_uid_program_path(&profile_root(&n))).unwrap_or(false) { Some(n) } else { None } }) }
+pub fn enabled_tun_claims() -> Vec<(String, String)> { enabled_vpn_profile_names().filter_map(|n| read_setting(&n).ok().map(|s| VPN_CORE.claim(&n, s.tun))).collect() }
+pub fn enabled_cidr_claims() -> Vec<(String, String)> { let active = read_active().unwrap_or_default(); let mut out = Vec::new(); for n in enabled_vpn_profile_names() { if let Ok(id)=VPN_CORE.stable_netid(&active, &n) { if let Ok((_, cidr))=VPN_CORE.generated_tun_addr_and_cidr(NET_BASE, id) { out.push(VPN_CORE.claim(&n, cidr)); } } } out }
 
 pub fn is_running() -> bool { !main_pids_exact().is_empty() }
 pub fn main_pids_exact() -> Vec<i32> { pids_matching(&format!("{} --disable-update-check", HYSTERIA2_BIN)) }
 pub fn tun2socks_pids_exact() -> Vec<i32> {
-    let mut pids = Vec::new();
-    let Ok(out) = shell::capture_quiet("ps -ef 2>/dev/null | grep -F 'tun2socks --device tun://' | grep -v grep || true") else { return pids };
     let mut tun_names = BTreeSet::new();
     if let Ok(active) = read_active() {
         for name in enabled_names(&active) {
@@ -339,31 +339,22 @@ pub fn tun2socks_pids_exact() -> Vec<i32> {
         }
     }
     tun_names.insert(default_tun_name());
-    for line in out.lines() {
-        if !tun_names.iter().any(|tun| line.contains(&format!("tun://{tun}"))) { continue; }
-        let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() > 1 {
-            if let Ok(pid) = cols[1].parse::<i32>() {
-                if pid > 1 { pids.push(pid); }
-            }
-        }
-    }
-    pids.sort_unstable(); pids.dedup(); pids
+    ps_ef_pids_where(|line| {
+        line.contains("tun2socks --device tun://")
+            && tun_names.iter().any(|tun| line.contains(&format!("tun://{tun}")))
+    })
 }
 
-fn app_list_has_real_apps(path: &Path) -> Result<bool> { let raw = fs::read_to_string(path).unwrap_or_default(); Ok(raw.lines().any(|line| { let s=line.split('#').next().unwrap_or("").trim(); !s.is_empty() && !pkg_uid::is_launch_marker_package(s) })) }
+fn app_list_has_real_apps(path: &Path) -> Result<bool> { let raw = fs::read_to_string(path).unwrap_or_default(); Ok(raw.lines().any(|line| { let s=line.split('#').next().unwrap_or("").trim(); !s.is_empty() && !crate::common::apps::is_launch_marker_package(s) })) }
 fn collect_enabled_t2s_ports(names: &[String]) -> BTreeSet<u16> { let mut out = BTreeSet::new(); for n in names { if let Ok(s)=read_setting(n) { if s.mode.is_t2s() { out.insert(s.t2s_port); out.insert(s.t2s_web_port); } } if let Ok(servers)=enabled_servers(n) { for srv in servers { out.insert(srv.setting.socks5_port); } } } out }
-fn enabled_names(active: &ActiveProfiles) -> Vec<String> { active.profiles.iter().filter(|(_, st)| st.enabled).map(|(n, _)| n.clone()).collect() }
+fn enabled_names(active: &ActiveProfiles) -> Vec<String> { VPN_CORE.enabled_profile_names(active) }
 
-pub fn generated_tun_address_for_index(index: u32) -> Result<(String, String, String)> { let offset = index.checked_mul(4).ok_or_else(|| anyhow::anyhow!("hysteria2 cidr overflow"))?; let net = NET_BASE.checked_add(offset).ok_or_else(|| anyhow::anyhow!("hysteria2 cidr overflow"))?; Ok((format!("{}/30", u32_to_ipv4(net+1)), format!("{}/30", u32_to_ipv4(net)), u32_to_ipv4(net+2))) }
+pub fn generated_tun_address_for_index(index: u32) -> Result<(String, String, String)> { generated_ipv4_30(NET_BASE, index, VPN_CORE.owner_program()) }
 fn endpoint_escape_ips_from_config(path: &Path) -> Vec<String> { let Ok(raw)=fs::read_to_string(path) else { return Vec::new() }; let Ok(v)=serde_json::from_str::<Value>(&raw) else { return Vec::new() }; let Some(server)=v.get("server").and_then(|x| x.as_str()) else { return Vec::new() }; let host=server.rsplit_once(':').map(|(h,_)| h).unwrap_or(server).trim_matches(['[',']']); if host.parse::<std::net::Ipv4Addr>().is_ok() { vec![host.to_string()] } else { Vec::new() } }
 
-fn process_running_with_config(bin: &str, config: &Path) -> bool { let pattern = format!("{} --disable-update-check", bin); let cfg = config.display().to_string(); pids_matching(&pattern).into_iter().any(|pid| read_cmdline_pid(pid).contains(&cfg)) }
-fn pids_matching(pattern: &str) -> Vec<i32> { let cmd = format!("ps -ef 2>/dev/null | grep -F {} | grep -v grep || true", shell_quote_for_sh(pattern)); let Ok(out)=shell::capture_quiet(&cmd) else { return Vec::new() }; let mut pids = Vec::new(); for line in out.lines() { let cols: Vec<&str>=line.split_whitespace().collect(); if cols.len()>1 { if let Ok(pid)=cols[1].parse::<i32>() { if pid>1 { pids.push(pid); } } } } pids.sort_unstable(); pids.dedup(); pids.retain(|pid| process_pid_is_live(*pid as u32)); pids }
-fn read_cmdline_pid(pid: i32) -> String { fs::read(format!("/proc/{pid}/cmdline")).map(|b| String::from_utf8_lossy(&b).replace('\0', " ")).unwrap_or_default() }
-fn find_bin(name: &str) -> Result<PathBuf> { let p=Path::new("/data/adb/modules/ZDT-D/bin").join(name); if p.is_file() { Ok(p) } else { bail!("binary not found: {}", p.display()) } }
+fn process_running_with_config(bin: &str, config: &Path) -> bool { let pattern = format!("{} --disable-update-check", bin); let cfg = config.display().to_string(); pids_matching(&pattern).into_iter().any(|pid| read_process_cmdline(pid).contains(&cfg)) }
+fn pids_matching(pattern: &str) -> Vec<i32> { let mut pids = ps_ef_pids_where(|line| line.contains(pattern)); filter_live_pids(&mut pids); pids }
 fn ensure_file(path: &str) -> Result<()> { if Path::new(path).is_file() { Ok(()) } else { bail!("file missing: {path}") } }
-fn ensure_text_file(path: &Path, text: &str) -> Result<()> { if !path.exists() { if let Some(p)=path.parent() { fs::create_dir_all(p)?; } fs::write(path, text)?; } Ok(()) }
 fn truncate_file(path: &Path) -> Result<()> { if let Some(p)=path.parent() { fs::create_dir_all(p)?; } OpenOptions::new().create(true).write(true).truncate(true).open(path)?; Ok(()) }
 fn unique_tmp_path(target: &Path) -> PathBuf { let ts=SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos(); target.with_file_name(format!(".{}.{}.tmp", target.file_name().and_then(|s|s.to_str()).unwrap_or("tmp"), ts)) }
 fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<()> { if let Some(p)=path.parent() { fs::create_dir_all(p)?; } let tmp=unique_tmp_path(path); fs::write(&tmp, serde_json::to_string_pretty(value)?)?; fs::rename(tmp, path)?; Ok(()) }

@@ -1,50 +1,30 @@
 use anyhow::{bail, Context, Result};
-use super::common::*;
+use crate::common::apps::{enabled_app_list_empty};
+use crate::common::network::{is_ipv4, is_ipv4_cidr, normalize_cidr_network, cidrs_overlap, IP_TIMEOUT, is_valid_ifname, is_forbidden_tun_name, NETID_MYVPN, wait_tun_link};
+use crate::programs::registry::{ProgramId};
+use crate::network::vpn::{VpnProfileCore, VpnNetdProfileSpec};
+pub use crate::common::profile::{ActiveProfiles, ProfileState};
 use log::{info, warn};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
-    thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use crate::{
-    shell::{self, Capture},
-    vpn_netd::VpnNetdProfile,
+    common::process::shell::{self, Capture},
+    network::vpn::netd::VpnNetdProfile,
 };
 
 const MYVPN_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/myvpn";
-const MYVPN_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/myvpn/profile";
-const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/myvpn/active.json";
-const NETID_BASE: u32 = NETID_MYVPN.0;
-const NETID_MAX: u32 = NETID_MYVPN.1;
-
-// Стабильный netid: индекс профиля в полном списке профилей движка (включая
-// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
-// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
-fn all_netd_profile_names() -> Vec<String> {
-    read_active().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
-}
+const VPN_CORE: VpnProfileCore = VpnProfileCore::new(ProgramId::MyVpn, NETID_MYVPN);
 
 fn stable_netid_for(profile: &str) -> Result<u32> {
-    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+    VPN_CORE.stable_netid(&read_active().unwrap_or_default(), profile)
 }
 const TUN_WAIT: Duration = Duration::from_secs(20);
-const IP_TIMEOUT: Duration = Duration::from_secs(3);
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ProfileState {
-    #[serde(default)]
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ActiveProfiles {
-    #[serde(default)]
-    pub profiles: BTreeMap<String, ProfileState>,
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProfileSetting {
@@ -74,6 +54,7 @@ impl Default for ProfileSetting {
 struct ProfilePlan {
     name: String,
     setting: ProfileSetting,
+    #[allow(dead_code)]
     profile_dir: PathBuf,
     app_in: PathBuf,
     app_out: PathBuf,
@@ -95,11 +76,11 @@ where
         serde_json::Value::Array(items) => {
             for item in items {
                 if let Some(s) = item.as_str() {
-                    out.extend(split_dns_text(s));
+                    out.extend(crate::common::config::split_comma_whitespace(s));
                 }
             }
         }
-        serde_json::Value::String(s) => out.extend(split_dns_text(&s)),
+        serde_json::Value::String(s) => out.extend(crate::common::config::split_comma_whitespace(&s)),
         serde_json::Value::Null => {}
         _ => return Err(serde::de::Error::custom("dns must be array or string")),
     }
@@ -108,23 +89,20 @@ where
     Ok(out)
 }
 
-fn split_dns_text(s: &str) -> Vec<String> {
-    s.split(|c: char| c == ',' || c.is_ascii_whitespace())
-        .map(str::trim)
-        .filter(|x| !x.is_empty())
-        .map(ToOwned::to_owned)
-        .collect()
-}
 
 pub fn root_path() -> PathBuf { PathBuf::from(MYVPN_ROOT) }
-pub fn active_path() -> PathBuf { PathBuf::from(ACTIVE_JSON) }
-pub fn profiles_root() -> PathBuf { PathBuf::from(MYVPN_PROFILE_ROOT) }
-pub fn profile_root(profile: &str) -> PathBuf { profiles_root().join(profile) }
+pub fn active_path() -> PathBuf {
+    crate::common::profile::active_json_path(Path::new(MYVPN_ROOT))
+}
+pub fn profiles_root() -> PathBuf {
+    crate::common::profile::profiles_root_path(Path::new(MYVPN_ROOT))
+}
+pub fn profile_root(profile: &str) -> PathBuf {
+    crate::common::profile::profile_dir(&profiles_root(), profile)
+}
 
 pub fn is_valid_profile_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 10
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    crate::common::profile::is_valid_ascii_profile_name(name, 10)
 }
 
 pub fn ensure_valid_profile_name(name: &str) -> Result<()> {
@@ -137,46 +115,44 @@ pub fn ensure_valid_profile_name(name: &str) -> Result<()> {
 pub fn ensure_profile_layout(profile: &str) -> Result<()> {
     ensure_valid_profile_name(profile)?;
     let root = profile_root(profile);
-    fs::create_dir_all(root.join("app/uid"))?;
-    fs::create_dir_all(root.join("app/out"))?;
-    ensure_file_empty(&root.join("app/uid/user_program"))?;
-    ensure_file_empty(&root.join("app/out/user_program"))?;
-    let setting_path = root.join("setting.json");
-    if !setting_path.exists() {
-        write_json_pretty(&setting_path, &ProfileSetting::default())?;
-    }
+    crate::common::profile::ensure_relative_dirs(
+        &root,
+        &[crate::common::profile::APP_UID_DIR, crate::common::profile::APP_OUT_DIR],
+    )?;
+    crate::common::fs::ensure_empty_file(&crate::common::profile::app_uid_program_path(&root))?;
+    crate::common::fs::ensure_empty_file(&crate::common::profile::app_out_program_path(&root))?;
+    crate::common::profile::ensure_profile_json(
+        &crate::common::profile::setting_path(&root),
+        &ProfileSetting::default(),
+    )?;
     Ok(())
 }
 
 pub fn ensure_root_layout() -> Result<()> {
-    fs::create_dir_all(MYVPN_PROFILE_ROOT)?;
-    let active_path = active_path();
-    if !active_path.exists() {
-        write_json_pretty(&active_path, &ActiveProfiles::default())?;
-    }
-    Ok(())
+    crate::common::profile::ensure_active_profiles_file(&profiles_root(), &active_path())
 }
 
 pub fn read_active() -> Result<ActiveProfiles> {
-    ensure_root_layout()?;
-    read_json(&active_path())
+    crate::common::profile::read_active_profiles(&profiles_root(), &active_path())
 }
 
 pub fn write_active(active: &ActiveProfiles) -> Result<()> {
-    ensure_root_layout()?;
-    write_json_pretty(&active_path(), active)
+    crate::common::profile::write_active_profiles(&profiles_root(), &active_path(), active)
 }
 
 pub fn read_setting(profile: &str) -> Result<ProfileSetting> {
     ensure_valid_profile_name(profile)?;
-    read_json(&profile_root(profile).join("setting.json"))
+    crate::common::profile::read_profile_json(&crate::common::profile::setting_path(&profile_root(profile)))
 }
 
 pub fn write_setting(profile: &str, setting: &ProfileSetting) -> Result<()> {
     ensure_valid_profile_name(profile)?;
     validate_setting(setting)?;
     ensure_profile_layout(profile)?;
-    write_json_pretty(&profile_root(profile).join("setting.json"), setting)
+    crate::common::profile::write_profile_json(
+        &crate::common::profile::setting_path(&profile_root(profile)),
+        setting,
+    )
 }
 
 pub fn normalize_setting_value(value: serde_json::Value) -> Result<ProfileSetting> {
@@ -197,7 +173,7 @@ pub fn validate_setting(setting: &ProfileSetting) -> Result<()> {
         "auto" => {}
         "manual" => {
             let cidr = setting.cidr.trim();
-            if cidr.is_empty() || !is_cidr(cidr) {
+            if cidr.is_empty() || !is_ipv4_cidr(cidr) {
                 bail!("cidr must be IPv4 CIDR when cidr_mode=manual");
             }
         }
@@ -243,7 +219,7 @@ pub fn enabled_tun_claims() -> Vec<(String, String)> {
     for (name, st) in active.profiles {
         if !st.enabled { continue; }
         if let Ok(setting) = read_setting(&name) {
-            out.push((format!("myvpn/{name}"), setting.tun));
+            out.push(VPN_CORE.claim(&name, setting.tun));
         }
     }
     out
@@ -255,10 +231,10 @@ pub fn enabled_cidr_claims() -> Vec<(String, String)> {
     for (name, st) in active.profiles {
         if !st.enabled { continue; }
         let Ok(setting) = read_setting(&name) else { continue; };
-        if validate_setting(&setting).is_err() || enabled_app_list_empty(&profile_root(&name).join("app/uid/user_program")) { continue; }
+        if validate_setting(&setting).is_err() || enabled_app_list_empty(&crate::common::profile::app_uid_program_path(&profile_root(&name))) { continue; }
         if setting.cidr_mode == "manual" {
             if let Ok(cidr) = normalize_cidr_network(setting.cidr.trim()) {
-                out.push((format!("myvpn/{name}"), cidr));
+                out.push(VPN_CORE.claim(&name, cidr));
             }
         }
     }
@@ -266,24 +242,15 @@ pub fn enabled_cidr_claims() -> Vec<(String, String)> {
 }
 
 fn validate_plan_tuns_unique(plans: &[ProfilePlan]) -> Result<()> {
-    let mut seen: BTreeMap<String, String> = BTreeMap::new();
-    for plan in plans {
-        if let Some(other) = seen.insert(plan.setting.tun.clone(), plan.name.clone()) {
-            bail!("myvpn tun conflict: tun {} is used by enabled profiles {} and {}", plan.setting.tun, other, plan.name);
-        }
-    }
-    Ok(())
+    VPN_CORE.validate_unique_tuns(
+        plans.iter().map(|plan| (plan.name.as_str(), plan.setting.tun.as_str())),
+    )
 }
 
 pub fn validate_start_plan() -> Result<()> {
     ensure_root_layout()?;
     let active = read_active().unwrap_or_default();
-    let enabled_names: Vec<String> = active
-        .profiles
-        .iter()
-        .filter(|(_, st)| st.enabled)
-        .map(|(name, _)| name.clone())
-        .collect();
+    let enabled_names = VPN_CORE.enabled_profile_names(&active);
     if enabled_names.is_empty() { return Ok(()); }
 
     let mut errors = Vec::<String>::new();
@@ -297,7 +264,7 @@ pub fn validate_start_plan() -> Result<()> {
             if let Some(other) = seen_tuns.insert(setting.tun.clone(), name.clone()) {
                 bail!("tun {} is used by enabled profiles {} and {}", setting.tun, other, name);
             }
-            let app_in = profile_dir.join("app/uid/user_program");
+            let app_in = crate::common::profile::app_uid_program_path(&profile_dir);
             let apps_raw = fs::read_to_string(&app_in).with_context(|| format!("read {}", app_in.display()))?;
             if apps_raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')) {
                 bail!("app list is empty: {}", app_in.display());
@@ -319,10 +286,7 @@ pub fn has_enabled_profiles() -> bool {
 pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
     ensure_root_layout()?;
     let active = read_active().unwrap_or_default();
-    let enabled_names: Vec<String> = active.profiles.iter()
-        .filter(|(_, st)| st.enabled)
-        .map(|(name, _)| name.clone())
-        .collect();
+    let enabled_names = VPN_CORE.enabled_profile_names(&active);
 
     if enabled_names.is_empty() {
         info!("myvpn: no enabled profiles");
@@ -375,8 +339,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 }
             }
             info!("myvpn: tun ready profile={} tun={} cidr={}", plan.name, plan.setting.tun, cidr);
-            Ok(VpnNetdProfile {
-                owner_program: "myvpn".to_string(),
+            Ok(VPN_CORE.netd_profile(VpnNetdProfileSpec {
                 profile: plan.name.clone(),
                 netid: plan.netid,
                 tun: plan.setting.tun.clone(),
@@ -386,7 +349,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 app_list_path: plan.app_in.clone(),
                 app_out_path: plan.app_out.clone(),
                 endpoint_escape_ips: Vec::new(),
-            })
+            }))
         })();
         match res {
             Ok(profile) => {
@@ -414,9 +377,9 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>) -> Result<Prof
     let setting = read_setting(profile)?;
     validate_setting(&setting)?;
 
-    let app_in = profile_dir.join("app/uid/user_program");
-    let app_out = profile_dir.join("app/out/user_program");
-    ensure_file_empty(&app_in)?;
+    let app_in = crate::common::profile::app_uid_program_path(&profile_dir);
+    let app_out = crate::common::profile::app_out_program_path(&profile_dir);
+    crate::common::fs::ensure_empty_file(&app_in)?;
     let apps_raw = fs::read_to_string(&app_in).unwrap_or_default();
     if apps_raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')) {
         bail!("app list is empty: {}", app_in.display());
@@ -439,7 +402,7 @@ fn inspect_tun(tun: &str) -> Result<TunInfo> {
         for (i, token) in tokens.iter().enumerate() {
             if *token == "inet" {
                 if let Some(ip_cidr) = tokens.get(i + 1) {
-                    if let Some(cidr) = derive_cidr(ip_cidr) {
+                    if let Ok(cidr) = normalize_cidr_network(ip_cidr) {
                         return Ok(TunInfo { cidr });
                     }
                 }
@@ -447,64 +410,4 @@ fn inspect_tun(tun: &str) -> Result<TunInfo> {
         }
     }
     bail!("tun {tun} has no IPv4 CIDR")
-}
-
-fn derive_cidr(ip_cidr: &str) -> Option<String> {
-    normalize_cidr_network(ip_cidr).ok()
-}
-
-fn normalize_cidr_network(cidr: &str) -> Result<String> {
-    let (ip, prefix_s) = cidr.split_once('/').ok_or_else(|| anyhow::anyhow!("bad cidr {cidr}"))?;
-    let prefix = prefix_s.parse::<u8>().with_context(|| format!("bad cidr prefix {cidr}"))?;
-    if prefix > 32 { bail!("bad cidr prefix {cidr}"); }
-    let addr = ipv4_to_u32(ip).ok_or_else(|| anyhow::anyhow!("bad cidr ip {cidr}"))?;
-    let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix) };
-    Ok(format!("{}/{}", u32_to_ipv4(addr & mask), prefix))
-}
-
-fn is_forbidden_tun_name(s: &str) -> bool {
-    s == "lo"
-        || s == "dummy0"
-        || s.starts_with("wlan")
-        || s.starts_with("rmnet")
-        || s.starts_with("ccmni")
-        || s.starts_with("eth")
-        || s.starts_with("ap")
-        || s.starts_with("rndis")
-}
-
-fn is_ipv4(s: &str) -> bool {
-    let parts = s.split('.').collect::<Vec<_>>();
-    if parts.len() != 4 { return false; }
-    parts.iter().all(|p| !p.is_empty() && p.parse::<u8>().is_ok())
-}
-
-fn is_cidr(s: &str) -> bool {
-    let Some((ip, prefix)) = s.split_once('/') else { return false; };
-    let Ok(prefix) = prefix.parse::<u8>() else { return false; };
-    is_ipv4(ip) && prefix <= 32
-}
-
-fn cidrs_overlap(a: &str, b: &str) -> Result<bool> {
-    let (an, am) = cidr_network_mask(a)?;
-    let (bn, bm) = cidr_network_mask(b)?;
-    let a_start = an;
-    let a_end = an | !am;
-    let b_start = bn;
-    let b_end = bn | !bm;
-    Ok(a_start <= b_end && b_start <= a_end)
-}
-
-fn ensure_file_empty(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
-    if !path.exists() { fs::write(path, "")?; }
-    Ok(())
-}
-
-fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    crate::jsonfs::read_json_short_ctx(path)
-}
-
-fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {
-    crate::jsonfs::write_json_pretty_tmp_rename(path, v)
 }

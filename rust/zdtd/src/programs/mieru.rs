@@ -1,60 +1,32 @@
 use anyhow::{bail, Context, Result};
-use super::common::*;
+use crate::common::network::{is_valid_ifname, is_forbidden_tun_name, NETID_MIERU, configure_tun_addr, wait_tun_link, wait_tcp_port, wait_tun_ipv4_ready};
+use crate::common::process::{filter_live_pids, pgrep_full_regex, ps_ef_pids_where, any_live_ps_ef_where, LogMode, spawn_detached_logged_with_clone_context};
+use crate::programs::registry::{ProgramId};
+use crate::network::t2s::{build_tun2socks_command, tun2socks_process_running};
+use crate::network::vpn::{VpnProfileCore, VpnNetdProfileSpec};
+pub use crate::common::profile::{ActiveProfiles, ProfileState};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs::{self, OpenOptions},
-    net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
-    os::unix::process::CommandExt,
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
-    thread,
-    time::{Duration, Instant},
-};
+use std::{collections::{BTreeMap, BTreeSet}, fs::{self, OpenOptions}, os::unix::process::CommandExt, path::{Path, PathBuf}, process::{Command, Stdio}, thread, time::Duration};
 
 use crate::{
-    android::pkg_uid,
-    shell::{self, Capture},
-    vpn_netd::VpnNetdProfile,
-    vpn_tether::VpnTetherProfile,
+    network::vpn::netd::VpnNetdProfile,
+    network::vpn::tether::VpnTetherProfile,
 };
 
 const MIERU_BIN: &str = "/data/adb/modules/ZDT-D/bin/mieru";
 const TUN2PROXY_BIN: &str = "/data/adb/modules/ZDT-D/bin/tun2socks";
 const MIERU_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/mieru";
-const MIERU_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/mieru/profile";
-const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/mieru/active.json";
-const NETID_BASE: u32 = NETID_MIERU.0;
-const NETID_MAX: u32 = NETID_MIERU.1;
-
-// Стабильный netid: индекс профиля в полном списке профилей движка (включая
-// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
-// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
-fn all_netd_profile_names() -> Vec<String> {
-    read_active().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
-}
+const VPN_CORE: VpnProfileCore = VpnProfileCore::new(ProgramId::Mieru, NETID_MIERU);
 
 fn stable_netid_for(profile: &str) -> Result<u32> {
-    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+    let active = read_active().unwrap_or_default();
+    VPN_CORE.stable_netid(&active, profile)
 }
 const MIERU_NET_BASE: u32 = 0xAC1F_FC00; // 172.31.252.0
 const TUN_WAIT: Duration = Duration::from_secs(18);
 const PORT_WAIT: Duration = Duration::from_secs(25);
-const IP_TIMEOUT: Duration = Duration::from_secs(3);
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ProfileState {
-    #[serde(default)]
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ActiveProfiles {
-    #[serde(default)]
-    pub profiles: BTreeMap<String, ProfileState>,
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProfileSetting {
@@ -107,22 +79,33 @@ struct ProfilePlan {
     cidr: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AppSelection {
-    Empty,
-    MarkerOnly,
-    RealApps,
+fn netd_profile_for_plan(plan: &ProfilePlan) -> VpnNetdProfile {
+    VPN_CORE.netd_profile(VpnNetdProfileSpec {
+        profile: plan.name.clone(),
+        netid: plan.netid,
+        tun: plan.setting.tun.clone(),
+        cidr: plan.cidr.clone(),
+        gateway: None,
+        dns: vec!["8.8.8.8".to_string()],
+        app_list_path: plan.app_in.clone(),
+        app_out_path: plan.app_out.clone(),
+        endpoint_escape_ips: Vec::new(),
+    })
 }
 
 pub fn root_path() -> PathBuf { PathBuf::from(MIERU_ROOT) }
-pub fn active_path() -> PathBuf { PathBuf::from(ACTIVE_JSON) }
-pub fn profiles_root() -> PathBuf { PathBuf::from(MIERU_PROFILE_ROOT) }
-pub fn profile_root(profile: &str) -> PathBuf { profiles_root().join(profile) }
+pub fn active_path() -> PathBuf {
+    crate::common::profile::active_json_path(Path::new(MIERU_ROOT))
+}
+pub fn profiles_root() -> PathBuf {
+    crate::common::profile::profiles_root_path(Path::new(MIERU_ROOT))
+}
+pub fn profile_root(profile: &str) -> PathBuf {
+    crate::common::profile::profile_dir(&profiles_root(), profile)
+}
 
 pub fn is_valid_profile_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 10
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    crate::common::profile::is_valid_ascii_profile_name(name, 10)
 }
 
 pub fn ensure_valid_profile_name(name: &str) -> Result<()> {
@@ -135,51 +118,52 @@ pub fn ensure_valid_profile_name(name: &str) -> Result<()> {
 pub fn ensure_profile_layout(profile: &str) -> Result<()> {
     ensure_valid_profile_name(profile)?;
     let root = profile_root(profile);
-    fs::create_dir_all(root.join("app/uid"))?;
-    fs::create_dir_all(root.join("app/out"))?;
-    fs::create_dir_all(root.join("log"))?;
-    ensure_file_empty(&root.join("app/uid/user_program"))?;
-    ensure_file_empty(&root.join("app/out/user_program"))?;
-    let setting_path = root.join("setting.json");
-    if !setting_path.exists() {
-        write_json_pretty(&setting_path, &default_setting_for_profile(profile))?;
-    }
-    let config_path = root.join("config.json");
-    if !config_path.exists() {
-        write_json_pretty(&config_path, &default_config_json(profile))?;
-    }
+    crate::common::profile::ensure_relative_dirs(
+        &root,
+        &[
+            crate::common::profile::APP_UID_DIR,
+            crate::common::profile::APP_OUT_DIR,
+            crate::common::profile::LOG_DIR,
+        ],
+    )?;
+    crate::common::fs::ensure_empty_file(&crate::common::profile::app_uid_program_path(&root))?;
+    crate::common::fs::ensure_empty_file(&crate::common::profile::app_out_program_path(&root))?;
+    crate::common::profile::ensure_profile_json(
+        &crate::common::profile::setting_path(&root),
+        &default_setting_for_profile(profile),
+    )?;
+    crate::common::profile::ensure_profile_json(
+        &root.join("config.json"),
+        &default_config_json(profile),
+    )?;
     Ok(())
 }
 
 pub fn ensure_root_layout() -> Result<()> {
-    fs::create_dir_all(MIERU_PROFILE_ROOT)?;
-    let active_path = active_path();
-    if !active_path.exists() {
-        write_json_pretty(&active_path, &ActiveProfiles::default())?;
-    }
-    Ok(())
+    crate::common::profile::ensure_active_profiles_file(&profiles_root(), &active_path())
 }
 
 pub fn read_active() -> Result<ActiveProfiles> {
-    ensure_root_layout()?;
-    read_json(&active_path())
+    crate::common::profile::read_active_profiles(&profiles_root(), &active_path())
 }
 
 pub fn write_active(active: &ActiveProfiles) -> Result<()> {
-    ensure_root_layout()?;
-    write_json_pretty(&active_path(), active)
+    crate::common::profile::write_active_profiles(&profiles_root(), &active_path(), active)
 }
 
 pub fn read_setting(profile: &str) -> Result<ProfileSetting> {
     ensure_valid_profile_name(profile)?;
-    read_json(&profile_root(profile).join("setting.json"))
+    crate::common::profile::read_profile_json(&crate::common::profile::setting_path(&profile_root(profile)))
 }
 
 pub fn write_setting(profile: &str, setting: &ProfileSetting) -> Result<()> {
     ensure_valid_profile_name(profile)?;
     validate_setting(setting)?;
     ensure_profile_layout(profile)?;
-    write_json_pretty(&profile_root(profile).join("setting.json"), setting)
+    crate::common::profile::write_profile_json(
+        &crate::common::profile::setting_path(&profile_root(profile)),
+        setting,
+    )
 }
 
 pub fn normalize_setting_value(value: Value) -> Result<ProfileSetting> {
@@ -247,7 +231,7 @@ pub fn validate_enabled_tun_uniqueness_with_override(
             read_setting(&name).unwrap_or_default()
         };
         validate_setting(&setting).with_context(|| format!("mieru profile={name} setting validation"))?;
-        if !app_list_requires_netd(&profile_root(&name).join("app/uid/user_program")) {
+        if !crate::common::apps::app_list_requires_netd(&profile_root(&name).join("app/uid/user_program")) {
             continue;
         }
 
@@ -259,75 +243,54 @@ pub fn validate_enabled_tun_uniqueness_with_override(
 }
 
 pub fn enabled_tun_claims() -> Vec<(String, String)> {
+    let api_settings = crate::settings::load_api_settings().unwrap_or_default();
+    enabled_tun_claims_with_settings(&api_settings)
+}
+
+pub(crate) fn enabled_tun_claims_with_settings(
+    api_settings: &crate::settings::ApiSettings,
+) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let Ok(active) = read_active() else { return out; };
     for (name, st) in active.profiles {
         if !st.enabled { continue; }
-        let selected_for_hotspot = crate::settings::load_api_settings()
-            .map(|st| st.hotspot_vpn_profile_for("mieru") == Some(name.as_str()))
-            .unwrap_or(false);
-        if !selected_for_hotspot && !app_list_requires_netd(&profile_root(&name).join("app/uid/user_program")) { continue; }
+        let selected_for_hotspot = api_settings
+            .hotspot_vpn_profile_for(VPN_CORE.owner_program()) == Some(name.as_str());
+        if !selected_for_hotspot && !crate::common::apps::app_list_requires_netd(&profile_root(&name).join("app/uid/user_program")) { continue; }
         if let Ok(setting) = read_setting(&name) {
-            out.push((format!("mieru/{name}"), setting.tun));
+            out.push(VPN_CORE.claim(&name, setting.tun));
         }
     }
     out
 }
-
 pub fn enabled_cidr_claims() -> Vec<(String, String)> {
+    let api_settings = crate::settings::load_api_settings().unwrap_or_default();
+    enabled_cidr_claims_with_settings(&api_settings)
+}
+
+pub(crate) fn enabled_cidr_claims_with_settings(
+    api_settings: &crate::settings::ApiSettings,
+) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let Ok(active) = read_active() else { return out; };
-    let hotspot_profile = crate::settings::load_api_settings()
-        .ok()
-        .and_then(|st| st.hotspot_vpn_profile_for("mieru").map(|s| s.to_string()));
-    let all_names: Vec<String> = active.profiles.keys().cloned().collect();
-    for (name, st) in active.profiles {
+    let hotspot_profile = api_settings
+        .hotspot_vpn_profile_for(VPN_CORE.owner_program())
+        .map(|s| s.to_string());
+    for (name, st) in &active.profiles {
         if !st.enabled { continue; }
-        let Ok(setting) = read_setting(&name) else { continue; };
+        let Ok(setting) = read_setting(name) else { continue; };
         if validate_setting(&setting).is_err() { continue; }
         let selected_for_hotspot = hotspot_profile.as_deref() == Some(name.as_str());
-        if !selected_for_hotspot && !app_list_requires_netd(&profile_root(&name).join("app/uid/user_program")) { continue; }
-        let Ok(netid) = stable_netid(NETID_BASE, NETID_MAX, &all_names, &name) else { continue; };
-        if let Ok((_, cidr)) = generated_tun_addr_and_cidr(netid) {
-            out.push((format!("mieru/{name}"), cidr));
+        if !selected_for_hotspot && !crate::common::apps::app_list_requires_netd(&profile_root(name).join("app/uid/user_program")) { continue; }
+        let Ok(netid) = VPN_CORE.stable_netid(&active, name) else { continue; };
+        if let Ok((_, cidr)) = VPN_CORE.generated_tun_addr_and_cidr(MIERU_NET_BASE, netid) {
+            out.push(VPN_CORE.claim(name, cidr));
         }
     }
     out
 }
-
-fn app_selection(path: &Path) -> Result<AppSelection> {
-    let raw = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let mut has_marker = false;
-    let mut has_real = false;
-    for line in raw.lines() {
-        let mut s = line.trim();
-        if let Some((left, _)) = s.split_once('#') {
-            s = left.trim();
-        }
-        if s.is_empty() {
-            continue;
-        }
-        if pkg_uid::is_launch_marker_package(s) {
-            has_marker = true;
-        } else {
-            has_real = true;
-        }
-    }
-    Ok(if has_real {
-        AppSelection::RealApps
-    } else if has_marker {
-        AppSelection::MarkerOnly
-    } else {
-        AppSelection::Empty
-    })
-}
-
-fn app_list_requires_netd(path: &Path) -> bool {
-    matches!(app_selection(path), Ok(AppSelection::RealApps))
-}
-
 pub fn suggest_free_socks5_port() -> u16 {
-    let used_other = crate::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
+    let used_other = crate::programs::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
     let used_mieru = collect_all_defined_mieru_ports(None, None)
         .unwrap_or_default()
         .into_iter()
@@ -340,7 +303,7 @@ pub fn suggest_free_socks5_port() -> u16 {
 }
 
 pub fn suggest_free_rpc_port() -> u16 {
-    let used_other = crate::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
+    let used_other = crate::programs::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
     let used_mieru = collect_all_defined_mieru_ports(None, None)
         .unwrap_or_default()
         .into_iter()
@@ -356,7 +319,7 @@ pub fn assign_free_ports_for_profile(profile: &str) -> Result<()> {
     ensure_valid_profile_name(profile)?;
     ensure_profile_layout(profile)?;
     let mut setting = read_setting(profile).unwrap_or_else(|_| default_setting_for_profile(profile));
-    let used_other = crate::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
+    let used_other = crate::programs::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
     let own_prefix = format!("mieru/{profile}/");
     let used = collect_all_defined_mieru_ports(None, None)?
         .into_iter()
@@ -395,7 +358,7 @@ pub fn validate_port_uniqueness_with_override(
             bail!("mieru port conflict: port {} is used by {} and {}", port, other, label);
         }
     }
-    let used_other = crate::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
+    let used_other = crate::programs::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
     for (port, label) in collect_all_defined_mieru_ports(override_profile, override_setting)? {
         if used_other.contains(&port) {
             bail!("mieru port conflict: port {} used by {} conflicts with another ZDT-D local port", port, label);
@@ -454,12 +417,14 @@ pub fn enabled_local_ports() -> Vec<u16> {
 }
 
 pub fn validate_start_plan() -> Result<()> {
+    let api_settings = crate::settings::load_api_settings().unwrap_or_default();
+    validate_start_plan_with_settings(&api_settings)
+}
+
+pub(crate) fn validate_start_plan_with_settings(api_settings: &crate::settings::ApiSettings) -> Result<()> {
     ensure_root_layout()?;
     let active = read_active().unwrap_or_default();
-    let enabled_names: Vec<String> = active.profiles.iter()
-        .filter(|(_, st)| st.enabled)
-        .map(|(name, _)| name.clone())
-        .collect();
+    let enabled_names = VPN_CORE.enabled_profile_names(&active);
     if enabled_names.is_empty() { return Ok(()); }
 
     let mut errors = Vec::<String>::new();
@@ -468,7 +433,7 @@ pub fn validate_start_plan() -> Result<()> {
 
     let mut seen_tuns = BTreeMap::<String, String>::new();
     let mut seen_ports = BTreeMap::<u16, String>::new();
-    let used_ports = crate::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
+    let used_ports = crate::programs::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
 
     for name in enabled_names {
         let profile_res: Result<()> = (|| {
@@ -477,15 +442,14 @@ pub fn validate_start_plan() -> Result<()> {
             let setting = read_setting(&name).with_context(|| format!("read setting for profile {name}"))?;
             validate_setting(&setting).with_context(|| format!("validate setting for profile {name}"))?;
             let app_in = profile_dir.join("app/uid/user_program");
-            let selection = app_selection(&app_in)?;
-            let selected_for_hotspot = crate::settings::load_api_settings()
-                .map(|st| st.hotspot_vpn_profile_for("mieru") == Some(name.as_str()))
-                .unwrap_or(false);
-            if selection == AppSelection::Empty && !selected_for_hotspot {
+            let selection = crate::common::apps::app_selection(&app_in)?;
+            let selected_for_hotspot = api_settings
+                .hotspot_vpn_profile_for("mieru") == Some(name.as_str());
+            if selection == crate::common::apps::AppSelection::Empty && !selected_for_hotspot {
                 bail!("app list is empty: {}", app_in.display());
             }
-            let requires_tun = selection == AppSelection::RealApps || selected_for_hotspot;
-            let requires_netd = selection == AppSelection::RealApps;
+            let requires_tun = selection == crate::common::apps::AppSelection::RealApps || selected_for_hotspot;
+            let _requires_netd = selection == crate::common::apps::AppSelection::RealApps;
             if requires_tun && !tun2proxy_available {
                 bail!("binary missing: {TUN2PROXY_BIN}");
             }
@@ -520,7 +484,7 @@ pub fn has_profiles_requiring_netd() -> bool {
     read_active()
         .map(|active| {
             active.profiles.into_iter().any(|(name, st)| {
-                st.enabled && app_list_requires_netd(&profile_root(&name).join("app/uid/user_program"))
+                st.enabled && crate::common::apps::app_list_requires_netd(&profile_root(&name).join("app/uid/user_program"))
             })
         })
         .unwrap_or(false)
@@ -529,12 +493,16 @@ pub fn has_profiles_requiring_netd() -> bool {
 pub fn is_running() -> bool { !main_pids_exact().is_empty() }
 
 pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
+    let api_settings = crate::settings::load_api_settings().unwrap_or_default();
+    start_profiles_for_netd_with_settings(&api_settings)
+}
+
+pub(crate) fn start_profiles_for_netd_with_settings(
+    api_settings: &crate::settings::ApiSettings,
+) -> Result<Vec<VpnNetdProfile>> {
     ensure_root_layout()?;
     let active = read_active().unwrap_or_default();
-    let enabled_names: Vec<String> = active.profiles.iter()
-        .filter(|(_, st)| st.enabled)
-        .map(|(name, _)| name.clone())
-        .collect();
+    let enabled_names = VPN_CORE.enabled_profile_names(&active);
     if enabled_names.is_empty() {
         info!("mieru: no enabled profiles");
         return Ok(Vec::new());
@@ -544,14 +512,14 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
 
     if !Path::new(MIERU_BIN).is_file() {
         warn!("mieru: binary not found: {MIERU_BIN} -> skip");
-        crate::programs::common::user_warn_missing_component("mieru");
+        crate::programs::components::user_warn_missing_component("mieru");
         return Ok(Vec::new());
     }
     let tun2proxy_available = Path::new(TUN2PROXY_BIN).is_file();
 
-    let hotspot_vpn_profile = crate::settings::load_api_settings()
-        .ok()
-        .and_then(|st| st.hotspot_vpn_profile_for("mieru").map(|name| name.to_string()));
+    let hotspot_vpn_profile = api_settings
+        .hotspot_vpn_profile_for("mieru")
+        .map(|name| name.to_string());
     let mut plans = Vec::new();
     let mut used_netids = BTreeSet::<u32>::new();
     let mut had_error = false;
@@ -565,7 +533,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 plans.push(plan);
             }
             Err(e) => {
-                if !crate::programs::common::report_missing_components(&e) {
+                if !crate::programs::components::report_missing_components(&e) {
                     had_error = true;
                 }
                 warn!("mieru: profile '{name}' skip: {e:#}");
@@ -601,30 +569,19 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 .with_context(|| format!("mieru profile={} wait tun={}", plan.name, plan.setting.tun))?;
             configure_tun_addr(&plan.setting.tun, &plan.tun_addr)
                 .with_context(|| format!("mieru profile={} configure tun={}", plan.name, plan.setting.tun))?;
-            wait_tun_ready(&plan.setting.tun)
+            wait_tun_ipv4_ready(&plan.setting.tun, TUN_WAIT)
                 .with_context(|| format!("mieru profile={} wait IPv4 tun={}", plan.name, plan.setting.tun))?;
             info!("mieru: tun ready profile={} tun={} cidr={}", plan.name, plan.setting.tun, plan.cidr);
             if !plan.requires_netd {
                 return Ok(None);
             }
-            Ok(Some(VpnNetdProfile {
-                owner_program: "mieru".to_string(),
-                profile: plan.name.clone(),
-                netid: plan.netid,
-                tun: plan.setting.tun.clone(),
-                cidr: plan.cidr.clone(),
-                gateway: None,
-                dns: vec!["8.8.8.8".to_string()],
-                app_list_path: plan.app_in.clone(),
-                app_out_path: plan.app_out.clone(),
-                endpoint_escape_ips: Vec::new(),
-            }))
+            Ok(Some(netd_profile_for_plan(plan)))
         })();
         match res {
             Ok(Some(profile)) => profiles.push(profile),
             Ok(None) => {}
             Err(e) => {
-                if !crate::programs::common::report_missing_components(&e) {
+                if !crate::programs::components::report_missing_components(&e) {
                     had_error = true;
                 }
                 warn!("mieru: profile '{}' failed, startup continues: {e:#}", plan.name);
@@ -647,7 +604,7 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
 
 	if !Path::new(MIERU_BIN).is_file() {
 		warn!("mieru: binary not found: {MIERU_BIN} -> skip targeted start");
-		crate::programs::common::user_warn_missing_component("mieru");
+		crate::programs::components::user_warn_missing_component("mieru");
 		return Ok(());
 	}
 	let tun2proxy_available = Path::new(TUN2PROXY_BIN).is_file();
@@ -699,22 +656,11 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
 		.with_context(|| format!("mieru targeted profile={} wait tun={}", plan.name, plan.setting.tun))?;
 	configure_tun_addr(&plan.setting.tun, &plan.tun_addr)
 		.with_context(|| format!("mieru targeted profile={} configure tun={}", plan.name, plan.setting.tun))?;
-	wait_tun_ready(&plan.setting.tun)
+	wait_tun_ipv4_ready(&plan.setting.tun, TUN_WAIT)
 		.with_context(|| format!("mieru targeted profile={} wait IPv4 tun={}", plan.name, plan.setting.tun))?;
 	info!("mieru: targeted tun ready profile={} tun={} cidr={}", plan.name, plan.setting.tun, plan.cidr);
 	if plan.requires_netd {
-		crate::vpn_netd::start_profiles(vec![VpnNetdProfile {
-			owner_program: "mieru".to_string(),
-			profile: plan.name.clone(),
-			netid: plan.netid,
-			tun: plan.setting.tun.clone(),
-			cidr: plan.cidr.clone(),
-			gateway: None,
-			dns: vec!["8.8.8.8".to_string()],
-			app_list_path: plan.app_in.clone(),
-			app_out_path: plan.app_out.clone(),
-			endpoint_escape_ips: Vec::new(),
-		}])?;
+		crate::network::vpn::netd::start_profiles(vec![netd_profile_for_plan(&plan)])?;
 	}
 	Ok(())
 }
@@ -728,17 +674,17 @@ pub fn start_profile_for_hotspot_vpn(profile: &str) -> Result<Option<VpnTetherPr
     }
     if !Path::new(MIERU_BIN).is_file() {
         warn!("mieru: binary not found: {MIERU_BIN} -> skip hotspot VPN");
-        crate::programs::common::user_warn_missing_component("mieru");
+        crate::programs::components::user_warn_missing_component("mieru");
         return Ok(None);
     }
     if !Path::new(TUN2PROXY_BIN).is_file() {
         warn!("mieru: tun2proxy binary not found: {TUN2PROXY_BIN} -> skip hotspot VPN");
-        crate::programs::common::user_warn_missing_component("tun2socks");
+        crate::programs::components::user_warn_missing_component("tun2socks");
         return Ok(None);
     }
     let plan = build_profile_plan_for_hotspot(profile)?;
     info!("mieru: hotspot VPN start profile={} tun={}", plan.name, plan.setting.tun);
-    if wait_tun_ready(&plan.setting.tun).is_ok() {
+    if wait_tun_ipv4_ready(&plan.setting.tun, TUN_WAIT).is_ok() {
         info!("mieru: hotspot VPN reusing ready tun={}", plan.setting.tun);
     } else {
         prepare_runtime_config(&plan)?;
@@ -750,11 +696,11 @@ pub fn start_profile_for_hotspot_vpn(profile: &str) -> Result<Option<VpnTetherPr
             .with_context(|| format!("mieru hotspot profile={} wait tun={}", plan.name, plan.setting.tun))?;
         configure_tun_addr(&plan.setting.tun, &plan.tun_addr)
             .with_context(|| format!("mieru hotspot profile={} configure tun={}", plan.name, plan.setting.tun))?;
-        wait_tun_ready(&plan.setting.tun)
+        wait_tun_ipv4_ready(&plan.setting.tun, TUN_WAIT)
             .with_context(|| format!("mieru hotspot profile={} wait IPv4 tun={}", plan.name, plan.setting.tun))?;
     }
     Ok(Some(VpnTetherProfile {
-        owner_program: "mieru".to_string(),
+        owner_program: VPN_CORE.owner_program().to_string(),
         profile: plan.name.clone(),
         tun: plan.setting.tun.clone(),
         cidr: plan.cidr.clone(),
@@ -795,12 +741,12 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>, force_tun: boo
 
     let app_in = profile_dir.join("app/uid/user_program");
     let app_out = profile_dir.join("app/out/user_program");
-    ensure_file_empty(&app_in)?;
-    let selection = app_selection(&app_in)?;
-    if selection == AppSelection::Empty && !force_tun {
+    crate::common::fs::ensure_empty_file(&app_in)?;
+    let selection = crate::common::apps::app_selection(&app_in)?;
+    if selection == crate::common::apps::AppSelection::Empty && !force_tun {
         bail!("app list is empty: {}", app_in.display());
     }
-    let requires_netd = selection == AppSelection::RealApps;
+    let requires_netd = selection == crate::common::apps::AppSelection::RealApps;
     let requires_tun = requires_netd || force_tun;
 
     let config_path = profile_dir.join("config.json");
@@ -816,7 +762,7 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>, force_tun: boo
         id
     } else { 0 };
     let (tun_addr, cidr) = if requires_tun {
-        generated_tun_addr_and_cidr(netid)?
+        VPN_CORE.generated_tun_addr_and_cidr(MIERU_NET_BASE, netid)?
     } else {
         (String::new(), String::new())
     };
@@ -841,7 +787,7 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>, force_tun: boo
 fn validate_plan_conflicts(plans: &[ProfilePlan]) -> Result<()> {
     let mut seen_tun: BTreeMap<String, String> = BTreeMap::new();
     let mut seen_port: BTreeMap<u16, String> = BTreeMap::new();
-    let used_ports = crate::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
+    let used_ports = crate::programs::ports::collect_used_ports_for_conflict_check_excluding_mieru().unwrap_or_default();
     for plan in plans {
         if plan.requires_tun {
             if let Some(other) = seen_tun.insert(plan.setting.tun.clone(), plan.name.clone()) {
@@ -866,14 +812,14 @@ fn prepare_runtime_config(plan: &ProfilePlan) -> Result<()> {
     let mut value: Value = serde_json::from_str(&raw)
         .with_context(|| format!("parse {}", plan.config_path.display()))?;
     sync_mieru_config_value(&mut value, &plan.name, &plan.setting)?;
-    write_json_pretty(&plan.runtime_config_path, &value)
+    crate::common::fs::json::write_json_pretty_tmp_rename(&plan.runtime_config_path, &value)
 }
 
 fn sync_config_ports(profile: &str, setting: &ProfileSetting) -> Result<()> {
     let path = profile_root(profile).join("config.json");
-    let mut value: Value = if path.exists() { read_json(&path).unwrap_or_else(|_| default_config_json(profile)) } else { default_config_json(profile) };
+    let mut value: Value = if path.exists() { crate::common::fs::json::read_json_short_ctx(&path).unwrap_or_else(|_| default_config_json(profile)) } else { default_config_json(profile) };
     sync_mieru_config_value(&mut value, profile, setting)?;
-    write_json_pretty(&path, &value)
+    crate::common::fs::json::write_json_pretty_tmp_rename(&path, &value)
 }
 
 fn sync_mieru_config_value(value: &mut Value, profile: &str, setting: &ProfileSetting) -> Result<()> {
@@ -931,122 +877,51 @@ fn spawn_mieru(plan: &ProfilePlan) -> Result<()> {
 
 fn spawn_tun2proxy(plan: &ProfilePlan) -> Result<()> {
     let proxy = format!("socks5://127.0.0.1:{}", plan.setting.socks5_port);
-    if tun2proxy_profile_process_running(&plan.setting.tun, &proxy) {
+    if tun2socks_process_running(TUN2PROXY_BIN, &plan.setting.tun, &proxy) {
         info!("mieru: tun2proxy profile={} already running for tun={} proxy={}, skip spawn", plan.name, plan.setting.tun, proxy);
         return Ok(());
     }
     fs::create_dir_all(plan.profile_dir.join("log"))?;
-    let logf = OpenOptions::new().create(true).write(true).truncate(true).open(&plan.tun2proxy_log_path)
-        .with_context(|| format!("open log {}", plan.tun2proxy_log_path.display()))?;
-    let logf_err = logf.try_clone().context("clone mieru tun2proxy log")?;
-    let mut cmd = Command::new(TUN2PROXY_BIN);
-    cmd.arg("--device")
-        .arg(format!("tun://{}", plan.setting.tun))
-        .arg("--proxy")
-        .arg(&proxy)
-        .arg("--loglevel")
-        .arg(&plan.setting.tun2proxy_loglevel);
-    if let Some(mtu) = plan.setting.mtu {
-        cmd.arg("--mtu").arg(mtu.to_string());
-    }
-    cmd.current_dir(&plan.profile_dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
-    unsafe { cmd.pre_exec(|| { let _ = libc::setsid(); Ok(()) }); }
-    let child = cmd.spawn().with_context(|| format!("spawn {TUN2PROXY_BIN} for mieru"))?;
+    let mut cmd = build_tun2socks_command(
+        Path::new(TUN2PROXY_BIN),
+        &plan.setting.tun,
+        &proxy,
+        &plan.setting.tun2proxy_loglevel,
+        plan.setting.mtu,
+        &plan.profile_dir,
+    );
+    let child = spawn_detached_logged_with_clone_context(
+        &mut cmd,
+        &plan.tun2proxy_log_path,
+        LogMode::Truncate,
+        || "clone mieru tun2proxy log".to_string(),
+        || format!("spawn {TUN2PROXY_BIN} for mieru"),
+    )?;
     info!("mieru: spawned tun2proxy profile={} pid={} tun={} proxy={} log={}", plan.name, child.id(), plan.setting.tun, proxy, plan.tun2proxy_log_path.display());
     Ok(())
 }
 
 fn mieru_profile_process_running(runtime_config: &Path) -> bool {
-    let cmd = format!(
-        "ps -ef 2>/dev/null | grep -F {} | grep -F 'mieru run' | grep -v grep >/dev/null 2>&1",
-        shell_quote_for_sh(&runtime_config.display().to_string())
-    );
-    shell::ok_sh(&cmd).is_ok()
-}
-
-fn tun2proxy_profile_process_running(tun: &str, proxy: &str) -> bool {
-    let pattern = format!("{} --device tun://{} --proxy {}", TUN2PROXY_BIN, tun, proxy);
-    let cmd = format!("ps -ef 2>/dev/null | grep -F {} | grep -v grep >/dev/null 2>&1", shell_quote_for_sh(&pattern));
-    shell::ok_sh(&cmd).is_ok()
-}
-
-fn wait_tun_ready(tun: &str) -> Result<()> {
-    let start = Instant::now();
-    loop {
-        if start.elapsed() >= TUN_WAIT { bail!("tun {tun} is not ready after {:?}", TUN_WAIT); }
-        let (code, out) = shell::run_timeout("ip", &["-o", "-4", "addr", "show", "dev", tun], Capture::Stdout, IP_TIMEOUT).unwrap_or((1, String::new()));
-        if code == 0 && out.lines().any(|l| l.contains(" inet ") || l.split_whitespace().any(|t| t == "inet")) { return Ok(()); }
-        thread::sleep(Duration::from_millis(300));
-    }
-}
-
-fn generated_tun_addr_and_cidr(netid: u32) -> Result<(String, String)> {
-    if !(NETID_BASE..=NETID_MAX).contains(&netid) { bail!("mieru netid out of generated range: {netid}"); }
-    let offset = (netid - NETID_BASE) * 4;
-    let network = MIERU_NET_BASE.checked_add(offset).ok_or_else(|| anyhow::anyhow!("mieru cidr overflow"))?;
-    let addr = network + 1;
-    Ok((format!("{}/30", u32_to_ipv4(addr)), format!("{}/30", u32_to_ipv4(network))))
-}
-
-fn is_forbidden_tun_name(s: &str) -> bool {
-    s == "lo" || s == "dummy0" || s.starts_with("wlan") || s.starts_with("rmnet") || s.starts_with("ccmni") || s.starts_with("eth") || s.starts_with("ap") || s.starts_with("rndis")
-}
-
-fn ensure_file_empty(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
-    if !path.exists() { fs::write(path, "")?; }
-    Ok(())
-}
-
-fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    crate::jsonfs::read_json_short_ctx(path)
-}
-
-fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
-    let txt = serde_json::to_string_pretty(v)?;
-    write_text_atomic(path, &txt)
-}
-
-fn write_text_atomic(path: &Path, txt: &str) -> Result<()> {
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, txt)?;
-    fs::rename(&tmp, path)?;
-    Ok(())
+    let config = runtime_config.display().to_string();
+    any_live_ps_ef_where(|line| line.contains(&config) && line.contains("mieru run"))
 }
 
 pub fn main_pids_exact() -> Vec<i32> {
-    let mut pids = Vec::new();
-    let cmd = r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/mieru run$' 2>/dev/null || true""#;
-    if let Ok(out) = shell::capture_quiet(cmd) { pids.extend(parse_pid_lines(&out)); }
+    let mut pids = pgrep_full_regex(r#"^/data/adb/modules/ZDT-D/bin/mieru run$"#);
     if pids.is_empty() {
-        let ps_cmd = r#"sh -c "ps -ef 2>/dev/null | grep -F '/data/adb/modules/ZDT-D/bin/mieru' | grep -F ' run' | grep -v grep || true""#;
-        if let Ok(out) = shell::capture_quiet(ps_cmd) {
-            for line in out.lines() {
-                let cols: Vec<&str> = line.split_whitespace().collect();
-                if cols.len() > 1 {
-                    if let Ok(pid) = cols[1].parse::<i32>() { if pid > 1 { pids.push(pid); } }
-                }
-            }
-        }
+        pids = ps_ef_pids_where(|line| {
+            line.contains("/data/adb/modules/ZDT-D/bin/mieru") && line.contains(" run")
+        });
     }
-    pids.sort_unstable();
-    pids.dedup();
-    pids.retain(|pid| process_pid_is_live(*pid as u32));
+    filter_live_pids(&mut pids);
     pids
 }
 
 pub fn tun2proxy_pids_exact() -> Vec<i32> {
-    let mut pids = Vec::new();
-    let cmd = r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/tun2socks --device tun://.* --proxy socks5://127\.0\.0\.1:[0-9]+.*$' 2>/dev/null || true""#;
-    if let Ok(out) = shell::capture_quiet(cmd) { pids.extend(parse_pid_lines(&out)); }
-    pids.sort_unstable();
-    pids.dedup();
-    pids.retain(|pid| process_pid_is_live(*pid as u32));
+    let mut pids = pgrep_full_regex(
+        r#"^/data/adb/modules/ZDT-D/bin/tun2socks --device tun://.* --proxy socks5://127\.0\.0\.1:[0-9]+.*$"#,
+    );
+    filter_live_pids(&mut pids);
     pids
 }
 

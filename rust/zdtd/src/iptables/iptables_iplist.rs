@@ -25,7 +25,7 @@ use anyhow::{Context, Result};
 use log::info;
 use std::{fs, path::Path, thread, time::Duration};
 
-use crate::{shell::{self, Capture}, xtables_lock};
+use crate::{common::process::shell::{self, Capture}, iptables::lock as xtables_lock};
 
 const IPT_TIMEOUT: Duration = Duration::from_secs(5);
 const XT_WAIT_SECS: &str = "5";

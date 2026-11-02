@@ -1,16 +1,21 @@
 use anyhow::{Context, Result};
-use super::common::*;
+use crate::common::apps::{count_valid_uid_pairs};
+use crate::common::components::{find_module_binary};
+use crate::common::fs::{ensure_parent_dir};
+use crate::network::t2s::{T2sProfileRouting, launch_profile_t2s, profile_scope, T2sSpawnConfig};
+use crate::common::fs::truncate_file;
+pub use crate::common::profile::{ActiveProfiles, ProfileState};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs::{self, OpenOptions},
+    collections::BTreeSet,
+    fs,
     path::{Path, PathBuf},
 };
 
-use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::iptables_port::{DpiTunnelOptions, ProtoChoice};
+use crate::platform::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
+use crate::iptables::iptables_port::ProtoChoice;
 use crate::settings;
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
@@ -19,18 +24,6 @@ const MYPROXY_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/myproxy";
 const MYPROXY_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/myproxy/profile";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/myproxy/active.json";
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ProfileState {
-    #[serde(default)]
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ActiveProfiles {
-    #[serde(default)]
-    pub profiles: BTreeMap<String, ProfileState>,
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProfileSetting {
@@ -249,8 +242,8 @@ fn default_t2s_port() -> u16 { 12348 }
 fn default_t2s_web_port() -> u16 { 8004 }
 
 pub fn start_if_enabled() -> Result<()> {
-    ensure_dir(MODULE_DIR)?;
-    ensure_dir(WORKING_DIR)?;
+    crate::common::fs::create_dir_all_context_str(MODULE_DIR)?;
+    crate::common::fs::create_dir_all_context_str(WORKING_DIR)?;
     fs::create_dir_all(MYPROXY_ROOT).ok();
     fs::create_dir_all(MYPROXY_PROFILE_ROOT).ok();
 
@@ -275,7 +268,7 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, false, true, false, false, false, false)
+    let external_used = crate::programs::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, false, true, false, false, false, false)
         .unwrap_or_else(|_| BTreeSet::new());
     let mut own_used = BTreeSet::<u16>::new();
     let mut plans = Vec::<ProfilePlan>::new();
@@ -297,7 +290,7 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    let t2s_bin = find_bin("t2s")?;
+    let t2s_bin = find_module_binary("t2s")?;
     crate::logging::user_info("myproxy: socks5 profiles");
 
     for plan in &plans {
@@ -305,39 +298,33 @@ pub fn start_if_enabled() -> Result<()> {
         let t2s_socks_ports_csv = plan.proxy.effective_ports_csv()?;
         let t2s_backend_mode = plan.proxy.effective_backend_mode()?;
         let t2s_backend_priority = plan.proxy.backend_priority_trimmed();
-        spawn_t2s_proxy(T2sSpawnConfig {
-            bin: &t2s_bin,
-            listen_addr: "127.0.0.1",
-            listen_port: plan.setting.t2s_port,
-            socks_host: plan.proxy.host.trim(),
-            socks_ports_csv: &t2s_socks_ports_csv,
-            web_port: Some(plan.setting.t2s_web_port),
-            program: "myproxy",
-            profile: &plan.name,
-            scope: &format!("profile/myproxy/{}", plan.name),
-            log_path: &plan.t2s_log,
-            backend_mode: Some(t2s_backend_mode),
-            backend_priority: if t2s_backend_mode == "priority" && !t2s_backend_priority.is_empty() { Some(t2s_backend_priority) } else { None },
-            priority_speed_aware: t2s_backend_mode == "priority" && plan.proxy.priority_speed_aware,
-            socks_user: Some(plan.proxy.user.as_str()),
-            socks_pass: Some(plan.proxy.pass.as_str()),
-            wrapped_socks_host: if plan.proxy.wrapped_socks.enabled() { Some(plan.proxy.wrapped_socks.host.as_str()) } else { None },
-            wrapped_socks_port: if plan.proxy.wrapped_socks.enabled() { Some(plan.proxy.wrapped_socks.port) } else { None },
-            wrapped_socks_user: Some(plan.proxy.wrapped_socks.user.as_str()),
-            wrapped_socks_pass: Some(plan.proxy.wrapped_socks.pass.as_str()),
-            ..Default::default()
-        })
-            .with_context(|| format!("spawn t2s profile={}", plan.name))?;
-
-        apply_t2s_routing_ext(
-            &plan.uid_out,
-            plan.setting.t2s_port,
-            plan.proxy.proto_choice(),
-            plan.proxy.proto_choice(),
+        let scope = profile_scope("myproxy", &plan.name);
+        launch_profile_t2s(
+            T2sSpawnConfig {
+                bin: &t2s_bin,
+                listen_addr: "127.0.0.1",
+                listen_port: plan.setting.t2s_port,
+                socks_host: plan.proxy.host.trim(),
+                socks_ports_csv: &t2s_socks_ports_csv,
+                web_port: Some(plan.setting.t2s_web_port),
+                program: "myproxy",
+                profile: &plan.name,
+                scope: &scope,
+                log_path: &plan.t2s_log,
+                backend_mode: Some(t2s_backend_mode),
+                backend_priority: if t2s_backend_mode == "priority" && !t2s_backend_priority.is_empty() { Some(t2s_backend_priority) } else { None },
+                priority_speed_aware: t2s_backend_mode == "priority" && plan.proxy.priority_speed_aware,
+                socks_user: Some(plan.proxy.user.as_str()),
+                socks_pass: Some(plan.proxy.pass.as_str()),
+                wrapped_socks_host: if plan.proxy.wrapped_socks.enabled() { Some(plan.proxy.wrapped_socks.host.as_str()) } else { None },
+                wrapped_socks_port: if plan.proxy.wrapped_socks.enabled() { Some(plan.proxy.wrapped_socks.port) } else { None },
+                wrapped_socks_user: Some(plan.proxy.wrapped_socks.user.as_str()),
+                wrapped_socks_pass: Some(plan.proxy.wrapped_socks.pass.as_str()),
+                ..Default::default()
+            },
+            T2sProfileRouting::exact(&plan.uid_out, plan.proxy.proto_choice()),
             None,
-            DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() },
-        )
-        .with_context(|| format!("iptables profile={}", plan.name))?;
+        )?;
 
         info!(
             "myproxy: profile={} apps={} t2s_port={} t2s_web_port={} upstream={}:{} auth={} ",
@@ -373,12 +360,12 @@ fn build_profile_plan(profile: &str, external_used: &BTreeSet<u16>, own_used: &B
     let tracker = Sha256Tracker::new(SHA_FLAG_FILE);
     let uid_in = profile_dir.join("app/uid/user_program");
     let uid_out = profile_dir.join("app/out/user_program");
-    ensure_file_empty(&uid_in)?;
+    crate::common::fs::ensure_empty_file_write_context(&uid_in)?;
     ensure_parent_dir(&uid_out)?;
     let _ = pkg_uid::unified_processing(UidMode::Default, &tracker, &uid_out, &uid_in)
         .with_context(|| format!("pkg_uid processing profile={profile}"))?;
     let resolved = count_valid_uid_pairs(&uid_out).unwrap_or(0);
-    let has_launch_marker = pkg_uid::file_has_launch_marker(&uid_in).unwrap_or(false);
+    let has_launch_marker = crate::common::apps::file_has_launch_marker(&uid_in).unwrap_or(false);
     if resolved == 0 && !has_launch_marker {
         warn!("myproxy: profile '{}' has no resolved apps", profile);
         return Ok(None);
@@ -520,21 +507,10 @@ fn validate_backend_priority(raw: &str, backend_mode: &str, effective_ports: &[u
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(p: &Path) -> Result<T> {
-    crate::jsonfs::read_json_short_ctx(p)
+    crate::common::fs::json::read_json_short_ctx(p)
 }
 
-fn ensure_dir(p: &str) -> Result<()> {
-    fs::create_dir_all(p).with_context(|| format!("mkdir {p}"))?;
-    Ok(())
-}
 
-fn ensure_file_empty(p: &Path) -> Result<()> {
-    if !p.exists() {
-        ensure_parent_dir(p)?;
-        fs::write(p, "").with_context(|| format!("write {}", p.display()))?;
-    }
-    Ok(())
-}
 
 fn profile_root(profile: &str) -> PathBuf {
     Path::new(MYPROXY_PROFILE_ROOT).join(profile)
@@ -550,16 +526,5 @@ pub fn ensure_valid_profile_name(name: &str) -> Result<()> {
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
         anyhow::bail!("profile name must contain only English letters/digits/_/-");
     }
-    Ok(())
-}
-
-fn find_bin(name: &str) -> Result<PathBuf> {
-    let p = Path::new("/data/adb/modules/ZDT-D/bin").join(name);
-    if p.is_file() { Ok(p) } else { anyhow::bail!("binary not found: {}", p.display()) }
-}
-
-fn truncate_file(p: &Path) -> Result<()> {
-    ensure_parent_dir(p)?;
-    let _ = OpenOptions::new().create(true).write(true).truncate(true).open(p)?;
     Ok(())
 }

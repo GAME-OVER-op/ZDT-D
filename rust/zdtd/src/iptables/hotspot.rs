@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use crate::{
     iptables::{caps, port_filter},
-    shell::Capture,
-    xtables_lock,
+    common::process::shell::Capture,
+    iptables::lock as xtables_lock,
 };
 
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);

@@ -3,8 +3,8 @@ use log::{info, warn};
 use std::{fs, path::Path, time::Duration};
 
 use crate::iptables::{caps, mangle_app, port_filter};
-use crate::shell::Capture;
-use crate::xtables_lock;
+use crate::common::process::shell::Capture;
+use crate::iptables::lock as xtables_lock;
 
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
 const XT_WAIT_SECS: &str = "5";
@@ -69,7 +69,7 @@ pub fn apply(
 
     if let Some(p) = uid_file {
         if p.is_file() {
-            crate::runtime_refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
+            crate::runtime::refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
             let uids = read_uid_file(p)?;
             let total = uids.len();
             let label = p.file_name().and_then(|s| s.to_str()).unwrap_or("uids");
@@ -147,7 +147,7 @@ pub fn apply(
         }
     }
     if let Some(p) = uid_file {
-        crate::runtime_refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
+        crate::runtime::refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
     }
 
     info!("full_id_iptables applied mode={} queue={} iface={:?}", mode, queue, iface);

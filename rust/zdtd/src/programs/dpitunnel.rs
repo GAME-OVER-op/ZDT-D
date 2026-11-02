@@ -1,21 +1,22 @@
+use crate::common::network::default_iface;
 use anyhow::{Context, Result};
-use super::common::*;
+use crate::common::apps::{count_valid_uid_pairs};
+use crate::common::config::{normalize_config_args};
+use crate::common::process::{LogMode, spawn_detached_logged};
 use log::info;
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     time::Duration,
 };
-use std::fs::OpenOptions;
-use std::os::unix::process::CommandExt;
 
-use crate::android::pkg_uid::{self, Mode, Sha256Tracker};
+use crate::platform::android::pkg_uid::{self, Mode, Sha256Tracker};
 use crate::settings;
 use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
-use crate::shell;
+use crate::common::process::shell;
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
@@ -52,9 +53,9 @@ struct PortJson {
 }
 
 pub fn start_active_profiles() -> Result<()> {
-    ensure_dir(MODULE_DIR)?;
-    ensure_dir(WORKING_DIR)?;
-    ensure_dir(DPITUNNEL_ROOT)?;
+    crate::common::fs::require_dir_str(MODULE_DIR)?;
+    crate::common::fs::require_dir_str(WORKING_DIR)?;
+    crate::common::fs::require_dir_str(DPITUNNEL_ROOT)?;
 
     let active_path = Path::new(DPITUNNEL_ROOT).join("active.json");
     let active = read_json::<ActiveJson>(&active_path)
@@ -64,7 +65,7 @@ pub fn start_active_profiles() -> Result<()> {
         log::info!("dpitunnel: no enabled profiles in active.json");
         return Ok(());
     }
-    ensure_file(DPITUNNEL_BIN)?;
+    crate::common::fs::require_file_str(DPITUNNEL_BIN)?;
 
     let tracker = Sha256Tracker::new(SHA_FLAG_FILE);
 
@@ -79,7 +80,7 @@ pub fn start_active_profiles() -> Result<()> {
 
 fn start_profile(profile_name: &str, tracker: &Sha256Tracker) -> Result<()> {
     let profile_dir = Path::new(DPITUNNEL_ROOT).join(profile_name);
-    ensure_dir(profile_dir.to_string_lossy().as_ref())?;
+    crate::common::fs::require_dir_str(profile_dir.to_string_lossy().as_ref())?;
 
     let port_path = profile_dir.join("port.json");
     let port_cfg = read_json::<PortJson>(&port_path)
@@ -113,9 +114,9 @@ fn start_profile(profile_name: &str, tracker: &Sha256Tracker) -> Result<()> {
     let resolved_mobile = count_valid_uid_pairs(&out_mobile)?;
     let resolved_wifi = count_valid_uid_pairs(&out_wifi)?;
     let resolved_total = resolved_user + resolved_mobile + resolved_wifi;
-    let has_launch_marker = pkg_uid::file_has_launch_marker(&in_user).unwrap_or(false)
-        || pkg_uid::file_has_launch_marker(&in_mobile).unwrap_or(false)
-        || pkg_uid::file_has_launch_marker(&in_wifi).unwrap_or(false);
+    let has_launch_marker = crate::common::apps::file_has_launch_marker(&in_user).unwrap_or(false)
+        || crate::common::apps::file_has_launch_marker(&in_mobile).unwrap_or(false)
+        || crate::common::apps::file_has_launch_marker(&in_wifi).unwrap_or(false);
     if resolved_total == 0 && !has_launch_marker {
         log::warn!("dpitunnel: no apps resolved for {} -> skip start/iptables", profile_dir.display());
         return Ok(());
@@ -220,14 +221,6 @@ fn spawn_dpitunnel(
     //   explicitly sets --ip in config.txt, bind to 127.0.0.1.
     let port_s = port.to_string();
 
-    let logf = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-
     let mut cmd = Command::new(bin);
     cmd.current_dir(workdir);
     if !args_contain_ip(extra_args) {
@@ -235,21 +228,14 @@ fn spawn_dpitunnel(
     }
     cmd.arg("--port")
         .arg(&port_s)
-        .args(extra_args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
+        .args(extra_args);
 
-    unsafe {
-        cmd.pre_exec(|| {
-            unsafe {
-                let _ = libc::setsid();
-            }
-            Ok(())
-        });
-    }
-
-    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
+    let child = spawn_detached_logged(
+        &mut cmd,
+        log_path,
+        LogMode::Truncate,
+        || format!("spawn {}", bin.display()),
+    )?;
     let pid = child.id();
     info!(
         "spawned dpitunnel pid={} port={} log={}",
@@ -300,21 +286,5 @@ fn is_tcp_port_in_use(port: u16) -> Result<bool> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    crate::jsonfs::read_json(path)
-}
-
-fn ensure_dir(p: &str) -> Result<()> {
-    let path = Path::new(p);
-    if !path.is_dir() {
-        anyhow::bail!("directory missing: {}", path.display());
-    }
-    Ok(())
-}
-
-fn ensure_file(p: &str) -> Result<()> {
-    let path = Path::new(p);
-    if !path.is_file() {
-        anyhow::bail!("file missing: {}", path.display());
-    }
-    Ok(())
+    crate::common::fs::json::read_json(path)
 }

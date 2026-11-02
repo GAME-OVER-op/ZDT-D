@@ -1,3 +1,5 @@
+pub mod lock;
+pub mod backup;
 pub mod caps;
 pub mod port_filter;
 pub mod mangle_app;

@@ -1,17 +1,22 @@
 use anyhow::{Context, Result};
-use super::common::*;
+use crate::common::apps::{count_valid_uid_pairs};
+use crate::common::components::{find_module_binary};
+use crate::common::fs::{ensure_parent_dir};
+use crate::common::process::{LogMode, spawn_detached_logged};
+use crate::network::t2s::{T2sProfileRouting, launch_profile_t2s, profile_scope, format_ports_csv, T2sSpawnConfig};
+use crate::common::fs::truncate_file;
+pub use crate::common::profile::{ActiveProfiles, ProfileState};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs::{self, OpenOptions},
-    os::unix::process::CommandExt,
+    collections::BTreeSet,
+    fs,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
+use crate::platform::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
 use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
 use crate::settings;
 
@@ -22,18 +27,6 @@ const MYPROGRAM_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/myp
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/myprogram/active.json";
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
 const FIXED_SOCKS_HOST: &str = "127.0.0.1";
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ProfileState {
-    #[serde(default)]
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ActiveProfiles {
-    #[serde(default)]
-    pub profiles: BTreeMap<String, ProfileState>,
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProfileSetting {
@@ -113,8 +106,8 @@ fn proto_choice_for_setting(setting: &ProfileSetting) -> ProtoChoice {
 }
 
 pub fn start_if_enabled() -> Result<()> {
-    ensure_dir(MODULE_DIR)?;
-    ensure_dir(WORKING_DIR)?;
+    crate::common::fs::create_dir_all_context_str(MODULE_DIR)?;
+    crate::common::fs::create_dir_all_context_str(WORKING_DIR)?;
     fs::create_dir_all(MYPROGRAM_ROOT).ok();
     fs::create_dir_all(MYPROGRAM_PROFILE_ROOT).ok();
 
@@ -139,7 +132,7 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    let mut external_used = crate::ports::collect_used_ports_for_conflict_check().unwrap_or_else(|_| BTreeSet::new());
+    let mut external_used = crate::programs::ports::collect_used_ports_for_conflict_check().unwrap_or_else(|_| BTreeSet::new());
     for p in collect_defined_myprogram_ports_local() {
         external_used.remove(&p);
     }
@@ -163,7 +156,7 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    let t2s_bin = if plans.iter().any(|p| p.setting.apps_mode && route_mode_is_t2s(&p.setting)) { Some(find_bin("t2s")?) } else { None };
+    let t2s_bin = if plans.iter().any(|p| p.setting.apps_mode && route_mode_is_t2s(&p.setting)) { Some(find_module_binary("t2s")?) } else { None };
     crate::logging::user_info("myprogram: custom profiles");
 
     for plan in &plans {
@@ -175,31 +168,27 @@ pub fn start_if_enabled() -> Result<()> {
 
         if plan.setting.apps_mode {
             if route_mode_is_t2s(&plan.setting) {
-                let t2s_ports_csv = plan.t2s_ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
-                spawn_t2s_proxy(T2sSpawnConfig {
-                    bin: t2s_bin.as_ref().expect("t2s checked"),
-                    listen_addr: "127.0.0.1",
-                    listen_port: plan.setting.t2s_port,
-                    socks_host: FIXED_SOCKS_HOST,
-                    socks_ports_csv: &t2s_ports_csv,
-                    web_port: Some(plan.setting.t2s_web_port),
-                    program: "myprogram",
-                    profile: &plan.name,
-                    scope: &format!("profile/myprogram/{}", plan.name),
-                    log_path: &plan.t2s_log,
-                    socks_user: Some(plan.setting.socks_user.as_str()),
-                    socks_pass: Some(plan.setting.socks_pass.as_str()),
-                    ..Default::default()
-                })
-                    .with_context(|| format!("spawn t2s profile={}", plan.name))?;
-                apply_t2s_routing(
-                    &plan.uid_out,
-                    plan.setting.t2s_port,
-                    ProtoChoice::Tcp,
+                let t2s_ports_csv = format_ports_csv(plan.t2s_ports.iter().copied());
+                let scope = profile_scope("myprogram", &plan.name);
+                launch_profile_t2s(
+                    T2sSpawnConfig {
+                        bin: t2s_bin.as_ref().expect("t2s checked"),
+                        listen_addr: "127.0.0.1",
+                        listen_port: plan.setting.t2s_port,
+                        socks_host: FIXED_SOCKS_HOST,
+                        socks_ports_csv: &t2s_ports_csv,
+                        web_port: Some(plan.setting.t2s_web_port),
+                        program: "myprogram",
+                        profile: &plan.name,
+                        scope: &scope,
+                        log_path: &plan.t2s_log,
+                        socks_user: Some(plan.setting.socks_user.as_str()),
+                        socks_pass: Some(plan.setting.socks_pass.as_str()),
+                        ..Default::default()
+                    },
+                    T2sProfileRouting::legacy(&plan.uid_out, ProtoChoice::Tcp),
                     None,
-                    DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() },
-                )
-                .with_context(|| format!("iptables profile={}", plan.name))?;
+                )?;
             } else {
                 iptables_port::apply(
                     &plan.uid_out,
@@ -266,17 +255,17 @@ fn build_profile_plan(profile: &str, external_used: &BTreeSet<u16>, own_used: &B
     let protect_ports = read_port_list(&protect_ports_path(profile))
         .with_context(|| format!("read {}", protect_ports_path(profile).display()))?;
 
-    let mut uid_out = out_program_path(profile);
+    let uid_out = out_program_path(profile);
     let mut uid_count = 0usize;
     if setting.apps_mode {
         let tracker = Sha256Tracker::new(SHA_FLAG_FILE);
         let uid_in = uid_program_path(profile);
-        ensure_file_empty(&uid_in)?;
+        crate::common::fs::ensure_empty_file_write_context(&uid_in)?;
         ensure_parent_dir(&uid_out)?;
         let _ = pkg_uid::unified_processing(UidMode::Default, &tracker, &uid_out, &uid_in)
             .with_context(|| format!("pkg_uid processing profile={profile}"))?;
         uid_count = count_valid_uid_pairs(&uid_out).unwrap_or(0);
-        let has_launch_marker = pkg_uid::file_has_launch_marker(&uid_in).unwrap_or(false);
+        let has_launch_marker = crate::common::apps::file_has_launch_marker(&uid_in).unwrap_or(false);
         if uid_count == 0 && !has_launch_marker {
             warn!("myprogram: profile '{}' has no resolved apps", profile);
             return Ok(None);
@@ -396,13 +385,13 @@ pub fn ensure_profile_layout(profile: &str) -> Result<()> {
     fs::create_dir_all(root.join("app/out"))?;
     fs::create_dir_all(root.join("log"))?;
     fs::create_dir_all(root.join("bin"))?;
-    ensure_file_empty(&uid_program_path(profile))?;
-    ensure_file_empty(&out_program_path(profile))?;
-    ensure_file_empty(&command_path(profile))?;
-    ensure_file_empty(&t2s_ports_path(profile))?;
-    ensure_file_empty(&protect_ports_path(profile))?;
-    ensure_file_empty(&root.join("log/program.log"))?;
-    ensure_file_empty(&root.join("log/t2s.log"))?;
+    crate::common::fs::ensure_empty_file_write_context(&uid_program_path(profile))?;
+    crate::common::fs::ensure_empty_file_write_context(&out_program_path(profile))?;
+    crate::common::fs::ensure_empty_file_write_context(&command_path(profile))?;
+    crate::common::fs::ensure_empty_file_write_context(&t2s_ports_path(profile))?;
+    crate::common::fs::ensure_empty_file_write_context(&protect_ports_path(profile))?;
+    crate::common::fs::ensure_empty_file_write_context(&root.join("log/program.log"))?;
+    crate::common::fs::ensure_empty_file_write_context(&root.join("log/t2s.log"))?;
     if !setting_path(profile).exists() {
         write_json_atomic(&setting_path(profile), &ProfileSetting::default())?;
     }
@@ -466,16 +455,16 @@ pub fn stop_all() -> Result<()> {
             let runtime_path = runtime_path(profile);
             let runtime: RuntimeState = read_json(&runtime_path).unwrap_or_default();
             if runtime.pgid > 1 {
-                let _ = crate::shell::ok_sh(&format!("kill -15 -- -{}", runtime.pgid));
+                let _ = crate::common::process::shell::ok_sh(&format!("kill -15 -- -{}", runtime.pgid));
             } else if runtime.pid > 1 {
-                let _ = crate::shell::ok_sh(&format!("kill -15 {}", runtime.pid));
+                let _ = crate::common::process::shell::ok_sh(&format!("kill -15 {}", runtime.pid));
             }
             if runtime.pgid > 1 || runtime.pid > 1 {
                 std::thread::sleep(std::time::Duration::from_millis(300));
                 if runtime.pgid > 1 {
-                    let _ = crate::shell::ok_sh(&format!("kill -9 -- -{}", runtime.pgid));
+                    let _ = crate::common::process::shell::ok_sh(&format!("kill -9 -- -{}", runtime.pgid));
                 } else if runtime.pid > 1 {
-                    let _ = crate::shell::ok_sh(&format!("kill -9 {}", runtime.pid));
+                    let _ = crate::common::process::shell::ok_sh(&format!("kill -9 {}", runtime.pid));
                 }
             }
             let _ = write_json_atomic(&runtime_path, &RuntimeState::default());
@@ -540,23 +529,16 @@ pub fn parse_port_list_str(raw: &str) -> Result<Vec<u16>> {
 pub fn validate_port_list_str(raw: &str) -> Result<()> { let _ = parse_port_list_str(raw)?; Ok(()) }
 
 fn spawn_program(command: &str, bin_dir: &Path, log_path: &Path) -> Result<RuntimeState> {
-    let logf = OpenOptions::new().create(true).write(true).truncate(true).open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
     let mut cmd = Command::new("sh");
     cmd.arg("-c")
         .arg(command)
-        .current_dir(bin_dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-    let child = cmd.spawn().with_context(|| "spawn custom program")?;
+        .current_dir(bin_dir);
+    let child = spawn_detached_logged(
+        &mut cmd,
+        log_path,
+        LogMode::Truncate,
+        || "spawn custom program".to_string(),
+    )?;
     let pid = child.id();
     let pgid = pid as i32;
     let runtime = RuntimeState {
@@ -570,19 +552,9 @@ fn spawn_program(command: &str, bin_dir: &Path, log_path: &Path) -> Result<Runti
     Ok(runtime)
 }
 
-fn find_bin(name: &str) -> Result<PathBuf> {
-    let p = Path::new("/data/adb/modules/ZDT-D/bin").join(name);
-    if p.is_file() { Ok(p) } else { anyhow::bail!("binary not found: {}", p.display()) }
-}
-
-fn truncate_file(p: &Path) -> Result<()> {
-    ensure_parent_dir(p)?;
-    let _ = OpenOptions::new().create(true).write(true).truncate(true).open(p)?;
-    Ok(())
-}
 
 fn read_json<T: for<'de> Deserialize<'de>>(p: &Path) -> Result<T> {
-    crate::jsonfs::read_json_short_ctx(p)
+    crate::common::fs::json::read_json_short_ctx(p)
 }
 
 fn write_json_atomic<T: Serialize>(p: &Path, v: &T) -> Result<()> {
@@ -616,17 +588,4 @@ fn write_bytes_atomic(p: &Path, data: &[u8]) -> Result<()> {
 
 fn chmod_best_effort(path: &Path, mode: u32) {
     let _ = Command::new("chmod").arg(format!("{:o}", mode)).arg(path).status();
-}
-
-fn ensure_dir(p: &str) -> Result<()> {
-    fs::create_dir_all(p).with_context(|| format!("mkdir {p}"))?;
-    Ok(())
-}
-
-fn ensure_file_empty(p: &Path) -> Result<()> {
-    if !p.exists() {
-        ensure_parent_dir(p)?;
-        fs::write(p, "").with_context(|| format!("write {}", p.display()))?;
-    }
-    Ok(())
 }

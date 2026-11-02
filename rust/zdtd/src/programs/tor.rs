@@ -1,15 +1,19 @@
 use anyhow::{Context, Result};
-use super::common::*;
+use crate::common::config::deserialize_boolish;
+use crate::common::apps::{count_valid_uid_pairs};
+use crate::common::components::{find_module_binary};
+use crate::common::process::{filter_live_pids, pgrep_full_regex, ps_ef_pids_where, LogMode, spawn_detached_logged};
+use crate::network::t2s::{apply_t2s_routing, T2sSpawnConfig, spawn_t2s_proxy};
+use crate::common::fs::truncate_file;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, OpenOptions},
-    os::unix::process::CommandExt,
+    fs,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
 };
 
-use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
+use crate::platform::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
 use crate::iptables::iptables_port::{DpiTunnelOptions, ProtoChoice};
 use crate::settings;
 
@@ -25,27 +29,7 @@ const LEGACY_CLIENT_TRANSPORT_PLUGIN_LINE: &str = "ClientTransportPlugin obfs4 e
 const SUPPORTED_BRIDGE_PROTOCOLS: &[&str] = &["obfs4", "webtunnel", "snowflake", "meek_lite"];
 const DEFAULT_TORRC: &str = "DataDirectory /data/adb/modules/ZDT-D/working_folder/tor/\nSocksPort 127.0.0.1:9050\nLog notice stdout\n\nUseBridges 1\nClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules/ZDT-D/bin/lyrebird\n";
 
-fn deserialize_boolish<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::{Error as _, Unexpected};
-    let v = serde_json::Value::deserialize(deserializer)?;
-    match v {
-        serde_json::Value::Bool(b) => Ok(b),
-        serde_json::Value::Number(n) => match n.as_i64() {
-            Some(0) => Ok(false),
-            Some(1) => Ok(true),
-            _ => Err(D::Error::invalid_value(Unexpected::Other("number"), &"bool or 0/1")),
-        },
-        serde_json::Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
-            "true" | "1" => Ok(true),
-            "false" | "0" => Ok(false),
-            _ => Err(D::Error::invalid_value(Unexpected::Str(&s), &"bool or 0/1")),
-        },
-        _ => Err(D::Error::invalid_value(Unexpected::Other("non-bool"), &"bool or 0/1")),
-    }
-}
+
 
 fn serialize_bool_as_bool<S>(value: &bool, serializer: S) -> std::result::Result<S::Ok, S::Error>
 where
@@ -106,27 +90,10 @@ fn out_program_path() -> PathBuf { settings::tor_out_program_path() }
 fn tor_log_path() -> PathBuf { root_dir().join("log/tor.log") }
 fn t2s_log_path() -> PathBuf { root_dir().join("log/t2s.log") }
 
-fn write_text_atomic(p: &Path, content: &str) -> Result<()> {
-    if let Some(parent) = p.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    let tmp = p.with_extension("tmp");
-    fs::write(&tmp, content).with_context(|| format!("write {}", tmp.display()))?;
-    fs::rename(&tmp, p).with_context(|| format!("rename {} -> {}", tmp.display(), p.display()))?;
-    Ok(())
-}
 
-fn write_json_atomic<T: Serialize>(p: &Path, v: &T) -> Result<()> {
-    let txt = serde_json::to_string_pretty(v)?;
-    write_text_atomic(p, &txt)
-}
 
-fn ensure_empty_file(p: &Path) -> Result<()> {
-    if !p.exists() {
-        write_text_atomic(p, "")?;
-    }
-    Ok(())
-}
+
+
 
 pub fn ensure_layout() -> Result<()> {
     let root = root_dir();
@@ -136,29 +103,29 @@ pub fn ensure_layout() -> Result<()> {
 
     let enabled_path = enabled_path();
     if !enabled_path.exists() {
-        write_json_atomic(&enabled_path, &EnabledJson::default())?;
+        crate::common::fs::write_json_pretty_atomic_context(&enabled_path, &EnabledJson::default())?;
     } else {
         let current = match fs::read_to_string(&enabled_path) {
             Ok(raw) => serde_json::from_str::<EnabledJson>(&raw).unwrap_or_default().normalized(),
             Err(_) => EnabledJson::default(),
         };
-        write_json_atomic(&enabled_path, &current)?;
+        crate::common::fs::write_json_pretty_atomic_context(&enabled_path, &current)?;
     }
 
     let setting_path = setting_path();
     if !setting_path.exists() {
-        write_json_atomic(&setting_path, &Setting::default())?;
+        crate::common::fs::write_json_pretty_atomic_context(&setting_path, &Setting::default())?;
     }
 
     let torrc = torrc_path();
     if !torrc.exists() {
-        write_text_atomic(&torrc, DEFAULT_TORRC)?;
+        crate::common::fs::write_text_atomic_context(&torrc, DEFAULT_TORRC)?;
     }
 
-    ensure_empty_file(&uid_program_path())?;
-    ensure_empty_file(&out_program_path())?;
-    ensure_empty_file(&tor_log_path())?;
-    ensure_empty_file(&t2s_log_path())?;
+    crate::common::fs::ensure_empty_file_atomic_context(&uid_program_path())?;
+    crate::common::fs::ensure_empty_file_atomic_context(&out_program_path())?;
+    crate::common::fs::ensure_empty_file_atomic_context(&tor_log_path())?;
+    crate::common::fs::ensure_empty_file_atomic_context(&t2s_log_path())?;
     Ok(())
 }
 
@@ -174,7 +141,7 @@ pub fn load_enabled_json() -> Result<EnabledJson> {
 pub fn save_enabled_value(enabled: bool) -> Result<EnabledJson> {
     ensure_layout()?;
     let v = EnabledJson { enabled }.normalized();
-    write_json_atomic(&enabled_path(), &v)?;
+    crate::common::fs::write_json_pretty_atomic_context(&enabled_path(), &v)?;
     Ok(v)
 }
 
@@ -189,7 +156,7 @@ pub fn load_setting() -> Result<Setting> {
 
 pub fn save_setting(setting: &Setting) -> Result<()> {
     ensure_layout()?;
-    write_json_atomic(&setting_path(), setting)
+    crate::common::fs::write_json_pretty_atomic_context(&setting_path(), setting)
 }
 
 pub fn read_torrc_text() -> Result<String> {
@@ -204,21 +171,17 @@ pub fn read_torrc_text() -> Result<String> {
 pub fn write_torrc_text(content: &str) -> Result<()> {
     ensure_layout()?;
     let normalized = normalize_torrc_content(content);
-    write_text_atomic(&torrc_path(), &normalized)
+    crate::common::fs::write_text_atomic_context(&torrc_path(), &normalized)
 }
 
 pub fn read_uid_program_text() -> Result<String> {
     ensure_layout()?;
-    match fs::read_to_string(uid_program_path()) {
-        Ok(s) => Ok(s),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(e) => Err(anyhow::anyhow!("read uid_program failed: {e}")),
-    }
+    crate::common::apps::read_optional_uid_program_text(&uid_program_path())
 }
 
 pub fn write_uid_program_text(content: &str) -> Result<()> {
     ensure_layout()?;
-    write_text_atomic(&uid_program_path(), content)
+    crate::common::fs::write_text_atomic_context(&uid_program_path(), content)
 }
 
 pub fn rebuild_out_program() -> Result<Vec<u32>> {
@@ -231,23 +194,7 @@ pub fn rebuild_out_program() -> Result<Vec<u32>> {
 
 pub fn read_out_uids() -> Result<Vec<u32>> {
     ensure_layout()?;
-    let raw = match fs::read_to_string(out_program_path()) {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(anyhow::anyhow!("read out_program failed: {e}")),
-    };
-    let mut out = std::collections::BTreeSet::new();
-    for line in raw.lines() {
-        let s = line.trim();
-        if s.is_empty() { continue; }
-        let Some((_, rhs)) = s.rsplit_once('=') else { continue; };
-        if let Ok(uid) = rhs.trim().parse::<u32>() {
-            if uid > 0 {
-                out.insert(uid);
-            }
-        }
-    }
-    Ok(out.into_iter().collect())
+    crate::common::apps::read_out_uids(&out_program_path())
 }
 
 pub fn parse_socks_port_from_file(path: &Path) -> Result<u16> {
@@ -393,8 +340,8 @@ pub fn validate_enable_toggle_requirements() -> Result<()> {
 
 pub fn validate_enable_requirements() -> Result<()> {
     ensure_layout()?;
-    ensure_file(TOR_BIN)?;
-    ensure_file(LYREBIRD_BIN)?;
+    crate::common::fs::require_file_str(TOR_BIN)?;
+    crate::common::fs::require_file_str(LYREBIRD_BIN)?;
     let setting = load_setting()?;
     let torrc = normalize_torrc_content(&read_torrc_text()?);
     let socks_port = validate_torrc_ready(&torrc)?;
@@ -413,8 +360,8 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    ensure_file(TOR_BIN)?;
-    ensure_file(LYREBIRD_BIN)?;
+    crate::common::fs::require_file_str(TOR_BIN)?;
+    crate::common::fs::require_file_str(LYREBIRD_BIN)?;
     let setting = load_setting()?;
 
     let torrc_raw = read_torrc_text()?;
@@ -426,7 +373,7 @@ pub fn start_if_enabled() -> Result<()> {
 
     let _ = rebuild_out_program()?;
     let resolved = count_valid_uid_pairs(&out_program_path()).unwrap_or(0);
-    let has_launch_marker = pkg_uid::file_has_launch_marker(&uid_program_path()).unwrap_or(false);
+    let has_launch_marker = crate::common::apps::file_has_launch_marker(&uid_program_path()).unwrap_or(false);
     if resolved == 0 && !has_launch_marker {
         warn!("tor: no resolved apps -> skip start/iptables");
         return Ok(());
@@ -440,7 +387,7 @@ pub fn start_if_enabled() -> Result<()> {
         validate_setting(&setting, socks_port)?;
     }
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false, false, false, false, false)
+    let external_used = crate::programs::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false, false, false, false, false)
         .unwrap_or_default();
     let mut ports_to_check = vec![socks_port];
     if needs_t2s {
@@ -460,7 +407,7 @@ pub fn start_if_enabled() -> Result<()> {
 
     if needs_t2s {
         truncate_file(&t2s_log_path())?;
-        let t2s_bin = find_bin("t2s")?;
+        let t2s_bin = find_module_binary("t2s")?;
         let t2s_log = t2s_log_path();
         let t2s_socks_ports_csv = socks_port.to_string();
         spawn_t2s_proxy(T2sSpawnConfig {
@@ -521,25 +468,15 @@ fn validate_setting(setting: &Setting, socks_port: u16) -> Result<()> {
 }
 
 fn spawn_tor(torrc: &Path, log_path: &Path) -> Result<()> {
-    let logf = OpenOptions::new().create(true).write(true).truncate(true).open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-
     let mut cmd = Command::new(TOR_BIN);
-    cmd.arg("-f")
-        .arg(torrc)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
+    cmd.arg("-f").arg(torrc);
 
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-
-    let child = cmd.spawn().with_context(|| format!("spawn {}", TOR_BIN))?;
+    let child = spawn_detached_logged(
+        &mut cmd,
+        log_path,
+        LogMode::Truncate,
+        || format!("spawn {}", TOR_BIN),
+    )?;
     info!("spawned tor pid={} cfg={} log={}", child.id(), torrc.display(), log_path.display());
 
     std::thread::sleep(std::time::Duration::from_millis(150));
@@ -550,25 +487,25 @@ fn spawn_tor(torrc: &Path, log_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn find_bin(name: &str) -> Result<PathBuf> {
-    let p = Path::new("/data/adb/modules/ZDT-D/bin").join(name);
-    if p.is_file() {
-        Ok(p)
-    } else {
-        anyhow::bail!("binary not found: {}", p.display())
+
+pub fn main_pids_exact() -> Vec<i32> {
+    let torrc = torrc_path().display().to_string();
+    let pattern = format!("^torproxy -f {}$", torrc);
+    let mut pids = pgrep_full_regex(&pattern);
+    if pids.is_empty() {
+        let expected = format!("torproxy -f {}", torrc);
+        pids = ps_ef_pids_where(|line| line.contains(&expected));
     }
+    filter_live_pids(&mut pids);
+    pids
 }
 
-fn truncate_file(p: &Path) -> Result<()> {
-    ensure_parent_dir(p)?;
-    let _ = OpenOptions::new().create(true).write(true).truncate(true).open(p)?;
-    Ok(())
-}
-
-fn ensure_file(p: &str) -> Result<()> {
-    let path = Path::new(p);
-    if !path.is_file() {
-        anyhow::bail!("file missing: {}", path.display());
+pub fn helper_pids_exact() -> Vec<i32> {
+    let pattern = format!("^{}", LYREBIRD_BIN);
+    let mut pids = pgrep_full_regex(&pattern);
+    if pids.is_empty() {
+        pids = ps_ef_pids_where(|line| line.contains(LYREBIRD_BIN));
     }
-    Ok(())
+    filter_live_pids(&mut pids);
+    pids
 }

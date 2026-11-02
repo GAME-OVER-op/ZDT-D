@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use log::{info, warn};
 use std::{collections::BTreeSet, fs, path::Path, time::Duration};
 
-use crate::{settings, shell::{self, Capture}, xtables_lock};
+use crate::{settings, common::process::shell::{self, Capture}, iptables::lock as xtables_lock};
 
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
 const IPT_SLOW_TIMEOUT: Duration = Duration::from_secs(15);
@@ -111,7 +111,7 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         if allow_loopback_redirect {
             remove_nat_scoped_chain(&scoped_nat_chain_name(&format!("local:{scope}")), "NAT_DPI_LOCAL")?;
         }
-        crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
+        crate::runtime::refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
         return Ok(());
     }
 
@@ -144,7 +144,7 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         if let Some(chain) = scoped_local_chain.as_deref() {
             finish_nat_scoped_chain(chain)?;
         }
-        crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
+        crate::runtime::refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
         return Ok(());
     }
 
@@ -205,7 +205,7 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
     if let Some(chain) = scoped_local_chain.as_deref() {
         finish_nat_scoped_chain(chain)?;
     }
-    crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
+    crate::runtime::refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
     Ok(())
 }
 

@@ -37,7 +37,7 @@ pub fn parse_ranges(spec: &str) -> Vec<PortRange> {
         // range: A-B or A:B
         if let Some((a, b)) = t.split_once('-').or_else(|| t.split_once(':')) {
             if let (Ok(sa), Ok(sb)) = (a.parse::<u16>(), b.parse::<u16>()) {
-                if sa >= 1 && sb >= 1 && sa <= 65535 && sb <= 65535 {
+                if sa >= 1 && sb >= 1 {
                     let (s, e) = if sa <= sb { (sa, sb) } else { (sb, sa) };
                     out.push(PortRange::new(s, e));
                 }
@@ -45,7 +45,7 @@ pub fn parse_ranges(spec: &str) -> Vec<PortRange> {
             continue;
         }
         if let Ok(p) = t.parse::<u16>() {
-            if p >= 1 && p <= 65535 {
+            if p >= 1 {
                 out.push(PortRange::new(p, p));
             }
         }

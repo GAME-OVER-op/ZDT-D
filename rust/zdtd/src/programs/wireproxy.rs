@@ -1,17 +1,22 @@
 use anyhow::{Context, Result};
-use super::common::*;
+use crate::common::apps::{count_valid_uid_pairs};
+use crate::common::components::{find_module_binary};
+use crate::common::fs::{ensure_parent_dir, is_nonempty_file};
+use crate::common::process::{filter_live_pids, ps_ef_pids_where, LogMode, spawn_detached_logged};
+use crate::network::t2s::{T2sProfileRouting, T2sHotspotRouting, launch_profile_t2s, profile_scope, format_ports_csv, T2sSpawnConfig};
+use crate::common::fs::truncate_file;
+pub use crate::common::profile::{ActiveProfiles, ProfileState};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs::{self, OpenOptions},
-    os::unix::process::CommandExt,
+    collections::BTreeSet,
+    fs,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
 };
 
-use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::{hotspot, iptables_port::{DpiTunnelOptions, ProtoChoice}};
+use crate::platform::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
+use crate::iptables::iptables_port::ProtoChoice;
 use crate::settings;
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
@@ -24,18 +29,6 @@ const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/wireproxy/acti
 // IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
 // Never introduce module-specific *.flag.sha256 files here.
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ProfileState {
-    #[serde(default)]
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct ActiveProfiles {
-    #[serde(default)]
-    pub profiles: BTreeMap<String, ProfileState>,
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProfileSetting {
@@ -97,8 +90,13 @@ pub fn read_setting(profile: &str) -> Result<ProfileSetting> {
 }
 
 pub fn start_if_enabled() -> Result<()> {
-    ensure_dir(MODULE_DIR)?;
-    ensure_dir(WORKING_DIR)?;
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    start_if_enabled_with_settings(&api_settings)
+}
+
+pub(crate) fn start_if_enabled_with_settings(api_settings: &settings::ApiSettings) -> Result<()> {
+    crate::common::fs::require_dir_str(MODULE_DIR)?;
+    crate::common::fs::require_dir_str(WORKING_DIR)?;
     fs::create_dir_all(WIREPROXY_ROOT).ok();
     fs::create_dir_all(WIREPROXY_PROFILE_ROOT).ok();
 
@@ -122,14 +120,13 @@ pub fn start_if_enabled() -> Result<()> {
         info!("wireproxy: no enabled profiles in active.json");
         return Ok(());
     }
-    ensure_file(WIREPROXY_BIN)?;
+    crate::common::fs::require_file_str(WIREPROXY_BIN)?;
 
-    let api_settings = settings::load_api_settings().unwrap_or_default();
     let hotspot_profile = api_settings
         .hotspot_t2s_wireproxy_profile()
         .map(|s| s.to_string());
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding(false, true)
+    let external_used = crate::programs::ports::collect_used_ports_for_conflict_check_excluding(false, true)
         .unwrap_or_else(|_| BTreeSet::new());
     let mut own_used = BTreeSet::<u16>::new();
     let mut plans = Vec::<ProfilePlan>::new();
@@ -157,7 +154,7 @@ pub fn start_if_enabled() -> Result<()> {
     }
 
     let t2s_bin = if plans.iter().any(|plan| plan.needs_t2s) {
-        Some(find_bin("t2s")?)
+        Some(find_module_binary("t2s")?)
     } else {
         None
     };
@@ -176,12 +173,7 @@ pub fn start_if_enabled() -> Result<()> {
     crate::logging::user_info("wireproxy: запуск");
 
     for plan in &plans {
-        let ports_csv = plan
-            .servers
-            .iter()
-            .map(|s| s.port.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
+        let ports_csv = format_ports_csv(plan.servers.iter().map(|server| server.port));
 
         for server in &plan.servers {
             ensure_parent_dir(&server.log_path)?;
@@ -196,41 +188,31 @@ pub fn start_if_enabled() -> Result<()> {
         if plan.needs_t2s {
             let t2s_bin = t2s_bin.as_ref().context("t2s binary path missing for wireproxy profile")?;
             truncate_file(&plan.t2s_log)?;
-            spawn_t2s_proxy(T2sSpawnConfig {
-                bin: t2s_bin,
-                listen_addr: t2s_listen_addr,
-                listen_port: plan.setting.t2s_port,
-                socks_host: "127.0.0.1",
-                socks_ports_csv: &ports_csv,
-                web_port: Some(plan.setting.t2s_web_port),
-                program: "wireproxy",
-                profile: &plan.name,
-                scope: &format!("profile/wireproxy/{}", plan.name),
-                log_path: &plan.t2s_log,
-                ..Default::default()
-            })
-            .with_context(|| format!("spawn t2s profile={}", plan.name))?;
-
-            if hotspot_for_plan {
-                hotspot::ensure_prerouting_redirect(hotspot::HotspotRedirectConfig {
-                    owner: "wireproxy",
+            let scope = profile_scope("wireproxy", &plan.name);
+            launch_profile_t2s(
+                T2sSpawnConfig {
+                    bin: t2s_bin,
+                    listen_addr: t2s_listen_addr,
                     listen_port: plan.setting.t2s_port,
-                    capture_all: api_settings.hotspot_t2s_capture_all,
-                    bypass_ports: hotspot::DEFAULT_HOTSPOT_BYPASS_PORTS,
-                })?;
-            }
-
-            apply_t2s_routing(
-                &plan.uid_out,
-                plan.setting.t2s_port,
-                ProtoChoice::Tcp,
-                None,
-                DpiTunnelOptions {
-                    port_preference: 1,
-                    ..DpiTunnelOptions::default()
+                    socks_host: "127.0.0.1",
+                    socks_ports_csv: &ports_csv,
+                    web_port: Some(plan.setting.t2s_web_port),
+                    program: "wireproxy",
+                    profile: &plan.name,
+                    scope: &scope,
+                    log_path: &plan.t2s_log,
+                    ..Default::default()
                 },
-            )
-            .with_context(|| format!("iptables profile={}", plan.name))?;
+                T2sProfileRouting::legacy(&plan.uid_out, ProtoChoice::Tcp),
+                if hotspot_for_plan {
+                    Some(T2sHotspotRouting {
+                        owner: "wireproxy",
+                        capture_all: api_settings.hotspot_t2s_capture_all,
+                    })
+                } else {
+                    None
+                },
+            )?;
             if plan.uid_count == 0 {
                 info!("wireproxy: profile={} has no routed app UIDs yet; registered runtime routing for hot app refresh", plan.name);
             }
@@ -268,7 +250,7 @@ fn collect_enabled_local_ports(enabled_names: &[String]) -> BTreeSet<u16> {
         let Ok(setting) = read_setting(name) else { continue };
         let app_in = profile_root(name).join("app/uid/user_program");
         let has_real_apps = app_list_has_real_apps(&app_in).unwrap_or(false);
-        let has_launch_marker = pkg_uid::file_has_launch_marker(&app_in).unwrap_or(false);
+        let has_launch_marker = crate::common::apps::file_has_launch_marker(&app_in).unwrap_or(false);
         let profile_can_start = has_real_apps || has_launch_marker;
         if !profile_can_start {
             continue;
@@ -309,8 +291,8 @@ fn collect_enabled_local_ports(enabled_names: &[String]) -> BTreeSet<u16> {
 
 pub fn start_construction_profile(profile: &str) -> Result<()> {
     ensure_valid_profile_name(profile)?;
-    ensure_dir(MODULE_DIR)?;
-    ensure_dir(WORKING_DIR)?;
+    crate::common::fs::require_dir_str(MODULE_DIR)?;
+    crate::common::fs::require_dir_str(WORKING_DIR)?;
     fs::create_dir_all(WIREPROXY_ROOT).ok();
     fs::create_dir_all(WIREPROXY_PROFILE_ROOT).ok();
 
@@ -319,13 +301,13 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
         info!("wireproxy: construction profile '{}' is disabled, skip targeted start", profile);
         return Ok(());
     }
-    ensure_file(WIREPROXY_BIN)?;
+    crate::common::fs::require_file_str(WIREPROXY_BIN)?;
 
     let api_settings = settings::load_api_settings().unwrap_or_default();
     let hotspot_profile = api_settings
         .hotspot_t2s_wireproxy_profile()
         .map(|s| s.to_string());
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding(false, true)
+    let external_used = crate::programs::ports::collect_used_ports_for_conflict_check_excluding(false, true)
         .unwrap_or_else(|_| BTreeSet::new());
     let other_enabled_names: Vec<String> = active
         .profiles
@@ -341,16 +323,11 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
     };
 
     let t2s_bin = if plan.needs_t2s {
-        Some(find_bin("t2s")?)
+        Some(find_module_binary("t2s")?)
     } else {
         None
     };
-    let ports_csv = plan
-        .servers
-        .iter()
-        .map(|srv| srv.port.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
+    let ports_csv = format_ports_csv(plan.servers.iter().map(|server| server.port));
 
     for server in &plan.servers {
         ensure_parent_dir(&server.log_path)?;
@@ -365,41 +342,31 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
     if plan.needs_t2s {
         let t2s_bin = t2s_bin.as_ref().context("t2s binary path missing for wireproxy profile")?;
         truncate_file(&plan.t2s_log)?;
-        spawn_t2s_proxy(T2sSpawnConfig {
-            bin: t2s_bin,
-            listen_addr: t2s_listen_addr,
-            listen_port: plan.setting.t2s_port,
-            socks_host: "127.0.0.1",
-            socks_ports_csv: &ports_csv,
-            web_port: Some(plan.setting.t2s_web_port),
-            program: "wireproxy",
-            profile: &plan.name,
-            scope: &format!("profile/wireproxy/{}", plan.name),
-            log_path: &plan.t2s_log,
-            ..Default::default()
-        })
-        .with_context(|| format!("spawn t2s profile={}", plan.name))?;
-
-        if hotspot_for_plan {
-            hotspot::ensure_prerouting_redirect(hotspot::HotspotRedirectConfig {
-                owner: "wireproxy",
+        let scope = profile_scope("wireproxy", &plan.name);
+        launch_profile_t2s(
+            T2sSpawnConfig {
+                bin: t2s_bin,
+                listen_addr: t2s_listen_addr,
                 listen_port: plan.setting.t2s_port,
-                capture_all: api_settings.hotspot_t2s_capture_all,
-                bypass_ports: hotspot::DEFAULT_HOTSPOT_BYPASS_PORTS,
-            })?;
-        }
-
-        apply_t2s_routing(
-            &plan.uid_out,
-            plan.setting.t2s_port,
-            ProtoChoice::Tcp,
-            None,
-            DpiTunnelOptions {
-                port_preference: 1,
-                ..DpiTunnelOptions::default()
+                socks_host: "127.0.0.1",
+                socks_ports_csv: &ports_csv,
+                web_port: Some(plan.setting.t2s_web_port),
+                program: "wireproxy",
+                profile: &plan.name,
+                scope: &scope,
+                log_path: &plan.t2s_log,
+                ..Default::default()
             },
-        )
-        .with_context(|| format!("iptables profile={}", plan.name))?;
+            T2sProfileRouting::legacy(&plan.uid_out, ProtoChoice::Tcp),
+            if hotspot_for_plan {
+                Some(T2sHotspotRouting {
+                    owner: "wireproxy",
+                    capture_all: api_settings.hotspot_t2s_capture_all,
+                })
+            } else {
+                None
+            },
+        )?;
         if plan.uid_count == 0 {
             info!("wireproxy: profile={} has no routed app UIDs yet; registered runtime routing for hot app refresh", plan.name);
         }
@@ -437,7 +404,7 @@ fn app_list_has_real_apps(path: &Path) -> Result<bool> {
         if s.is_empty() {
             continue;
         }
-        if !pkg_uid::is_launch_marker_package(s) {
+        if !crate::common::apps::is_launch_marker_package(s) {
             return Ok(true);
         }
     }
@@ -500,7 +467,7 @@ fn build_profile_plan(
     let _ = pkg_uid::unified_processing(UidMode::Default, &tracker, &uid_out, &uid_in)
         .with_context(|| format!("pkg_uid processing profile={profile}"))?;
     let resolved = count_valid_uid_pairs(&uid_out).unwrap_or(0);
-    let has_launch_marker = pkg_uid::file_has_launch_marker(&uid_in).unwrap_or(false);
+    let has_launch_marker = crate::common::apps::file_has_launch_marker(&uid_in).unwrap_or(false);
     if resolved == 0 && !has_launch_marker {
         warn!("wireproxy: profile '{}' has no resolved apps", profile);
         return Ok(None);
@@ -712,32 +679,24 @@ fn ensure_valid_profile_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn main_pids_exact() -> Vec<i32> {
+    let mut pids = ps_ef_pids_where(|line| {
+        line.contains("wireproxy -c /data/adb/modules/ZDT-D/working_folder/wireproxy/")
+    });
+    filter_live_pids(&mut pids);
+    pids
+}
+
 fn spawn_wireproxy(config_path: &Path, log_path: &Path) -> Result<()> {
-    let logf = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-
     let mut cmd = Command::new(WIREPROXY_BIN);
-    cmd.arg("-c")
-        .arg(config_path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
+    cmd.arg("-c").arg(config_path);
 
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-
-    let child = cmd
-        .spawn()
-        .with_context(|| format!("spawn {}", WIREPROXY_BIN))?;
+    let child = spawn_detached_logged(
+        &mut cmd,
+        log_path,
+        LogMode::Truncate,
+        || format!("spawn {}", WIREPROXY_BIN),
+    )?;
     info!(
         "spawned wireproxy pid={} cfg={} log={}",
         child.id(),
@@ -753,20 +712,6 @@ fn spawn_wireproxy(config_path: &Path, log_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn find_bin(name: &str) -> Result<PathBuf> {
-    let p = Path::new("/data/adb/modules/ZDT-D/bin").join(name);
-    if p.is_file() {
-        Ok(p)
-    } else {
-        anyhow::bail!("binary not found: {}", p.display())
-    }
-}
-
-fn truncate_file(p: &Path) -> Result<()> {
-    ensure_parent_dir(p)?;
-    let _ = OpenOptions::new().create(true).write(true).truncate(true).open(p)?;
-    Ok(())
-}
 
 fn ensure_file_empty(p: &Path) -> Result<()> {
     if !p.exists() {
@@ -779,24 +724,10 @@ fn ensure_file_empty(p: &Path) -> Result<()> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    crate::jsonfs::read_json(path)
+    crate::common::fs::json::read_json(path)
 }
 
-fn ensure_dir(p: &str) -> Result<()> {
-    let path = Path::new(p);
-    if !path.is_dir() {
-        anyhow::bail!("directory missing: {}", path.display());
-    }
-    Ok(())
-}
 
-fn ensure_file(p: &str) -> Result<()> {
-    let path = Path::new(p);
-    if !path.is_file() {
-        anyhow::bail!("file missing: {}", path.display());
-    }
-    Ok(())
-}
 
 #[derive(Debug, Clone)]
 pub struct BindAddress {

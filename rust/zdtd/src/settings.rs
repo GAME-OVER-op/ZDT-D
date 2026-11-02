@@ -1,5 +1,8 @@
 use anyhow::{Context, Result};
-use crate::logging;
+use crate::{
+    programs::registry::{self as program, ProgramId, StateKind},
+    logging,
+};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::{Path, PathBuf}};
 use std::os::unix::fs::PermissionsExt;
@@ -35,7 +38,7 @@ pub fn api_setting_json_path() -> PathBuf {
 
 
 pub fn proxyinfo_root_path() -> PathBuf {
-    Path::new(MODULE_DIR).join("working_folder/proxyInfo")
+    program::working_program_root(ProgramId::ProxyInfo)
 }
 
 pub fn proxyinfo_enabled_json_path() -> PathBuf {
@@ -51,7 +54,7 @@ pub fn proxyinfo_out_program_path() -> PathBuf {
 }
 
 pub fn blockedquic_root_path() -> PathBuf {
-    Path::new(MODULE_DIR).join("working_folder/blockedquic")
+    program::working_program_root(ProgramId::BlockedQuic)
 }
 
 pub fn blockedquic_enabled_json_path() -> PathBuf {
@@ -67,7 +70,7 @@ pub fn blockedquic_out_program_path() -> PathBuf {
 }
 
 pub fn tor_root_path() -> PathBuf {
-    Path::new(MODULE_DIR).join("working_folder/tor")
+    program::working_program_root(ProgramId::Tor)
 }
 
 pub fn tor_enabled_json_path() -> PathBuf {
@@ -170,9 +173,9 @@ impl ApiSettings {
         if self.hotspot_program.is_empty() && !self.hotspot_t2s_target.is_empty() {
             self.hotspot_mode = "proxy".to_string();
             self.hotspot_program = self.hotspot_t2s_target.clone();
-            self.hotspot_profile = match self.hotspot_program.as_str() {
-                "singbox" => self.hotspot_t2s_singbox_profile.clone(),
-                "wireproxy" => self.hotspot_t2s_wireproxy_profile.clone(),
+            self.hotspot_profile = match ProgramId::parse(&self.hotspot_program) {
+                Some(ProgramId::SingBox) => self.hotspot_t2s_singbox_profile.clone(),
+                Some(ProgramId::WireProxy) => self.hotspot_t2s_wireproxy_profile.clone(),
                 _ => String::new(),
             };
         }
@@ -209,16 +212,16 @@ impl ApiSettings {
             return;
         }
 
-        if self.hotspot_program == "operaproxy" {
+        if self.hotspot_program == ProgramId::OperaProxy.canonical() {
             self.hotspot_profile.clear();
         }
         self.hotspot_t2s_target = self.hotspot_program.clone();
-        self.hotspot_t2s_singbox_profile = if self.hotspot_program == "singbox" {
+        self.hotspot_t2s_singbox_profile = if self.hotspot_program == ProgramId::SingBox.canonical() {
             self.hotspot_profile.clone()
         } else {
             String::new()
         };
-        self.hotspot_t2s_wireproxy_profile = if self.hotspot_program == "wireproxy" {
+        self.hotspot_t2s_wireproxy_profile = if self.hotspot_program == ProgramId::WireProxy.canonical() {
             self.hotspot_profile.clone()
         } else {
             String::new()
@@ -271,23 +274,23 @@ impl ApiSettings {
     }
 
     pub fn hotspot_t2s_for_operaproxy(&self) -> bool {
-        self.hotspot_proxy_for("operaproxy")
+        self.hotspot_proxy_for(ProgramId::OperaProxy.canonical())
     }
 
     pub fn hotspot_t2s_for_singbox(&self) -> bool {
-        self.hotspot_proxy_for("singbox")
+        self.hotspot_proxy_for(ProgramId::SingBox.canonical())
     }
 
     pub fn hotspot_t2s_singbox_profile(&self) -> Option<&str> {
-        self.hotspot_proxy_profile_for("singbox")
+        self.hotspot_proxy_profile_for(ProgramId::SingBox.canonical())
     }
 
     pub fn hotspot_t2s_for_wireproxy(&self) -> bool {
-        self.hotspot_proxy_for("wireproxy")
+        self.hotspot_proxy_for(ProgramId::WireProxy.canonical())
     }
 
     pub fn hotspot_t2s_wireproxy_profile(&self) -> Option<&str> {
-        self.hotspot_proxy_profile_for("wireproxy")
+        self.hotspot_proxy_profile_for(ProgramId::WireProxy.canonical())
     }
 }
 
@@ -299,22 +302,17 @@ fn normalize_hotspot_mode(raw: &str) -> String {
 }
 
 fn normalize_hotspot_t2s_target(raw: &str) -> String {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "operaproxy" | "opera-proxy" | "opera_proxy" => "operaproxy".to_string(),
-        "singbox" | "sing-box" | "sing_box" => "singbox".to_string(),
-        "wireproxy" | "wire-proxy" | "wire_proxy" => "wireproxy".to_string(),
-        _ => String::new(),
-    }
+    ProgramId::parse(raw)
+        .filter(|id| id.descriptor().capabilities.hotspot_proxy)
+        .map(|id| id.canonical().to_string())
+        .unwrap_or_default()
 }
 
 fn normalize_hotspot_vpn_program(raw: &str) -> String {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "openvpn" | "open-vpn" | "open_vpn" => "openvpn".to_string(),
-        "amneziawg" | "amnezia-wg" | "amnezia_wg" | "awg" => "amneziawg".to_string(),
-        "mihomo" => "mihomo".to_string(),
-        "mieru" => "mieru".to_string(),
-        _ => String::new(),
-    }
+    ProgramId::parse(raw)
+        .filter(|id| id.descriptor().capabilities.hotspot_vpn)
+        .map(|id| id.canonical().to_string())
+        .unwrap_or_default()
 }
 
 pub fn load_api_settings() -> Result<ApiSettings> {
@@ -363,7 +361,7 @@ pub fn ensure_dirs() -> Result<()> {
 }
 
 pub fn working_root_path() -> PathBuf {
-    Path::new(MODULE_DIR).join("working_folder")
+    program::working_root()
 }
 
 pub fn working_program_root_path(program: &str) -> PathBuf {
@@ -396,57 +394,61 @@ UseBridges 1
 ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules/ZDT-D/bin/lyrebird
 "#;
 
-    let layouts = [
-        ("byedpi", "active.json", PROFILES_DEFAULT_JSON),
-        ("dpitunnel", "active.json", PROFILES_DEFAULT_JSON),
-        ("nfqws", "active.json", PROFILES_DEFAULT_JSON),
-        ("nfqws2", "active.json", PROFILES_DEFAULT_JSON),
-        ("singbox", "active.json", PROFILES_DEFAULT_JSON),
-        ("singbox-lx", "active.json", PROFILES_DEFAULT_JSON),
-        ("hysteria2", "active.json", PROFILES_DEFAULT_JSON),
-        ("wireproxy", "active.json", PROFILES_DEFAULT_JSON),
-        ("myproxy", "active.json", PROFILES_DEFAULT_JSON),
-        ("myprogram", "active.json", PROFILES_DEFAULT_JSON),
-        ("openvpn", "active.json", PROFILES_DEFAULT_JSON),
-        ("amneziawg", "active.json", PROFILES_DEFAULT_JSON),
-        ("tun2socks", "active.json", PROFILES_DEFAULT_JSON),
-        ("myvpn", "active.json", PROFILES_DEFAULT_JSON),
-        ("mihomo", "active.json", PROFILES_DEFAULT_JSON),
-        ("mieru", "active.json", PROFILES_DEFAULT_JSON),
-        ("dnscrypt", "active.json", ENABLED_FALSE_JSON),
-        ("operaproxy", "active.json", ENABLED_FALSE_JSON),
-        ("tgwsproxy", "active.json", ENABLED_FALSE_JSON),
-        ("proxyInfo", "enabled.json", PROXYINFO_ENABLED_JSON),
-        ("blockedquic", "enabled.json", PROXYINFO_ENABLED_JSON),
-        ("tor", "enabled.json", PROXYINFO_ENABLED_JSON),
-    ];
-
     fs::create_dir_all(working_root_path())
         .with_context(|| format!("mkdir {}", working_root_path().display()))?;
 
-    for (program, state_file, default_content) in layouts {
-        let root = working_program_root_path(program);
+    // Keep the historical creation order exactly. Registry owns metadata; this typed list
+    // owns only initialization order so first-error behavior stays compatible.
+    let layout_order = [
+        ProgramId::ByeDpi,
+        ProgramId::DpiTunnel,
+        ProgramId::Nfqws,
+        ProgramId::Nfqws2,
+        ProgramId::SingBox,
+        ProgramId::SingBoxLx,
+        ProgramId::Hysteria2,
+        ProgramId::WireProxy,
+        ProgramId::MyProxy,
+        ProgramId::MyProgram,
+        ProgramId::OpenVpn,
+        ProgramId::AmneziaWg,
+        ProgramId::Tun2Socks,
+        ProgramId::MyVpn,
+        ProgramId::Mihomo,
+        ProgramId::Mieru,
+        ProgramId::DnsCrypt,
+        ProgramId::OperaProxy,
+        ProgramId::TgwsProxy,
+        ProgramId::ProxyInfo,
+        ProgramId::BlockedQuic,
+        ProgramId::Tor,
+    ];
+
+    for id in layout_order {
+        let descriptor = id.descriptor();
+        let default_content = match descriptor.state_kind {
+            StateKind::ProfilesActive => PROFILES_DEFAULT_JSON,
+            StateKind::EnabledActive => ENABLED_FALSE_JSON,
+            StateKind::EnabledJson => PROXYINFO_ENABLED_JSON,
+        };
+        let root = program::working_program_root(descriptor.id);
         fs::create_dir_all(&root).with_context(|| format!("mkdir {}", root.display()))?;
 
-        let state_path = root.join(state_file);
+        let state_path = root.join(descriptor.state_file);
         if !state_path.exists() {
             fs::write(&state_path, default_content)
                 .with_context(|| format!("write {}", state_path.display()))?;
         }
 
-        // Profile-based programs keep profile directories under working_folder/<program>/profile.
-        // Create the root eagerly so the Android app sees the same minimal layout after daemon start
-        // even before a first profile is created through the API.
-        match program {
-            "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "hysteria2" => {
-                fs::create_dir_all(root.join("profile"))
-                    .with_context(|| format!("mkdir {}", root.join("profile").display()))?;
-            }
-            _ => {}
+        // Preserve the historical eager-profile-root set exactly. Other profile programs
+        // still create their profile roots through their backend-specific layout code.
+        if descriptor.eager_profile_dir {
+            fs::create_dir_all(root.join("profile"))
+                .with_context(|| format!("mkdir {}", root.join("profile").display()))?;
         }
     }
 
-    let tor_root = working_program_root_path("tor");
+    let tor_root = program::working_program_root(ProgramId::Tor);
     let tor_setting = tor_root.join("setting.json");
     if !tor_setting.exists() {
         fs::write(&tor_setting, TOR_SETTING_JSON)
@@ -493,6 +495,7 @@ fn chmod_private(path: &Path) {
 // --- API token helpers ------------------------------------------------------
 
 /// Backward-compatible name expected by the daemon.
+#[allow(dead_code)]
 pub fn token_path() -> PathBuf {
     api_token_path()
 }

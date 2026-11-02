@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use log::{info, warn};
 use std::time::Duration;
 
-use crate::{captive_portal, shell::Capture, xtables_lock};
+use crate::{features::captive_portal, common::process::shell::Capture, iptables::lock as xtables_lock};
 
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
 const XT_WAIT_SECS: &str = "5";

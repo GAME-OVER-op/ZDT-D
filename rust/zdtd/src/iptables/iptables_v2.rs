@@ -3,8 +3,8 @@ use log::{info, warn};
 use std::{fs, path::Path, time::Duration};
 
 use crate::iptables::{caps, mangle_app, port_filter};
-use crate::shell::Capture;
-use crate::xtables_lock;
+use crate::common::process::shell::Capture;
+use crate::iptables::lock as xtables_lock;
 
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
 const XT_WAIT_SECS: &str = "5";
@@ -60,7 +60,7 @@ pub fn apply(
 
     let total = uids.len() as u64;
     let scope = format!("nfqueue:v2:queue={}:uid={}", port, uid_file.display());
-    crate::runtime_refresh::register_nfqueue_v2(uid_file, port, filter);
+    crate::runtime::refresh::register_nfqueue_v2(uid_file, port, filter);
     if uids.is_empty() {
         mangle_app::remove_scoped("iptables", &scope)?;
         let _ = mangle_app::remove_scoped("ip6tables", &format!("{scope}:v6"));

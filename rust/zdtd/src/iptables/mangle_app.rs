@@ -2,8 +2,8 @@ use anyhow::Result;
 use log::{info, warn};
 use std::time::Duration;
 
-use crate::shell::Capture;
-use crate::xtables_lock;
+use crate::common::process::shell::Capture;
+use crate::iptables::lock as xtables_lock;
 
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
 const XT_WAIT_SECS: &str = "5";

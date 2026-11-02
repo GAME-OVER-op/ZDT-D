@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
+use crate::common::process::{spawn_detached_logged, LogMode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
     fs::{self, OpenOptions},
     io::Read,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, UdpSocket},
-    os::unix::process::CommandExt,
     path::Path,
-    process::{Command, Stdio},
+    process::Command,
     thread,
     time::{Duration, Instant},
 };
@@ -184,12 +184,12 @@ pub fn ensure_layout() -> Result<()> {
     fs::create_dir_all(LOG_DIR).with_context(|| format!("mkdir {LOG_DIR}"))?;
 
     if !Path::new(ACTIVE_JSON).exists() {
-        write_json_pretty(Path::new(ACTIVE_JSON), &EnabledJson::default())?;
+        crate::common::fs::write_json_pretty_best_effort(Path::new(ACTIVE_JSON), &EnabledJson::default())?;
     }
     if !Path::new(SETTING_JSON).exists() {
         let mut setting = Setting::default();
         setting.secrets.push(generate_secret_hex().unwrap_or_else(|_| "0123456789abcdef0123456789abcdef".to_string()));
-        write_json_pretty(Path::new(SETTING_JSON), &setting)?;
+        crate::common::fs::write_json_pretty_best_effort(Path::new(SETTING_JSON), &setting)?;
     }
     if !Path::new(LOG_FILE).exists() {
         OpenOptions::new().create(true).append(true).open(LOG_FILE).ok();
@@ -214,7 +214,7 @@ pub fn save_enabled(enabled: bool) -> Result<()> {
     } else {
         enabled
     };
-    write_json_pretty(Path::new(ACTIVE_JSON), &EnabledJson { enabled: effective_enabled })
+    crate::common::fs::write_json_pretty_best_effort(Path::new(ACTIVE_JSON), &EnabledJson { enabled: effective_enabled })
 }
 
 pub fn load_effective_enabled() -> Result<EnabledJson> {
@@ -243,7 +243,7 @@ pub fn write_setting(setting: &Setting) -> Result<()> {
     let mut next = setting.clone();
     normalize_setting(&mut next);
     validate_setting(&next)?;
-    write_json_pretty(Path::new(SETTING_JSON), &next)?;
+    crate::common::fs::write_json_pretty_best_effort(Path::new(SETTING_JSON), &next)?;
     write_generated_files(&next).ok();
     Ok(())
 }
@@ -514,28 +514,22 @@ pub fn start_if_enabled() -> Result<()> {
     }
     if !is_installed() {
         log::warn!("tgwsproxy: binary is missing: {TGWS_BIN}");
-        crate::programs::common::user_warn_missing_component("tg-ws-proxy");
+        crate::programs::components::user_warn_missing_component("tg-ws-proxy");
         return Ok(());
     }
     let setting = read_setting()?;
     validate_setting(&setting)?;
     let args = build_args(&setting);
     fs::create_dir_all(LOG_DIR).ok();
-    let logf = OpenOptions::new().create(true).append(true).open(LOG_FILE)?;
-    let logf_err = logf.try_clone()?;
 
     let mut cmd = Command::new(TGWS_BIN);
-    cmd.args(&args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-    let child = cmd.spawn().with_context(|| format!("spawn {TGWS_BIN}"))?;
+    cmd.args(&args);
+    let child = spawn_detached_logged(
+        &mut cmd,
+        Path::new(LOG_FILE),
+        LogMode::Append,
+        || format!("spawn {TGWS_BIN}"),
+    )?;
     log::info!("tgwsproxy: started pid={} args={:?}", child.id(), args);
 
     if let Err(e) = wait_tcp_port("127.0.0.1", setting.port, PORT_WAIT) {
@@ -545,7 +539,7 @@ pub fn start_if_enabled() -> Result<()> {
 }
 
 pub fn is_running() -> bool {
-    match crate::shell::run_quiet("pidof", &["tg-ws-proxy"], crate::shell::Capture::Stdout) {
+    match crate::common::process::shell::run_quiet("pidof", &["tg-ws-proxy"], crate::common::process::shell::Capture::Stdout) {
         Ok((0, out)) => out.split_whitespace().any(|s| s.parse::<u32>().map(|p| p > 1).unwrap_or(false)),
         _ => false,
     }
@@ -568,20 +562,9 @@ fn read_text(p: &Path) -> Result<String> {
     fs::read_to_string(p).map_err(|e| anyhow::anyhow!("read failed {}: {e}", p.display()))
 }
 
-fn write_text_atomic(p: &Path, content: &str) -> Result<()> {
-    if let Some(parent) = p.parent() { fs::create_dir_all(parent).ok(); }
-    let tmp = p.with_extension("tmp");
-    fs::write(&tmp, content.as_bytes()).map_err(|e| anyhow::anyhow!("write failed {}: {e}", tmp.display()))?;
-    fs::rename(&tmp, p).map_err(|e| anyhow::anyhow!("rename failed {} -> {}: {e}", tmp.display(), p.display()))?;
-    Ok(())
-}
+
 
 fn read_json<T: for<'de> Deserialize<'de>>(p: &Path) -> Result<T> {
     let txt = read_text(p)?;
     serde_json::from_str(&txt).map_err(|e| anyhow::anyhow!("bad JSON {}: {e}", p.display()))
-}
-
-fn write_json_pretty<T: Serialize>(p: &Path, v: &T) -> Result<()> {
-    let txt = serde_json::to_string_pretty(v)?;
-    write_text_atomic(p, &txt)
 }

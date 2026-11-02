@@ -176,10 +176,40 @@ pub(crate) fn profiles_path_from_root(spec: VariantSpec) -> PathBuf {
 }
 
 pub(crate) fn main_pids_exact(spec: VariantSpec) -> Vec<i32> {
+    let process_name = Path::new(spec.binary)
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or(spec.label);
+    let mut pids = crate::common::process::pidof(process_name);
+    crate::common::process::filter_live_pids(&mut pids);
+    pids.retain(|pid| {
+        singbox_cmdline_matches(spec, &crate::common::process::read_process_cmdline(*pid), None)
+    });
+    if !pids.is_empty() {
+        return pids;
+    }
+
     let needle = format!("{} run -c {}/", spec.label, spec.root);
     let mut pids = crate::common::process::ps_ef_pids_where(|line| line.contains(&needle));
     crate::common::process::filter_live_pids(&mut pids);
     pids
+}
+
+fn singbox_cmdline_matches(spec: VariantSpec, cmdline: &str, exact_config: Option<&Path>) -> bool {
+    let args: Vec<&str> = cmdline.split_whitespace().collect();
+    let Some(argv0) = args.first().copied() else { return false; };
+    let expected_name = Path::new(spec.binary).file_name().and_then(|v| v.to_str());
+    if Path::new(argv0).file_name().and_then(|v| v.to_str()) != expected_name
+        || args.get(1).copied() != Some("run")
+    {
+        return false;
+    }
+    let config_prefix = format!("{}/profile/", spec.root);
+    args.windows(2).any(|pair| {
+        pair[0] == "-c"
+            && pair[1].starts_with(&config_prefix)
+            && exact_config.map_or(true, |path| pair[1] == path.to_string_lossy().as_ref())
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -320,8 +350,13 @@ pub(crate) fn route_gateway_for_tun(tun: &str) -> Result<String> {
 }
 
 pub(crate) fn singbox_profile_process_running(spec: VariantSpec, config_path: &Path) -> bool {
-    let pattern = format!("{} run -c {}", spec.binary, config_path.display());
-    crate::common::process::any_live_ps_ef_where(|line| line.contains(&pattern))
+    main_pids_exact(spec).into_iter().any(|pid| {
+        singbox_cmdline_matches(
+            spec,
+            &crate::common::process::read_process_cmdline(pid),
+            Some(config_path),
+        )
+    })
 }
 
 pub(crate) fn ensure_file_empty(path: &Path) -> Result<()> {

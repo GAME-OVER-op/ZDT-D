@@ -30,9 +30,27 @@ pub fn build_tun2socks_command(
 }
 
 /// Check whether a live tun2socks process already owns the exact tun/proxy
-/// pair. This preserves the historical `ps -ef` substring rule used by the
-/// sing-box family, Mihomo and Mieru.
+/// pair. Prefer exact process-name candidates verified through `/proc`, then
+/// retain the historical `ps -ef` substring rule as a compatibility fallback.
 pub fn tun2socks_process_running(binary: &str, tun: &str, proxy: &str) -> bool {
-    let pattern = format!("{binary} --device tun://{tun} --proxy {proxy}");
+    let process_name = Path::new(binary)
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or("tun2socks");
+    let expected_device = format!("tun://{tun}");
+
+    let mut pids = crate::common::process::pidof(process_name);
+    crate::common::process::filter_live_pids(&mut pids);
+    if pids.into_iter().any(|pid| {
+        let cmdline = crate::common::process::read_process_cmdline(pid);
+        let args: Vec<&str> = cmdline.split_whitespace().collect();
+        let device = args.windows(2).find_map(|pair| (pair[0] == "--device").then_some(pair[1]));
+        let actual_proxy = args.windows(2).find_map(|pair| (pair[0] == "--proxy").then_some(pair[1]));
+        device == Some(expected_device.as_str()) && actual_proxy == Some(proxy)
+    }) {
+        return true;
+    }
+
+    let pattern = format!("{binary} --device {expected_device} --proxy {proxy}");
     crate::common::process::any_live_ps_ef_where(|line| line.contains(&pattern))
 }

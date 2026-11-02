@@ -1,3 +1,5 @@
+pub const PROCESS_NAMES: &[&str] = &["opera-proxy", "opera-proxy.bin"];
+
 mod model;
 mod settings;
 mod runtime;

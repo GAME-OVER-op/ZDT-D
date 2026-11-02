@@ -16,7 +16,7 @@ use crate::common::apps::{count_valid_uid_pairs};
 use crate::common::components::{find_module_binary};
 use crate::common::fs::{is_nonempty_file};
 use crate::common::network::{generated_ipv4_30, is_valid_ifname, NETID_HYSTERIA2, configure_tun_addr, wait_tun_link, wait_tcp_port};
-use crate::common::process::{filter_live_pids, read_process_cmdline, ps_ef_pids_where};
+use crate::common::process::{filter_live_pids, pidof, pgrep_full_regex, ps_ef_pids_where, read_process_cmdline, sort_dedup_pids};
 use crate::programs::registry::{ProgramId};
 use crate::network::t2s::{format_ports_csv, apply_t2s_routing_ext, T2sSpawnConfig, spawn_t2s_proxy, build_tun2socks_command};
 use crate::network::vpn::{VpnProfileCore, VpnNetdProfileSpec};
@@ -328,7 +328,7 @@ pub fn enabled_tun_claims() -> Vec<(String, String)> { enabled_vpn_profile_names
 pub fn enabled_cidr_claims() -> Vec<(String, String)> { let active = read_active().unwrap_or_default(); let mut out = Vec::new(); for n in enabled_vpn_profile_names() { if let Ok(id)=VPN_CORE.stable_netid(&active, &n) { if let Ok((_, cidr))=VPN_CORE.generated_tun_addr_and_cidr(NET_BASE, id) { out.push(VPN_CORE.claim(&n, cidr)); } } } out }
 
 pub fn is_running() -> bool { !main_pids_exact().is_empty() }
-pub fn main_pids_exact() -> Vec<i32> { pids_matching(&format!("{} --disable-update-check", HYSTERIA2_BIN)) }
+pub fn main_pids_exact() -> Vec<i32> { hysteria2_main_pids(HYSTERIA2_BIN) }
 pub fn tun2socks_pids_exact() -> Vec<i32> {
     let mut tun_names = BTreeSet::new();
     if let Ok(active) = read_active() {
@@ -339,6 +339,20 @@ pub fn tun2socks_pids_exact() -> Vec<i32> {
         }
     }
     tun_names.insert(default_tun_name());
+
+    let mut pids = pidof("tun2socks");
+    filter_live_pids(&mut pids);
+    pids.retain(|pid| {
+        let cmdline = read_process_cmdline(*pid);
+        tun_names.iter().any(|tun| {
+            let expected = format!("tun://{tun}");
+            cmdline.split_whitespace().any(|arg| arg == expected.as_str())
+        })
+    });
+    if !pids.is_empty() {
+        return pids;
+    }
+
     ps_ef_pids_where(|line| {
         line.contains("tun2socks --device tun://")
             && tun_names.iter().any(|tun| line.contains(&format!("tun://{tun}")))
@@ -352,8 +366,52 @@ fn enabled_names(active: &ActiveProfiles) -> Vec<String> { VPN_CORE.enabled_prof
 pub fn generated_tun_address_for_index(index: u32) -> Result<(String, String, String)> { generated_ipv4_30(NET_BASE, index, VPN_CORE.owner_program()) }
 fn endpoint_escape_ips_from_config(path: &Path) -> Vec<String> { let Ok(raw)=fs::read_to_string(path) else { return Vec::new() }; let Ok(v)=serde_json::from_str::<Value>(&raw) else { return Vec::new() }; let Some(server)=v.get("server").and_then(|x| x.as_str()) else { return Vec::new() }; let host=server.rsplit_once(':').map(|(h,_)| h).unwrap_or(server).trim_matches(['[',']']); if host.parse::<std::net::Ipv4Addr>().is_ok() { vec![host.to_string()] } else { Vec::new() } }
 
-fn process_running_with_config(bin: &str, config: &Path) -> bool { let pattern = format!("{} --disable-update-check", bin); let cfg = config.display().to_string(); pids_matching(&pattern).into_iter().any(|pid| read_process_cmdline(pid).contains(&cfg)) }
-fn pids_matching(pattern: &str) -> Vec<i32> { let mut pids = ps_ef_pids_where(|line| line.contains(pattern)); filter_live_pids(&mut pids); pids }
+fn process_running_with_config(bin: &str, config: &Path) -> bool {
+    let cfg = config.display().to_string();
+    hysteria2_main_pids(bin)
+        .into_iter()
+        .any(|pid| read_process_cmdline(pid).split_whitespace().any(|arg| arg == cfg))
+}
+
+fn hysteria2_main_pids(bin: &str) -> Vec<i32> {
+    let bin_name = Path::new(bin)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("hysteria2");
+
+    // `ps` formatting is not stable across Android/vendor implementations.
+    // Collect candidates from several sources, then verify ownership from
+    // /proc/<pid>/cmdline so an unrelated hysteria2 process is never accepted.
+    let mut pids = pidof(bin_name);
+    let pgrep_pattern = format!("{} --disable-update-check", bin_name);
+    pids.extend(pgrep_full_regex(&pgrep_pattern));
+    pids.extend(ps_ef_pids_where(|line| {
+        line.contains(bin_name) && line.contains("--disable-update-check")
+    }));
+    sort_dedup_pids(&mut pids);
+    filter_live_pids(&mut pids);
+
+    pids.retain(|pid| is_zdtd_hysteria2_cmdline(bin, &read_process_cmdline(*pid)));
+    pids
+}
+
+fn is_zdtd_hysteria2_cmdline(bin: &str, cmdline: &str) -> bool {
+    let args: Vec<&str> = cmdline.split_whitespace().collect();
+    let Some(argv0) = args.first().copied() else { return false; };
+    let expected_name = Path::new(bin).file_name().and_then(|name| name.to_str());
+    let actual_name = Path::new(argv0).file_name().and_then(|name| name.to_str());
+    if argv0 != bin && actual_name != expected_name {
+        return false;
+    }
+    if !args.iter().any(|arg| *arg == "--disable-update-check")
+        || !args.iter().any(|arg| *arg == "client")
+    {
+        return false;
+    }
+
+    let profile_prefix = format!("{ROOT}/profile/");
+    args.windows(2).any(|pair| pair[0] == "-c" && pair[1].starts_with(&profile_prefix))
+}
 fn ensure_file(path: &str) -> Result<()> { if Path::new(path).is_file() { Ok(()) } else { bail!("file missing: {path}") } }
 fn truncate_file(path: &Path) -> Result<()> { if let Some(p)=path.parent() { fs::create_dir_all(p)?; } OpenOptions::new().create(true).write(true).truncate(true).open(path)?; Ok(()) }
 fn unique_tmp_path(target: &Path) -> PathBuf { let ts=SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos(); target.with_file_name(format!(".{}.{}.tmp", target.file_name().and_then(|s|s.to_str()).unwrap_or("tmp"), ts)) }

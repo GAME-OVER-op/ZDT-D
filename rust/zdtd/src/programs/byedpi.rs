@@ -19,6 +19,7 @@ use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
 const BYEDPI_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/byedpi";
+pub const PROCESS_NAMES: &[&str] = &["ciadpi-zdt", "ciadpi", "byedpi", "bye_dpi", "byedpi.bin"];
 const BIN_DIR: &str = "/data/adb/modules/ZDT-D/bin";
 // IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
 // Never introduce module-specific *.flag.sha256 files here.

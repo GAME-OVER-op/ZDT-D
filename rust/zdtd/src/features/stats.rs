@@ -80,8 +80,8 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(pidof_program(ProgramId::Nfqws));
     pids.extend(pidof_program(ProgramId::Nfqws2));
     pids.extend(pidof_any(&["DPITunnel-cli", "dpitunnel-cli"]));
-    pids.extend(pidof("t2s"));
-    pids.extend(pidof_program(ProgramId::OperaProxy));
+    pids.extend(pidof_any(crate::network::t2s::PROCESS_NAMES));
+    pids.extend(pidof_any(crate::programs::operaproxy::PROCESS_NAMES));
     pids.extend(singbox_pids());
     pids.extend(singbox_lx_pids());
     pids.extend(hysteria2_pids());
@@ -97,7 +97,7 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(mieru_pids());
     pids.extend(mieru_tun2proxy_pids());
     pids.extend(tor_pids());
-    pids.extend(pidof_program(ProgramId::ByeDpi));
+    pids.extend(pidof_any(crate::programs::byedpi::PROCESS_NAMES));
     pids.sort_unstable();
     pids.dedup();
     pids
@@ -148,7 +148,7 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
     // We expose a global `t2s` aggregate for UI, and keep `opera.t2s` as a legacy bucket
     // (t2s processes without "--web-port" in cmdline).
     // opera.t2s is derived from this group, so it is also needed for the operaproxy view.
-    let mut t2s_all_pids = if want_helper("t2s") || want_program(ProgramId::OperaProxy) { pidof("t2s") } else { Vec::new() };
+    let mut t2s_all_pids = if want_helper("t2s") || want_program(ProgramId::OperaProxy) { pidof_any(crate::network::t2s::PROCESS_NAMES) } else { Vec::new() };
     t2s_all_pids.sort_unstable();
     t2s_all_pids.dedup();
 
@@ -161,7 +161,7 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
         }
         t2s_pids.push(*pid);
     }
-    let opera_proxy_pids = if want_program(ProgramId::OperaProxy) { pidof_program(ProgramId::OperaProxy) } else { Vec::new() };
+    let opera_proxy_pids = if want_program(ProgramId::OperaProxy) { pidof_any(crate::programs::operaproxy::PROCESS_NAMES) } else { Vec::new() };
     let singbox_pids = if want_program(ProgramId::SingBox) { singbox_pids() } else { Vec::new() };
     let singbox_lx_pids = if want_program(ProgramId::SingBoxLx) { singbox_lx_pids() } else { Vec::new() };
     let hysteria2_pids = if want_program(ProgramId::Hysteria2) { hysteria2_pids() } else { Vec::new() };
@@ -186,7 +186,7 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
     let tor_pids = if want_program(ProgramId::Tor) { tor_pids() } else { Vec::new() };
 
     // opera.byedpi is split out of this group, so it is needed for the operaproxy view too.
-    let mut byedpi_all = if want_program(ProgramId::ByeDpi) || want_program(ProgramId::OperaProxy) { pidof_program(ProgramId::ByeDpi) } else { Vec::new() };
+    let mut byedpi_all = if want_program(ProgramId::ByeDpi) || want_program(ProgramId::OperaProxy) { pidof_any(crate::programs::byedpi::PROCESS_NAMES) } else { Vec::new() };
     byedpi_all.sort_unstable();
     byedpi_all.dedup();
 

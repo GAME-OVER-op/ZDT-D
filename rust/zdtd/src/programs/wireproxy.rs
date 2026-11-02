@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use crate::common::apps::{count_valid_uid_pairs};
 use crate::common::components::{find_module_binary};
 use crate::common::fs::{ensure_parent_dir, is_nonempty_file};
-use crate::common::process::{filter_live_pids, ps_ef_pids_where, LogMode, spawn_detached_logged};
+use crate::common::process::{filter_live_pids, pidof, ps_ef_pids_where, read_process_cmdline, LogMode, spawn_detached_logged};
 use crate::network::t2s::{T2sProfileRouting, T2sHotspotRouting, launch_profile_t2s, profile_scope, format_ports_csv, T2sSpawnConfig};
 use crate::common::fs::truncate_file;
 pub use crate::common::profile::{ActiveProfiles, ProfileState};
@@ -680,11 +680,32 @@ fn ensure_valid_profile_name(name: &str) -> Result<()> {
 }
 
 pub fn main_pids_exact() -> Vec<i32> {
+    const NAME: &str = "wireproxy";
+
+    let mut pids = pidof(NAME);
+    filter_live_pids(&mut pids);
+    pids.retain(|pid| wireproxy_cmdline_is_ours(&read_process_cmdline(*pid), WIREPROXY_ROOT));
+    if !pids.is_empty() {
+        return pids;
+    }
+
     let mut pids = ps_ef_pids_where(|line| {
         line.contains("wireproxy -c /data/adb/modules/ZDT-D/working_folder/wireproxy/")
     });
     filter_live_pids(&mut pids);
     pids
+}
+
+fn wireproxy_cmdline_is_ours(cmdline: &str, config_root: &str) -> bool {
+    let args: Vec<&str> = cmdline.split_whitespace().collect();
+    let Some(argv0) = args.first().copied() else { return false; };
+    if Path::new(argv0).file_name().and_then(|v| v.to_str()) != Some("wireproxy") {
+        return false;
+    }
+    args.windows(2).any(|pair| {
+        pair[0] == "-c"
+            && pair[1].strip_prefix(config_root).map_or(false, |rest| rest.starts_with('/'))
+    })
 }
 
 fn spawn_wireproxy(config_path: &Path, log_path: &Path) -> Result<()> {

@@ -1,3 +1,5 @@
+pub const PROCESS_NAMES: &[&str] = &["t2s", "t2s.bin"];
+
 mod profile;
 mod routing;
 mod spawn;

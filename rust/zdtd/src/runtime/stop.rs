@@ -26,8 +26,6 @@ fn stop_process_groups_parallel() -> Result<()> {
         ProgramId::Nfqws,
         ProgramId::Nfqws2,
         ProgramId::DnsCrypt,
-        ProgramId::ByeDpi,
-        ProgramId::OperaProxy,
         ProgramId::TgwsProxy,
     ] {
         if let Some(name) = id.process_name() {
@@ -35,10 +33,12 @@ fn stop_process_groups_parallel() -> Result<()> {
         }
     }
 
+    jobs.push(thread::spawn(|| kill_by_any(crate::programs::byedpi::PROCESS_NAMES)));
+    jobs.push(thread::spawn(|| kill_by_any(crate::programs::operaproxy::PROCESS_NAMES)));
+
     // Shared helper processes are not standalone ProgramId entries.
-    for name in ["d2s", "t2s"] {
-        jobs.push(thread::spawn(move || kill_by_name(name)));
-    }
+    jobs.push(thread::spawn(|| kill_by_name("d2s")));
+    jobs.push(thread::spawn(|| kill_by_any(crate::network::t2s::PROCESS_NAMES)));
 
     jobs.push(thread::spawn(|| kill_by_any(&["DPITunnel-cli", "dpitunnel-cli"])));
 

@@ -244,6 +244,7 @@ private fun StartupDialogHost(
   uiState: UiState,
   setup: SetupUiState,
   onRetry: () -> Unit,
+  onRestartDaemon: () -> Unit,
   onReinstall: () -> Unit,
   onExpandUpdate: () -> Unit,
   onUpdate: () -> Unit,
@@ -293,6 +294,7 @@ private fun StartupDialogHost(
     startup = renderedStartup,
     setup = setup,
     onRetry = onRetry,
+    onRestartDaemon = onRestartDaemon,
     onReinstall = onReinstall,
     onExpandUpdate = onExpandUpdate,
     onUpdate = onUpdate,
@@ -308,6 +310,7 @@ private fun StartupFullscreenContent(
   startup: com.android.zdtd.service.StartupUiState,
   setup: SetupUiState,
   onRetry: () -> Unit,
+  onRestartDaemon: () -> Unit,
   onReinstall: () -> Unit,
   onExpandUpdate: () -> Unit,
   onUpdate: () -> Unit,
@@ -462,6 +465,12 @@ private fun StartupFullscreenContent(
                   modifier = Modifier.fillMaxWidth(),
                 ) {
                   Text(stringResource(R.string.common_retry))
+                }
+                OutlinedButton(
+                  onClick = onRestartDaemon,
+                  modifier = Modifier.fillMaxWidth(),
+                ) {
+                  Text(stringResource(R.string.startup_restart_daemon))
                 }
                 OutlinedButton(
                   onClick = onReinstall,
@@ -644,7 +653,10 @@ private fun StartupStagePill(text: String, active: Boolean, done: Boolean) {
 }
 
 @Composable
-private fun DaemonUnavailableDialogHost(uiState: UiState) {
+private fun DaemonUnavailableDialogHost(
+  uiState: UiState,
+  onRestartDaemon: () -> Unit,
+) {
   if (!uiState.daemonUnavailableVisible) return
 
   Dialog(
@@ -687,6 +699,9 @@ private fun DaemonUnavailableDialogHost(uiState: UiState) {
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         CircularProgressIndicator()
+        TextButton(onClick = onRestartDaemon) {
+          Text(stringResource(R.string.startup_restart_daemon))
+        }
       }
     }
   }
@@ -1192,7 +1207,10 @@ private fun MainShell(
     !showDeleteModuleNext &&
     programLogsTarget == null
 
-  DaemonUnavailableDialogHost(uiState = uiState)
+  DaemonUnavailableDialogHost(
+    uiState = uiState,
+    onRestartDaemon = actions::startDaemonManually,
+  )
 
   if (backup.externalRestorePromptVisible) {
     AlertDialog(
@@ -1787,6 +1805,7 @@ private fun MainShell(
         uiState = uiState,
         setup = setup,
         onRetry = actions::retryDaemonStartup,
+        onRestartDaemon = actions::startDaemonManually,
         onReinstall = actions::openModuleInstaller,
         onExpandUpdate = actions::showUpdatePrompt,
         onUpdate = actions::openModuleInstaller,

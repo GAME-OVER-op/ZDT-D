@@ -712,6 +712,7 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="startup_stage_connecting">चरण 1: सेवा से कनेक्ट हो रहा है</string>
     <string name="startup_stage_loading">चरण 2: सेवा से जानकारी लोड हो रही है</string>
     <string name="startup_reinstall_module">मॉड्यूल दोबारा इंस्टॉल करें</string>
+    <string name="startup_restart_daemon">daemon पुनः प्रारंभ करें</string>
     <string name="startup_loading_title">एप्लिकेशन लोड हो रहा है</string>
     <string name="startup_loading_subtitle">इंटरफ़ेस तैयार किया जा रहा है और मॉड्यूल कनेक्शन जाँचा जा रहा है।</string>
     <string name="startup_stage_connecting_short">कनेक्ट हो रहा है...</string>

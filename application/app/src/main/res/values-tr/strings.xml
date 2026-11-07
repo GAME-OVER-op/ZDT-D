@@ -712,6 +712,7 @@ Devam ederek versionCode kontrolünü yok sayıp yedeği geri yüklemeyi kabul e
     <string name="startup_stage_connecting">Aşama 1: Hizmete bağlanılıyor</string>
     <string name="startup_stage_loading">Aşama 2: Hizmetten bilgiler yükleniyor</string>
     <string name="startup_reinstall_module">Modülü yeniden yükle</string>
+    <string name="startup_restart_daemon">daemon’u yeniden başlat</string>
     <string name="startup_loading_title">Uygulama yükleniyor</string>
     <string name="startup_loading_subtitle">Arayüz hazırlanıyor ve modül bağlantısı kontrol ediliyor.</string>
     <string name="startup_stage_connecting_short">Bağlanılıyor...</string>

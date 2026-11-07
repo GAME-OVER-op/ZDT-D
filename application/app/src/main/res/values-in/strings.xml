@@ -712,6 +712,7 @@ Dengan melanjutkan, Anda setuju memulihkan cadangan dengan mengabaikan pemeriksa
     <string name="startup_stage_connecting">Tahap 1: Menghubungkan ke layanan</string>
     <string name="startup_stage_loading">Tahap 2: Memuat informasi dari layanan</string>
     <string name="startup_reinstall_module">Pasang ulang modul</string>
+    <string name="startup_restart_daemon">Mulai ulang daemon</string>
     <string name="startup_loading_title">Memuat aplikasi</string>
     <string name="startup_loading_subtitle">Menyiapkan antarmuka dan memeriksa koneksi ke modul.</string>
     <string name="startup_stage_connecting_short">Menghubungkan...</string>

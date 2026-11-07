@@ -712,6 +712,7 @@ APatch: 10700+</string>
     <string name="startup_stage_connecting">Етап 1: підключення до служби</string>
     <string name="startup_stage_loading">Етап 2: завантаження інформації зі служби</string>
     <string name="startup_reinstall_module">Перевстановити модуль</string>
+    <string name="startup_restart_daemon">Перезапустити демон</string>
     <string name="startup_loading_title">Завантаження програми</string>
     <string name="startup_loading_subtitle">Підготовка інтерфейсу та перевірка з’єднання з модулем.</string>
     <string name="startup_stage_connecting_short">Підключення...</string>

@@ -712,6 +712,7 @@ APatch：10700+</string>
     <string name="startup_stage_connecting">阶段 1：连接服务</string>
     <string name="startup_stage_loading">阶段 2：从服务加载信息</string>
     <string name="startup_reinstall_module">重新安装模块</string>
+    <string name="startup_restart_daemon">重启 daemon</string>
     <string name="startup_loading_title">正在加载应用</string>
     <string name="startup_loading_subtitle">正在准备界面并检查与模块的连接。</string>
     <string name="startup_stage_connecting_short">正在连接...</string>

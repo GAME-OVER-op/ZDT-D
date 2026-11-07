@@ -712,6 +712,7 @@ APatch: ‏10700+</string>
     <string name="startup_stage_connecting">المرحلة 1: الاتصال بالخدمة</string>
     <string name="startup_stage_loading">المرحلة 2: تحميل المعلومات من الخدمة</string>
     <string name="startup_reinstall_module">إعادة تثبيت الوحدة</string>
+    <string name="startup_restart_daemon">إعادة تشغيل daemon</string>
     <string name="startup_loading_title">جارٍ تحميل التطبيق</string>
     <string name="startup_loading_subtitle">جارٍ إعداد الواجهة والتحقق من الاتصال بالوحدة.</string>
     <string name="startup_stage_connecting_short">جارٍ الاتصال...</string>

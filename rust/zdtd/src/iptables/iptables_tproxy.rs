@@ -324,7 +324,15 @@ fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifac
         unsupported(msg)
     })?;
 
-    let (mode, ifaces, invalid) = normalize_ifaces(ifaces_raw).map_err(failed)?;
+    // As in the NAT fallback, normalize only OperaProxy's rule interfaces;
+    // scope_label() below keeps the raw value for stable cleanup and fwmark.
+    let normalized_ifaces = if uid_file.starts_with(crate::programs::registry::working_program_dir("operaproxy").join("app/out")) {
+        ifaces_raw.map(|raw| crate::common::network::normalize_app_slot_iface(uid_file, raw))
+    } else {
+        None
+    };
+    let rule_ifaces = normalized_ifaces.as_deref().or(ifaces_raw);
+    let (mode, ifaces, invalid) = normalize_ifaces(rule_ifaces).map_err(failed)?;
     if !invalid.is_empty() {
         warn!("TPROXY: invalid ifaces skipped: {:?}", invalid);
     }
@@ -910,6 +918,11 @@ fn normalize_ifaces(ifaces_raw: Option<&str>) -> Result<(String, Vec<String>, Ve
 }
 
 fn iface_exists(name: &str) -> bool {
+    // A wildcard is valid even while no matching bearer exists; installing it
+    // now covers the interface when mobile data comes back up.
+    if let Some(prefix) = name.strip_suffix('+') {
+        return !prefix.is_empty();
+    }
     if crate::common::process::shell::run("ip", &["link","show",name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }
     if crate::common::process::shell::run("ifconfig", &[name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }
     std::path::Path::new("/sys/class/net").join(name).is_dir()

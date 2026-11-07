@@ -86,23 +86,6 @@ pub(in crate::api) fn ensure_profile_layout(id: &str, profile: &str) -> Result<(
     Ok(())
 }
 
-pub(in crate::api) fn detect_iface(prefixes: &[&str]) -> Option<String> {
-    // Prefer sysfs existence checks (fast, no shell).
-    if let Ok(entries) = fs::read_dir("/sys/class/net") {
-        let mut names: Vec<String> = entries
-            .filter_map(|e| e.ok())
-            .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
-            .collect();
-        names.sort();
-        for pref in prefixes {
-            if let Some(x) = names.iter().find(|n| n.starts_with(pref)) {
-                return Some(x.clone());
-            }
-        }
-    }
-    None
-}
-
 #[allow(dead_code)]
 pub(in crate::api) fn next_port_from_existing(root: &Path, default_port: u16) -> u16 {
     // Best effort: scan */port.json and pick max(port)+1.
@@ -138,8 +121,8 @@ pub(in crate::api) fn write_default_port_json(id: &str, profile: &str) -> Result
     match id {
         "nfqws" => {
             let port = crate::programs::ports::suggest_port_for_new_profile(id)?;
-            let wifi = detect_iface(&["wlan", "wifi"]).unwrap_or_else(|| "wlan0".to_string());
-            let mobile = detect_iface(&["rmnet", "ccmni", "pdp"]).unwrap_or_else(|| "rmnet_data0".to_string());
+            let wifi = crate::common::network::detect_iface_by_prefix(&["wlan", "wifi"]).unwrap_or_else(|| "wlan0".to_string());
+            let mobile = crate::common::network::detect_iface_by_prefix(&["rmnet", "ccmni", "pdp"]).unwrap_or_else(|| "rmnet_data0".to_string());
             let v = json!({
                 "port": port,
                 "iface_mobile": mobile,
@@ -149,8 +132,8 @@ pub(in crate::api) fn write_default_port_json(id: &str, profile: &str) -> Result
         }
         "nfqws2" => {
             let port = crate::programs::ports::suggest_port_for_new_profile(id)?;
-            let wifi = detect_iface(&["wlan", "wifi"]).unwrap_or_else(|| "wlan0".to_string());
-            let mobile = detect_iface(&["rmnet", "ccmni", "pdp"]).unwrap_or_else(|| "rmnet_data0".to_string());
+            let wifi = crate::common::network::normalize_wifi_iface("");
+            let mobile = crate::common::network::normalize_mobile_iface("");
             let v = json!({
                 "port": port,
                 "iface_mobile": mobile,
@@ -165,8 +148,8 @@ pub(in crate::api) fn write_default_port_json(id: &str, profile: &str) -> Result
         }
         "dpitunnel" => {
             let port = crate::programs::ports::suggest_port_for_new_profile(id)?;
-            let wifi = detect_iface(&["wlan", "wifi"]).unwrap_or_else(|| "wlan0".to_string());
-            let mobile = detect_iface(&["rmnet", "ccmni", "pdp"]).unwrap_or_else(|| "rmnet_data0".to_string());
+            let wifi = crate::common::network::detect_iface_by_prefix(&["wlan", "wifi"]).unwrap_or_else(|| "wlan0".to_string());
+            let mobile = crate::common::network::detect_iface_by_prefix(&["rmnet", "ccmni", "pdp"]).unwrap_or_else(|| "rmnet_data0".to_string());
             let v = json!({
                 "port": port,
                 "iface_mobile": mobile,

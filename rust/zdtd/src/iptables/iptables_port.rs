@@ -85,7 +85,16 @@ fn allow_loopback_redirect_enabled() -> bool {
 pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: DpiTunnelOptions) -> Result<()> {
     let _xtables_guard = xtables_lock::lock();
     let allow_loopback_redirect = allow_loopback_redirect_enabled();
-    let (mode, ifaces, invalid) = normalize_ifaces(ifaces_raw)?;
+    // OperaProxy owns these mobile/Wi-Fi slots. Other NAT consumers retain
+    // their exact configured interface behavior. Scope and snapshots below
+    // deliberately keep `ifaces_raw`, not the normalized rule value.
+    let normalized_ifaces = if uid_file.starts_with(crate::programs::registry::working_program_dir("operaproxy").join("app/out")) {
+        ifaces_raw.map(|raw| crate::common::network::normalize_app_slot_iface(uid_file, raw))
+    } else {
+        None
+    };
+    let rule_ifaces = normalized_ifaces.as_deref().or(ifaces_raw);
+    let (mode, ifaces, invalid) = normalize_ifaces(rule_ifaces)?;
     if !invalid.is_empty() {
         warn!("DPI: invalid ifaces skipped: {:?}", invalid);
     }
@@ -286,6 +295,12 @@ fn normalize_ifaces(ifaces_raw: Option<&str>) -> Result<(String, Vec<String>, Ve
 }
 
 fn iface_exists(name: &str) -> bool {
+    // Keep a syntactically valid wildcard even while its bearer is down. It
+    // starts matching when Android recreates the interface; falling back to
+    // the current default route here could incorrectly select Wi-Fi.
+    if let Some(prefix) = name.strip_suffix('+') {
+        return !prefix.is_empty();
+    }
     if shell::run("ip", &["link","show",name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }
     if shell::run("ifconfig", &[name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }
     std::path::Path::new("/sys/class/net").join(name).is_dir()

@@ -40,8 +40,16 @@ pub fn apply(
         anyhow::bail!("Usage: full_id_iptables <full|no_full> <queue-num> [iface] [uid_file]");
     }
 
+    // Normalize only the rule match. The raw interface remains in the scope
+    // and snapshot below, so migrating a pinned bearer cannot orphan the old
+    // scoped chain or its empty-UID cleanup.
+    let normalized_iface = match (iface, uid_file) {
+        (Some(raw), Some(path)) => Some(crate::common::network::normalize_app_slot_iface(path, raw)),
+        _ => None,
+    };
+    let rule_iface = normalized_iface.as_deref().or(iface);
     let mut iopt: Vec<String> = Vec::new();
-    if let Some(iface) = iface {
+    if let Some(iface) = rule_iface {
         if !iface.is_empty() {
             iopt.push("-o".into());
             iopt.push(iface.into());

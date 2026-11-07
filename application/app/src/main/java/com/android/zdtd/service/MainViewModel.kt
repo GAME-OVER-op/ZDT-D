@@ -534,6 +534,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   @Volatile private var statsPowerReady: Boolean = false
   private var daemonLogJob: Job? = null
   private var startupJob: Job? = null
+  private val daemonProcessControl = DaemonProcessControl(root)
+  private var daemonRestartJob: Job? = null
   private var settingsRefreshJob: Job? = null
   private var proxyInfoApplyJob: Job? = null
   private var runtimeApplyPollJob: Job? = null
@@ -2054,7 +2056,7 @@ private fun clearDownloadedUpdateApk() {
       if (st.remoteTargetName.isNotBlank()) {
         st.copy(daemonOnline = false, daemonUnavailableVisible = false)
       } else {
-        val showOverlay = startupCompleted && appVisible
+        val showOverlay = startupCompleted && appVisible && daemonRestartJob?.isActive != true
         val nextVisible = if (showOverlay) true else st.daemonUnavailableVisible
         if (!st.daemonOnline && st.daemonUnavailableVisible == nextVisible) st
         else st.copy(daemonOnline = false, daemonUnavailableVisible = nextVisible)
@@ -2113,9 +2115,9 @@ private fun clearDownloadedUpdateApk() {
   }
 
 
-  private fun startStartupHandshake() {
+  private fun startStartupHandshake(): Job {
   startupJob?.cancel()
-  startupJob = launchIO {
+  val job = launchIO {
     startupCompleted = false
     val startupStartedAt = System.currentTimeMillis()
     val timingPlan = createStartupTimingPlan()
@@ -2141,11 +2143,34 @@ private fun clearDownloadedUpdateApk() {
     }
     failStartupHandshake()
   }
+  startupJob = job
+  return job
 }
 
   override fun retryDaemonStartup() {
     if (_rootState.value != RootState.GRANTED || !isSetupDone() || !appVisible) return
     startStartupHandshake()
+  }
+
+  /** Restart a local daemon whose API is unavailable, then retry the startup handshake. */
+  override fun startDaemonManually() {
+    if (_rootState.value != RootState.GRANTED || !isSetupDone() || !appVisible) return
+    if (_uiState.value.remoteTargetName.isNotBlank() || _uiState.value.daemonOnline) return
+    if (daemonRestartJob?.isActive == true) return
+    _uiState.update { it.copy(daemonUnavailableVisible = false) }
+
+    daemonRestartJob = launchIO {
+      val started = try {
+        daemonProcessControl.restart()
+      } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+      } catch (e: Throwable) {
+        log("ERR", "manual daemon restart error: ${e.message ?: e}")
+        false
+      }
+      if (!started) log("ERR", "manual daemon restart failed")
+      if (appVisible) startStartupHandshake().join()
+    }
   }
 
   override fun retryRoot() {

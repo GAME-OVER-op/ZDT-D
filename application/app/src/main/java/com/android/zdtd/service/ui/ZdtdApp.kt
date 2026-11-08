@@ -40,6 +40,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -2042,10 +2044,12 @@ private fun RuntimeApplyStatusCard(
         Box(
           modifier = Modifier
             .weight(1f)
+            .heightIn(max = 160.dp)
+            .verticalScroll(rememberScrollState())
             .clipToBounds(),
         ) {
           AnimatedContent(
-            targetState = status.state to status.message,
+            targetState = status,
             transitionSpec = {
               val enter = slideInVertically(animationSpec = tween(260, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(160))
               val exit = slideOutVertically(animationSpec = tween(260, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(160))
@@ -2053,9 +2057,10 @@ private fun RuntimeApplyStatusCard(
             },
             label = "runtime_apply_cube_bottom_to_top",
           ) { target ->
-            val message = when (target.first) {
-              "failed" -> stringResource(R.string.runtime_apply_failed_restart_service)
-              else -> target.second
+            val message = when (target.state) {
+              "failed" -> target.error?.takeIf { it.isNotBlank() }
+                ?: stringResource(R.string.runtime_apply_failed_restart_service)
+              else -> target.message
             }
             val flip by transition.animateFloat(
               transitionSpec = { tween(durationMillis = 260, easing = FastOutSlowInEasing) },
@@ -2071,8 +2076,8 @@ private fun RuntimeApplyStatusCard(
               style = MaterialTheme.typography.bodyMedium,
               fontWeight = FontWeight.SemiBold,
               color = MaterialTheme.colorScheme.onSurface,
-              maxLines = 2,
-              overflow = TextOverflow.Ellipsis,
+              maxLines = if (target.state == "failed") Int.MAX_VALUE else 2,
+              overflow = if (target.state == "failed") TextOverflow.Clip else TextOverflow.Ellipsis,
             )
           }
         }

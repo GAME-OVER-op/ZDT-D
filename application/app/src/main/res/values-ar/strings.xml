@@ -672,8 +672,6 @@ APatch: ‏10700+</string>
     <string name="log_root_access_required">مطلوب صلاحيات الجذر</string>
     <string name="log_api_token_missing_fmt">رمز API مفقود. تحقق من %1$s</string>
     <string name="log_logs_cleared">تم مسح السجلات</string>
-    <string name="log_service_started">تم تشغيل الخدمة</string>
-    <string name="log_service_stopped">تم إيقاف الخدمة</string>
 
     <string name="mv_backup_restore_reopen_hint">حدّد النسخة الاحتياطية مجددًا (أو أعد فتح هذه النافذة) قبل محاولة الاستعادة مرة أخرى.</string>
     <string name="settings_delete_module_title">إزالة الوحدة</string>
@@ -935,10 +933,6 @@ APatch: ‏10700+</string>
     <string name="settings_reset_identifier_done">تمت إعادة ضبط المعرّف</string>
     <string name="settings_reset_identifier_failed">فشل إعادة ضبط المعرّف</string>
 
-    <string name="app_picker_conflict_used_in">مستخدم في %1$s</string>
-    <string name="app_picker_conflict_will_move">سيُزال من %1$s عند الحفظ</string>
-    <string name="app_picker_move_conflict_title">إزالة التطبيق من قائمة أخرى؟</string>
-    <string name="app_picker_move_conflict_body">يوجد تطبيق محدّد واحد أو أكثر بالفعل في قوائم أدوات معطّلة. هل تريد إزالته من تلك القوائم وإضافته هنا؟</string>
     <string name="apps_conflict_slot_common">مشترك</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">بيانات الهاتف</string>
@@ -1316,7 +1310,6 @@ APatch: ‏10700+</string>
     <string name="myvpn_apps_title">تطبيقات myvpn</string>
     <string name="myvpn_apps_desc">حدد أسماء الحزم التي يجب أن تستخدم حركة مرورها ربط myvpn هذا. يتولى البرنامج الخفي تحليل UID.</string>
     <string name="myvpn_enabled_empty_apps_warning">الملف الشخصي مفعّل، لكن قائمة التطبيقات فارغة.</string>
-    <string name="myvpn_app_conflict_error">هذا التطبيق مستخدم بالفعل بواسطة برنامج شبكة آخر. أزله من هناك أو اختر ملفًا شخصيًا آخر.</string>
 
 
     <!-- tun2socks profiles -->
@@ -1349,7 +1342,6 @@ APatch: ‏10700+</string>
     <string name="tun2socks_apps_title">تطبيقات tun2socks</string>
     <string name="tun2socks_apps_desc">حدد أسماء الحزم التي يجب أن تستخدم حركة مرورها ملف tun2socks الشخصي هذا. يتولى البرنامج الخفي تحليل UID.</string>
     <string name="tun2socks_enabled_empty_apps_warning">الملف الشخصي مفعّل، لكن قائمة التطبيقات فارغة.</string>
-    <string name="tun2socks_app_conflict_error">هذا التطبيق مستخدم بالفعل بواسطة برنامج شبكة آخر. أزله من هناك أو اختر ملفًا شخصيًا آخر.</string>
     <string name="tun2socks_debug_hint_title">سجلات تصحيح الأخطاء</string>
     <string name="tun2socks_debug_hint_body">إذا لم يبدأ ملف شخصي، فتحقق من /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log و/data/adb/modules/ZDT-D/log/zdtd.log.</string>
 
@@ -1385,7 +1377,6 @@ APatch: ‏10700+</string>
     <string name="openvpn_apps_title">تطبيقات OpenVPN</string>
     <string name="openvpn_apps_desc">حدد أسماء الحزم التي يجب أن تستخدم حركة مرورها ملف OpenVPN الشخصي هذا. يتولى البرنامج الخفي تحليل UID.</string>
     <string name="openvpn_enabled_empty_apps_warning">الملف الشخصي مفعّل، لكن قائمة التطبيقات فارغة.</string>
-    <string name="openvpn_app_conflict_error">هذا التطبيق مستخدم بالفعل بواسطة برنامج شبكة آخر. أزله من هناك أو اختر ملفًا شخصيًا آخر.</string>
     <string name="openvpn_autosave_hint">الحفظ التلقائي مفعّل. تُطبّق التغييرات بعد إعادة تشغيل الخدمة.</string>
     <string name="openvpn_config_summary_desc">يُحرّر client.ovpn بشكل منفصل. استخدم رمز القلم لفتح المحرر.</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn موجود • %1$d من الأسطر غير الفارغة</string>
@@ -1434,7 +1425,6 @@ APatch: ‏10700+</string>
     <string name="amneziawg_apps_title">تطبيقات AmneziaWG</string>
     <string name="amneziawg_apps_desc">حدد أسماء الحزم التي يجب أن تستخدم حركة بياناتها ملف تعريف AmneziaWG هذا. هذا نظام شبكة حصري.</string>
     <string name="amneziawg_enabled_empty_apps_warning">ملف التعريف مفعّل، لكن قائمة التطبيقات فارغة. حدد تطبيقًا واحدًا على الأقل.</string>
-    <string name="amneziawg_app_conflict_error">هذا التطبيق مستخدم بالفعل بواسطة برنامج شبكة آخر. أزله من هناك أو اختر ملفًا شخصيًا آخر.</string>
     <string name="amneziawg_enable_requirements_error">قبل التفعيل، أضف client.conf يحتوي على PrivateKey/PublicKey وعنوان IPv4 صالح وDNS وMTU وتطبيقًا واحدًا على الأقل.</string>
     <string name="amneziawg_autosave_hint">الحفظ التلقائي مفعّل. تُطبّق التغييرات بعد إعادة تشغيل الخدمة.</string>
     <string name="saved_apply_after_restart">تم الحفظ. تُطبّق التغييرات بعد إعادة تشغيل الخدمة.</string>
@@ -1505,7 +1495,6 @@ APatch: ‏10700+</string>
     <string name="mihomo_apps_title">تطبيقات Mihomo</string>
     <string name="mihomo_apps_desc">حدد أسماء الحزم التي يجب أن تستخدم حركة بياناتها ملف تعريف Mihomo هذا. يتولى البرنامج الخفي تحليل UID.</string>
     <string name="mihomo_enabled_empty_apps_warning">الملف الشخصي مفعّل، لكن قائمة التطبيقات فارغة.</string>
-    <string name="mihomo_app_conflict_error">هذا التطبيق مستخدم بالفعل بواسطة برنامج شبكة آخر. أزله من هناك أو اختر ملفًا شخصيًا آخر.</string>
     <string name="mihomo_advanced_title">كتل YAML المتقدمة</string>
     <string name="mihomo_advanced_desc">تُخزّن Dashboard وexternal-controller في config.yaml. أبقِ external-controller على 127.0.0.1 ما لم تكن تنوي كشفه عمدًا.</string>
     <string name="mihomo_no_managed_route_hint">لا تنشئ الواجهة مسارات أو قواعد iptables أو netd أو وضع tun في Mihomo. يتولى برنامج ZDT-D الخفي توجيه وقت التشغيل.</string>

@@ -348,7 +348,6 @@ fun MieruProfileScreen(
         path = "$basePath/apps/user",
         actions = actions,
         snackHost = snackHost,
-      programs = programs,
       )
       1 -> MieruSectionCard(
         title = "Настройки tun2proxy",

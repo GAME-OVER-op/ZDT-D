@@ -672,8 +672,6 @@ APatch: 10700+</string>
     <string name="log_root_access_required">Потрібен root-доступ</string>
     <string name="log_api_token_missing_fmt">Відсутній токен API. Перевірте %1$s</string>
     <string name="log_logs_cleared">Журнали очищено</string>
-    <string name="log_service_started">Службу запущено</string>
-    <string name="log_service_stopped">Службу зупинено</string>
 
     <string name="mv_backup_restore_reopen_hint">Перед повторним відновленням виберіть резервну копію ще раз (або повторно відкрийте це вікно).</string>
     <string name="settings_delete_module_title">Видалення модуля</string>
@@ -935,10 +933,6 @@ APatch: 10700+</string>
     <string name="settings_reset_identifier_done">Ідентифікатор скинуто</string>
     <string name="settings_reset_identifier_failed">Не вдалося скинути ідентифікатор</string>
 
-    <string name="app_picker_conflict_used_in">Використовується в %1$s</string>
-    <string name="app_picker_conflict_will_move">Буде видалено з %1$s під час збереження</string>
-    <string name="app_picker_move_conflict_title">Видалити програму з іншого списку?</string>
-    <string name="app_picker_move_conflict_body">Одна або кілька вибраних програм уже є в списках вимкнених інструментів. Видалити їх із тих списків і додати сюди?</string>
     <string name="apps_conflict_slot_common">Загальний</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">Мобільні дані</string>
@@ -1314,7 +1308,6 @@ APatch: 10700+</string>
     <string name="myvpn_apps_title">Застосунки myvpn</string>
     <string name="myvpn_apps_desc">Виберіть назви пакетів, трафік яких має використовувати це прив’язування myvpn. UID аналізує демон.</string>
     <string name="myvpn_enabled_empty_apps_warning">Профіль увімкнено, але список застосунків порожній.</string>
-    <string name="myvpn_app_conflict_error">Цей застосунок уже використовується іншою мережевою програмою. Приберіть його звідти або виберіть інший профіль.</string>
 
 
     <!-- tun2socks profiles -->
@@ -1347,7 +1340,6 @@ APatch: 10700+</string>
     <string name="tun2socks_apps_title">Застосунки tun2socks</string>
     <string name="tun2socks_apps_desc">Виберіть назви пакетів, трафік яких має використовувати цей профіль tun2socks. UID аналізує демон.</string>
     <string name="tun2socks_enabled_empty_apps_warning">Профіль увімкнено, але список застосунків порожній.</string>
-    <string name="tun2socks_app_conflict_error">Цей застосунок уже використовується іншою мережевою програмою. Приберіть його звідти або виберіть інший профіль.</string>
     <string name="tun2socks_debug_hint_title">Журнали налагодження</string>
     <string name="tun2socks_debug_hint_body">Якщо профіль не запускається, перевірте /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log і /data/adb/modules/ZDT-D/log/zdtd.log.</string>
 
@@ -1383,7 +1375,6 @@ APatch: 10700+</string>
     <string name="openvpn_apps_title">Застосунки OpenVPN</string>
     <string name="openvpn_apps_desc">Виберіть назви пакетів, трафік яких має використовувати цей профіль OpenVPN. UID аналізує демон.</string>
     <string name="openvpn_enabled_empty_apps_warning">Профіль увімкнено, але список застосунків порожній.</string>
-    <string name="openvpn_app_conflict_error">Цей застосунок уже використовується іншою мережевою програмою. Приберіть його звідти або виберіть інший профіль.</string>
     <string name="openvpn_autosave_hint">Автозбереження ввімкнено. Зміни застосуються після перезапуску служби.</string>
     <string name="openvpn_config_summary_desc">client.ovpn редагується окремо. Натисніть олівець, щоб відкрити редактор.</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn наявний • %1$d непорожніх рядків</string>
@@ -1432,7 +1423,6 @@ APatch: 10700+</string>
     <string name="amneziawg_apps_title">Застосунки AmneziaWG</string>
     <string name="amneziawg_apps_desc">Виберіть назви пакетів, трафік яких має використовувати цей профіль AmneziaWG. Це ексклюзивний мережевий backend.</string>
     <string name="amneziawg_enabled_empty_apps_warning">Профіль увімкнено, але список застосунків порожній. Виберіть принаймні один застосунок.</string>
-    <string name="amneziawg_app_conflict_error">Цей застосунок уже використовується іншою мережевою програмою. Приберіть його звідти або виберіть інший профіль.</string>
     <string name="amneziawg_enable_requirements_error">Перед увімкненням додайте client.conf із PrivateKey/PublicKey, коректною IPv4-адресою, DNS, MTU та принаймні одним застосунком.</string>
     <string name="amneziawg_autosave_hint">Автозбереження ввімкнено. Зміни застосуються після перезапуску служби.</string>
     <string name="saved_apply_after_restart">Збережено. Зміни буде застосовано після перезапуску служби.</string>
@@ -1503,7 +1493,6 @@ APatch: 10700+</string>
     <string name="mihomo_apps_title">Застосунки Mihomo</string>
     <string name="mihomo_apps_desc">Виберіть назви пакетів, трафік яких має використовувати цей профіль Mihomo. UID аналізує демон.</string>
     <string name="mihomo_enabled_empty_apps_warning">Профіль увімкнено, але список застосунків порожній.</string>
-    <string name="mihomo_app_conflict_error">Цей застосунок уже використовується іншою мережевою програмою. Приберіть його звідти або виберіть інший профіль.</string>
     <string name="mihomo_advanced_title">Розширені блоки YAML</string>
     <string name="mihomo_advanced_desc">Dashboard і external-controller зберігаються в config.yaml. Залишайте external-controller на 127.0.0.1, якщо не плануєте навмисно відкрити його.</string>
     <string name="mihomo_no_managed_route_hint">Інтерфейс не створює маршрути, правила iptables/netd або режим tun Mihomo. Маршрутизацію під час виконання здійснює демон ZDT-D.</string>

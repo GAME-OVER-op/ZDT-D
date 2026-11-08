@@ -672,8 +672,6 @@ Verwenden Sie zum Bearbeiten einen anderen Editor.</string>
     <string name="log_root_access_required">Root-Zugriff erforderlich</string>
     <string name="log_api_token_missing_fmt">API-Token fehlt. Prüfen Sie %1$s</string>
     <string name="log_logs_cleared">Protokolle gelöscht</string>
-    <string name="log_service_started">Dienst gestartet</string>
-    <string name="log_service_stopped">Dienst gestoppt</string>
 
     <string name="mv_backup_restore_reopen_hint">Wählen Sie die Sicherung erneut aus (oder öffnen Sie dieses Fenster erneut), bevor Sie wiederherstellen.</string>
     <string name="settings_delete_module_title">Modulentfernung</string>
@@ -935,10 +933,6 @@ Der Schutz funktioniert nicht im Hotspot-Modus. Wenn der Hotspot aktiviert und s
     <string name="settings_reset_identifier_done">Kennung zurückgesetzt</string>
     <string name="settings_reset_identifier_failed">Kennung konnte nicht zurückgesetzt werden</string>
 
-    <string name="app_picker_conflict_used_in">Verwendet in %1$s</string>
-    <string name="app_picker_conflict_will_move">Wird beim Speichern aus %1$s entfernt</string>
-    <string name="app_picker_move_conflict_title">App aus einer anderen Liste entfernen?</string>
-    <string name="app_picker_move_conflict_body">Eine oder mehrere ausgewählte Apps sind bereits in deaktivierten Tool-Listen vorhanden. Aus diesen Listen entfernen und hier hinzufügen?</string>
     <string name="apps_conflict_slot_common">Allgemein</string>
     <string name="apps_conflict_slot_wifi">WLAN</string>
     <string name="apps_conflict_slot_mobile">Mobilfunk</string>
@@ -1312,7 +1306,6 @@ Der Schutz funktioniert nicht im Hotspot-Modus. Wenn der Hotspot aktiviert und s
     <string name="myvpn_apps_title">myvpn-Apps</string>
     <string name="myvpn_apps_desc">Wähle Paketnamen aus, deren Datenverkehr diese myvpn-Bindung verwenden soll. Die UID-Auswertung übernimmt der Daemon.</string>
     <string name="myvpn_enabled_empty_apps_warning">Das Profil ist aktiviert, aber die App-Liste ist leer.</string>
-    <string name="myvpn_app_conflict_error">Diese App wird bereits von einem anderen Netzwerkprogramm verwendet. Entferne sie dort oder wähle ein anderes Profil.</string>
 
 
     <!-- tun2socks profiles -->
@@ -1345,7 +1338,6 @@ Der Schutz funktioniert nicht im Hotspot-Modus. Wenn der Hotspot aktiviert und s
     <string name="tun2socks_apps_title">tun2socks-Apps</string>
     <string name="tun2socks_apps_desc">Wähle Paketnamen aus, deren Datenverkehr dieses tun2socks-Profil verwenden soll. Die UID-Auswertung übernimmt der Daemon.</string>
     <string name="tun2socks_enabled_empty_apps_warning">Das Profil ist aktiviert, aber die App-Liste ist leer.</string>
-    <string name="tun2socks_app_conflict_error">Diese App wird bereits von einem anderen Netzwerkprogramm verwendet. Entferne sie dort oder wähle ein anderes Profil.</string>
     <string name="tun2socks_debug_hint_title">Debug-Protokolle</string>
     <string name="tun2socks_debug_hint_body">Wenn ein Profil nicht startet, prüfe /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log und /data/adb/modules/ZDT-D/log/zdtd.log.</string>
 
@@ -1381,7 +1373,6 @@ Der Schutz funktioniert nicht im Hotspot-Modus. Wenn der Hotspot aktiviert und s
     <string name="openvpn_apps_title">OpenVPN-Apps</string>
     <string name="openvpn_apps_desc">Wähle Paketnamen aus, deren Datenverkehr dieses OpenVPN-Profil verwenden soll. Die UID-Auswertung übernimmt der Daemon.</string>
     <string name="openvpn_enabled_empty_apps_warning">Das Profil ist aktiviert, aber die App-Liste ist leer.</string>
-    <string name="openvpn_app_conflict_error">Diese App wird bereits von einem anderen Netzwerkprogramm verwendet. Entferne sie dort oder wähle ein anderes Profil.</string>
     <string name="openvpn_autosave_hint">Automatisches Speichern ist aktiviert. Änderungen werden nach einem Neustart des Dienstes wirksam.</string>
     <string name="openvpn_config_summary_desc">client.ovpn wird separat bearbeitet. Öffne den Editor über das Stiftsymbol.</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn vorhanden • %1$d nicht leere Zeilen</string>
@@ -1430,7 +1421,6 @@ Der Schutz funktioniert nicht im Hotspot-Modus. Wenn der Hotspot aktiviert und s
     <string name="amneziawg_apps_title">AmneziaWG-Apps</string>
     <string name="amneziawg_apps_desc">Wähle die Paketnamen aus, deren Datenverkehr dieses AmneziaWG-Profil verwenden soll. Dies ist ein exklusives Netzwerk-Backend.</string>
     <string name="amneziawg_enabled_empty_apps_warning">Das Profil ist aktiviert, aber die App-Liste ist leer. Wähle mindestens eine App aus.</string>
-    <string name="amneziawg_app_conflict_error">Diese App wird bereits von einem anderen Netzwerkprogramm verwendet. Entferne sie dort oder wähle ein anderes Profil.</string>
     <string name="amneziawg_enable_requirements_error">Füge vor dem Aktivieren client.conf mit PrivateKey/PublicKey, einer gültigen IPv4-Adresse, DNS, MTU und mindestens einer App hinzu.</string>
     <string name="amneziawg_autosave_hint">Automatisches Speichern ist aktiviert. Änderungen werden nach einem Neustart des Dienstes wirksam.</string>
     <string name="saved_apply_after_restart">Gespeichert. Änderungen werden nach einem Neustart des Dienstes wirksam.</string>
@@ -1501,7 +1491,6 @@ Der Schutz funktioniert nicht im Hotspot-Modus. Wenn der Hotspot aktiviert und s
     <string name="mihomo_apps_title">Mihomo-Apps</string>
     <string name="mihomo_apps_desc">Wähle Paketnamen aus, deren Datenverkehr dieses Mihomo-Profil verwenden soll. Die UID-Auswertung übernimmt der Daemon.</string>
     <string name="mihomo_enabled_empty_apps_warning">Das Profil ist aktiviert, aber die App-Liste ist leer.</string>
-    <string name="mihomo_app_conflict_error">Diese App wird bereits von einem anderen Netzwerkprogramm verwendet. Entferne sie dort oder wähle ein anderes Profil.</string>
     <string name="mihomo_advanced_title">Erweiterte YAML-Blöcke</string>
     <string name="mihomo_advanced_desc">Dashboard und external-controller werden in config.yaml gespeichert. Belasse external-controller auf 127.0.0.1, sofern du ihn nicht bewusst freigeben möchtest.</string>
     <string name="mihomo_no_managed_route_hint">Die UI erstellt keine Routen, iptables-/netd-Regeln oder den Mihomo-tun-Modus. Der ZDT-D-Daemon übernimmt das Laufzeit-Routing.</string>

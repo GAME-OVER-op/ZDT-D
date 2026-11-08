@@ -672,8 +672,6 @@ Değiştirmek için başka bir düzenleyici kullanın.</string>
     <string name="log_root_access_required">Root erişimi gerekli</string>
     <string name="log_api_token_missing_fmt">API belirteci eksik. %1$s değerini kontrol edin</string>
     <string name="log_logs_cleared">Günlükler temizlendi</string>
-    <string name="log_service_started">Hizmet başlatıldı</string>
-    <string name="log_service_stopped">Hizmet durduruldu</string>
 
     <string name="mv_backup_restore_reopen_hint">Tekrar geri yüklemeden önce yedeği yeniden seçin (veya bu pencereyi yeniden açın).</string>
     <string name="settings_delete_module_title">Modül kaldırma</string>
@@ -935,10 +933,6 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="settings_reset_identifier_done">Tanımlayıcı sıfırlandı</string>
     <string name="settings_reset_identifier_failed">Tanımlayıcı sıfırlanamadı</string>
 
-    <string name="app_picker_conflict_used_in">%1$s içinde kullanılıyor</string>
-    <string name="app_picker_conflict_will_move">Kaydederken %1$s içinden kaldırılacak</string>
-    <string name="app_picker_move_conflict_title">Uygulama başka bir listeden kaldırılsın mı?</string>
-    <string name="app_picker_move_conflict_body">Seçilen bir veya daha fazla uygulama devre dışı araç listelerinde zaten mevcut. Bu listelerden kaldırılıp buraya eklensin mi?</string>
     <string name="apps_conflict_slot_common">Ortak</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">Mobil</string>
@@ -1311,7 +1305,6 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="myvpn_apps_title">myvpn uygulamaları</string>
     <string name="myvpn_apps_desc">Trafiği bu myvpn bağlamasını kullanacak paket adlarını seçin. UID ayrıştırması arka plan hizmeti tarafından yapılır.</string>
     <string name="myvpn_enabled_empty_apps_warning">Profil etkin, ancak uygulama listesi boş.</string>
-    <string name="myvpn_app_conflict_error">Bu uygulama başka bir ağ programı tarafından zaten kullanılıyor. Oradan kaldırın veya başka bir profil seçin.</string>
 
 
     <!-- tun2socks profiles -->
@@ -1344,7 +1337,6 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="tun2socks_apps_title">tun2socks uygulamaları</string>
     <string name="tun2socks_apps_desc">Trafiği bu tun2socks profilini kullanacak paket adlarını seçin. UID ayrıştırması arka plan hizmeti tarafından yapılır.</string>
     <string name="tun2socks_enabled_empty_apps_warning">Profil etkin, ancak uygulama listesi boş.</string>
-    <string name="tun2socks_app_conflict_error">Bu uygulama başka bir ağ programı tarafından zaten kullanılıyor. Oradan kaldırın veya başka bir profil seçin.</string>
     <string name="tun2socks_debug_hint_title">Hata ayıklama günlükleri</string>
     <string name="tun2socks_debug_hint_body">Bir profil başlamazsa /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log ve /data/adb/modules/ZDT-D/log/zdtd.log dosyalarını kontrol edin.</string>
 
@@ -1380,7 +1372,6 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="openvpn_apps_title">OpenVPN uygulamaları</string>
     <string name="openvpn_apps_desc">Trafiği bu OpenVPN profilini kullanacak paket adlarını seçin. UID ayrıştırması arka plan hizmeti tarafından yapılır.</string>
     <string name="openvpn_enabled_empty_apps_warning">Profil etkin, ancak uygulama listesi boş.</string>
-    <string name="openvpn_app_conflict_error">Bu uygulama başka bir ağ programı tarafından zaten kullanılıyor. Oradan kaldırın veya başka bir profil seçin.</string>
     <string name="openvpn_autosave_hint">Otomatik kaydetme etkin. Değişiklikler hizmet yeniden başlatıldıktan sonra uygulanır.</string>
     <string name="openvpn_config_summary_desc">client.ovpn ayrı olarak düzenlenir. Düzenleyiciyi açmak için kalem simgesini kullanın.</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn mevcut • %1$d boş olmayan satır</string>
@@ -1429,7 +1420,6 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="amneziawg_apps_title">AmneziaWG uygulamaları</string>
     <string name="amneziawg_apps_desc">Trafiği bu AmneziaWG profilini kullanacak paket adlarını seçin. Bu, özel bir ağ arka ucudur.</string>
     <string name="amneziawg_enabled_empty_apps_warning">Profil etkin ancak uygulama listesi boş. En az bir uygulama seçin.</string>
-    <string name="amneziawg_app_conflict_error">Bu uygulama başka bir ağ programı tarafından zaten kullanılıyor. Oradan kaldırın veya başka bir profil seçin.</string>
     <string name="amneziawg_enable_requirements_error">Etkinleştirmeden önce PrivateKey/PublicKey, geçerli bir IPv4 adresi, DNS, MTU ve en az bir uygulama içeren client.conf ekleyin.</string>
     <string name="amneziawg_autosave_hint">Otomatik kaydetme etkin. Değişiklikler hizmet yeniden başlatıldıktan sonra uygulanır.</string>
     <string name="saved_apply_after_restart">Kaydedildi. Değişiklikler hizmet yeniden başlatıldıktan sonra uygulanır.</string>
@@ -1500,7 +1490,6 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="mihomo_apps_title">Mihomo uygulamaları</string>
     <string name="mihomo_apps_desc">Trafiği bu Mihomo profilini kullanacak paket adlarını seçin. UID ayrıştırmasını daemon yapar.</string>
     <string name="mihomo_enabled_empty_apps_warning">Profil etkin, ancak uygulama listesi boş.</string>
-    <string name="mihomo_app_conflict_error">Bu uygulama başka bir ağ programı tarafından zaten kullanılıyor. Oradan kaldırın veya başka bir profil seçin.</string>
     <string name="mihomo_advanced_title">Gelişmiş YAML blokları</string>
     <string name="mihomo_advanced_desc">Dashboard ve external-controller config.yaml içinde saklanır. Bilerek dışa açmayacaksanız external-controller değerini 127.0.0.1 olarak bırakın.</string>
     <string name="mihomo_no_managed_route_hint">Arayüz rota, iptables/netd kuralı veya Mihomo tun modu oluşturmaz. Çalışma zamanı yönlendirmesini ZDT-D daemon yapar.</string>

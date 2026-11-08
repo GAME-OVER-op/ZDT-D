@@ -590,8 +590,6 @@ fun OpenVpnProfileScreen(
       path = "$basePath/apps/user",
       actions = actions,
       snackHost = snackHost,
-      programs = programs,
-      saveFailedMessage = stringResource(R.string.openvpn_app_conflict_error),
       onSavedSelection = { appCount = it.size },
     )
 

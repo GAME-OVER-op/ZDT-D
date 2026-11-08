@@ -672,8 +672,6 @@ Usa otro editor para modificarlo.</string>
     <string name="log_root_access_required">Se requiere acceso root</string>
     <string name="log_api_token_missing_fmt">Falta el token de API. Comprueba %1$s</string>
     <string name="log_logs_cleared">Registros borrados</string>
-    <string name="log_service_started">Servicio iniciado</string>
-    <string name="log_service_stopped">Servicio detenido</string>
 
     <string name="mv_backup_restore_reopen_hint">Selecciona de nuevo la copia de seguridad (o vuelve a abrir esta ventana) antes de restaurar otra vez.</string>
     <string name="settings_delete_module_title">Eliminación del módulo</string>
@@ -935,10 +933,6 @@ La protección no funciona en modo punto de acceso. Si el punto de acceso está 
     <string name="settings_reset_identifier_done">Identificador restablecido</string>
     <string name="settings_reset_identifier_failed">No se pudo restablecer el identificador</string>
 
-    <string name="app_picker_conflict_used_in">Usado en %1$s</string>
-    <string name="app_picker_conflict_will_move">Se eliminará de %1$s al guardar</string>
-    <string name="app_picker_move_conflict_title">¿Eliminar la aplicación de otra lista?</string>
-    <string name="app_picker_move_conflict_body">Una o más aplicaciones seleccionadas ya están en listas de herramientas deshabilitadas. ¿Quitarlas de esas listas y añadirlas aquí?</string>
     <string name="apps_conflict_slot_common">Común</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">Datos móviles</string>
@@ -1312,7 +1306,6 @@ La protección no funciona en modo punto de acceso. Si el punto de acceso está 
     <string name="myvpn_apps_title">Aplicaciones de myvpn</string>
     <string name="myvpn_apps_desc">Selecciona los nombres de paquete cuyo tráfico debe usar esta vinculación de myvpn. El daemon analiza los UID.</string>
     <string name="myvpn_enabled_empty_apps_warning">El perfil está activado, pero la lista de aplicaciones está vacía.</string>
-    <string name="myvpn_app_conflict_error">Esta aplicación ya la usa otro programa de red. Elimínala allí o elige otro perfil.</string>
 
 
     <!-- tun2socks profiles -->
@@ -1345,7 +1338,6 @@ La protección no funciona en modo punto de acceso. Si el punto de acceso está 
     <string name="tun2socks_apps_title">Aplicaciones de tun2socks</string>
     <string name="tun2socks_apps_desc">Selecciona los nombres de paquete cuyo tráfico debe usar este perfil de tun2socks. El daemon analiza los UID.</string>
     <string name="tun2socks_enabled_empty_apps_warning">El perfil está activado, pero la lista de aplicaciones está vacía.</string>
-    <string name="tun2socks_app_conflict_error">Esta aplicación ya la usa otro programa de red. Elimínala allí o elige otro perfil.</string>
     <string name="tun2socks_debug_hint_title">Registros de depuración</string>
     <string name="tun2socks_debug_hint_body">Si un perfil no se inicia, revisa /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log y /data/adb/modules/ZDT-D/log/zdtd.log.</string>
 
@@ -1381,7 +1373,6 @@ La protección no funciona en modo punto de acceso. Si el punto de acceso está 
     <string name="openvpn_apps_title">Aplicaciones de OpenVPN</string>
     <string name="openvpn_apps_desc">Selecciona los nombres de paquete cuyo tráfico debe usar este perfil de OpenVPN. El daemon analiza los UID.</string>
     <string name="openvpn_enabled_empty_apps_warning">El perfil está activado, pero la lista de aplicaciones está vacía.</string>
-    <string name="openvpn_app_conflict_error">Esta aplicación ya la usa otro programa de red. Elimínala allí o elige otro perfil.</string>
     <string name="openvpn_autosave_hint">El guardado automático está activado. Los cambios se aplican después de reiniciar el servicio.</string>
     <string name="openvpn_config_summary_desc">client.ovpn se edita por separado. Usa el lápiz para abrir el editor.</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn presente • %1$d líneas no vacías</string>
@@ -1430,7 +1421,6 @@ La protección no funciona en modo punto de acceso. Si el punto de acceso está 
     <string name="amneziawg_apps_title">Aplicaciones de AmneziaWG</string>
     <string name="amneziawg_apps_desc">Selecciona los nombres de paquete cuyo tráfico debe usar este perfil de AmneziaWG. Es un backend de red exclusivo.</string>
     <string name="amneziawg_enabled_empty_apps_warning">El perfil está activado, pero la lista de aplicaciones está vacía. Selecciona al menos una aplicación.</string>
-    <string name="amneziawg_app_conflict_error">Esta aplicación ya la usa otro programa de red. Elimínala allí o elige otro perfil.</string>
     <string name="amneziawg_enable_requirements_error">Antes de activar, añade client.conf con PrivateKey/PublicKey, una dirección IPv4 válida, DNS, MTU y al menos una aplicación.</string>
     <string name="amneziawg_autosave_hint">El guardado automático está activado. Los cambios se aplican después de reiniciar el servicio.</string>
     <string name="saved_apply_after_restart">Guardado. Los cambios se aplicarán después de reiniciar el servicio.</string>
@@ -1501,7 +1491,6 @@ La protección no funciona en modo punto de acceso. Si el punto de acceso está 
     <string name="mihomo_apps_title">Aplicaciones de Mihomo</string>
     <string name="mihomo_apps_desc">Selecciona los nombres de paquete cuyo tráfico debe usar este perfil de Mihomo. El daemon analiza los UID.</string>
     <string name="mihomo_enabled_empty_apps_warning">El perfil está activado, pero la lista de aplicaciones está vacía.</string>
-    <string name="mihomo_app_conflict_error">Esta aplicación ya la usa otro programa de red. Elimínala allí o elige otro perfil.</string>
     <string name="mihomo_advanced_title">Bloques YAML avanzados</string>
     <string name="mihomo_advanced_desc">Dashboard y external-controller se guardan en config.yaml. Mantén external-controller en 127.0.0.1 salvo que quieras exponerlo intencionadamente.</string>
     <string name="mihomo_no_managed_route_hint">La interfaz no crea rutas, reglas de iptables o netd ni el modo tun de Mihomo. El daemon de ZDT-D realiza el enrutamiento en tiempo de ejecución.</string>

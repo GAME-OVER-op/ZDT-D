@@ -672,8 +672,6 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="log_root_access_required">root 権限が必要です</string>
     <string name="log_api_token_missing_fmt">APIトークンがありません。%1$sを確認してください</string>
     <string name="log_logs_cleared">ログを消去しました</string>
-    <string name="log_service_started">サービスを開始しました</string>
-    <string name="log_service_stopped">サービスを停止しました</string>
 
     <string name="mv_backup_restore_reopen_hint">再度復元する前に、バックアップを選び直す（またはこのウィンドウを開き直す）必要があります。</string>
     <string name="settings_delete_module_title">モジュールの削除</string>
@@ -935,10 +933,6 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="settings_reset_identifier_done">識別子をリセットしました</string>
     <string name="settings_reset_identifier_failed">識別子のリセットに失敗しました</string>
 
-    <string name="app_picker_conflict_used_in">%1$sで使用中</string>
-    <string name="app_picker_conflict_will_move">保存時に%1$sから削除されます</string>
-    <string name="app_picker_move_conflict_title">別のリストからアプリを削除しますか？</string>
-    <string name="app_picker_move_conflict_body">選択した1つ以上のアプリは、無効なツールのリストにすでに含まれています。それらのリストから削除してここに追加しますか？</string>
     <string name="apps_conflict_slot_common">共通</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">モバイル</string>
@@ -1311,7 +1305,6 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="myvpn_apps_title">myvpnアプリ</string>
     <string name="myvpn_apps_desc">このmyvpnバインドを使用する通信のパッケージ名を選択します。UIDの解析はデーモンが行います。</string>
     <string name="myvpn_enabled_empty_apps_warning">プロファイルは有効ですが、アプリ一覧が空です。</string>
-    <string name="myvpn_app_conflict_error">このアプリはすでに別のネットワークプログラムで使用されています。そちらから削除するか、別のプロファイルを選択してください。</string>
 
 
     <!-- tun2socks profiles -->
@@ -1344,7 +1337,6 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="tun2socks_apps_title">tun2socksアプリ</string>
     <string name="tun2socks_apps_desc">このtun2socksプロファイルを使用する通信のパッケージ名を選択します。UIDの解析はデーモンが行います。</string>
     <string name="tun2socks_enabled_empty_apps_warning">プロファイルは有効ですが、アプリ一覧が空です。</string>
-    <string name="tun2socks_app_conflict_error">このアプリはすでに別のネットワークプログラムで使用されています。そちらから削除するか、別のプロファイルを選択してください。</string>
     <string name="tun2socks_debug_hint_title">デバッグログ</string>
     <string name="tun2socks_debug_hint_body">プロファイルが起動しない場合は、/data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log と /data/adb/modules/ZDT-D/log/zdtd.log を確認してください。</string>
 
@@ -1380,7 +1372,6 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="openvpn_apps_title">OpenVPNアプリ</string>
     <string name="openvpn_apps_desc">このOpenVPNプロファイルを使用する通信のパッケージ名を選択します。UIDの解析はデーモンが行います。</string>
     <string name="openvpn_enabled_empty_apps_warning">プロファイルは有効ですが、アプリ一覧が空です。</string>
-    <string name="openvpn_app_conflict_error">このアプリはすでに別のネットワークプログラムで使用されています。そちらから削除するか、別のプロファイルを選択してください。</string>
     <string name="openvpn_autosave_hint">自動保存が有効です。変更はサービスの再起動後に適用されます。</string>
     <string name="openvpn_config_summary_desc">client.ovpnは別画面で編集します。鉛筆アイコンからエディターを開いてください。</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpnあり • 空でない行: %1$d</string>
@@ -1429,7 +1420,6 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="amneziawg_apps_title">AmneziaWGアプリ</string>
     <string name="amneziawg_apps_desc">このAmneziaWGプロファイルを使用するトラフィックのパッケージ名を選択してください。これは排他的なネットワークバックエンドです。</string>
     <string name="amneziawg_enabled_empty_apps_warning">プロファイルは有効ですが、アプリ一覧が空です。少なくとも1つのアプリを選択してください。</string>
-    <string name="amneziawg_app_conflict_error">このアプリはすでに別のネットワークプログラムで使用されています。そちらから削除するか、別のプロファイルを選択してください。</string>
     <string name="amneziawg_enable_requirements_error">有効化する前に、PrivateKey/PublicKey、有効なIPv4アドレス、DNS、MTU、少なくとも1つのアプリを含むclient.confを追加してください。</string>
     <string name="amneziawg_autosave_hint">自動保存が有効です。変更はサービスの再起動後に適用されます。</string>
     <string name="saved_apply_after_restart">保存しました。変更はサービスの再起動後に適用されます。</string>
@@ -1500,7 +1490,6 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="mihomo_apps_title">Mihomoアプリ</string>
     <string name="mihomo_apps_desc">このMihomoプロファイルを使用するトラフィックのパッケージ名を選択してください。UID解析はデーモンが行います。</string>
     <string name="mihomo_enabled_empty_apps_warning">プロファイルは有効ですが、アプリ一覧が空です。</string>
-    <string name="mihomo_app_conflict_error">このアプリはすでに別のネットワークプログラムで使用されています。そちらから削除するか、別のプロファイルを選択してください。</string>
     <string name="mihomo_advanced_title">高度なYAMLブロック</string>
     <string name="mihomo_advanced_desc">Dashboardとexternal-controllerはconfig.yamlに保存されます。意図的に公開する場合を除き、external-controllerは127.0.0.1のままにしてください。</string>
     <string name="mihomo_no_managed_route_hint">UIはルート、iptables/netdルール、Mihomoのtunモードを作成しません。ZDT-Dデーモンがランタイムルーティングを行います。</string>

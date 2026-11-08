@@ -672,8 +672,6 @@ Gunakan editor lain untuk mengubahnya.</string>
     <string name="log_root_access_required">Akses root diperlukan</string>
     <string name="log_api_token_missing_fmt">Token API tidak ada. Periksa %1$s</string>
     <string name="log_logs_cleared">Log dihapus</string>
-    <string name="log_service_started">Layanan dimulai</string>
-    <string name="log_service_stopped">Layanan dihentikan</string>
 
     <string name="mv_backup_restore_reopen_hint">Pilih kembali cadangan (atau buka ulang jendela ini) sebelum memulihkan lagi.</string>
     <string name="settings_delete_module_title">Penghapusan modul</string>
@@ -935,10 +933,6 @@ Perlindungan tidak berfungsi dalam mode hotspot. Jika hotspot diaktifkan dan sin
     <string name="settings_reset_identifier_done">Pengenal diatur ulang</string>
     <string name="settings_reset_identifier_failed">Gagal mengatur ulang pengenal</string>
 
-    <string name="app_picker_conflict_used_in">Digunakan di %1$s</string>
-    <string name="app_picker_conflict_will_move">Akan dihapus dari %1$s saat disimpan</string>
-    <string name="app_picker_move_conflict_title">Hapus aplikasi dari daftar lain?</string>
-    <string name="app_picker_move_conflict_body">Satu atau beberapa aplikasi terpilih sudah ada dalam daftar alat yang dinonaktifkan. Hapus dari daftar tersebut dan tambahkan di sini?</string>
     <string name="apps_conflict_slot_common">Umum</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">Seluler</string>
@@ -1311,7 +1305,6 @@ Perlindungan tidak berfungsi dalam mode hotspot. Jika hotspot diaktifkan dan sin
     <string name="myvpn_apps_title">Aplikasi myvpn</string>
     <string name="myvpn_apps_desc">Pilih nama paket yang lalu lintasnya harus menggunakan ikatan myvpn ini. Penguraian UID dilakukan oleh daemon.</string>
     <string name="myvpn_enabled_empty_apps_warning">Profil diaktifkan, tetapi daftar aplikasi kosong.</string>
-    <string name="myvpn_app_conflict_error">Aplikasi ini sudah digunakan oleh program jaringan lain. Hapus dari sana atau pilih profil lain.</string>
 
 
     <!-- tun2socks profiles -->
@@ -1344,7 +1337,6 @@ Perlindungan tidak berfungsi dalam mode hotspot. Jika hotspot diaktifkan dan sin
     <string name="tun2socks_apps_title">Aplikasi tun2socks</string>
     <string name="tun2socks_apps_desc">Pilih nama paket yang lalu lintasnya harus menggunakan profil tun2socks ini. Penguraian UID dilakukan oleh daemon.</string>
     <string name="tun2socks_enabled_empty_apps_warning">Profil diaktifkan, tetapi daftar aplikasi kosong.</string>
-    <string name="tun2socks_app_conflict_error">Aplikasi ini sudah digunakan oleh program jaringan lain. Hapus dari sana atau pilih profil lain.</string>
     <string name="tun2socks_debug_hint_title">Log debug</string>
     <string name="tun2socks_debug_hint_body">Jika profil tidak dimulai, periksa /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log dan /data/adb/modules/ZDT-D/log/zdtd.log.</string>
 
@@ -1380,7 +1372,6 @@ Perlindungan tidak berfungsi dalam mode hotspot. Jika hotspot diaktifkan dan sin
     <string name="openvpn_apps_title">Aplikasi OpenVPN</string>
     <string name="openvpn_apps_desc">Pilih nama paket yang lalu lintasnya harus menggunakan profil OpenVPN ini. Penguraian UID dilakukan oleh daemon.</string>
     <string name="openvpn_enabled_empty_apps_warning">Profil diaktifkan, tetapi daftar aplikasi kosong.</string>
-    <string name="openvpn_app_conflict_error">Aplikasi ini sudah digunakan oleh program jaringan lain. Hapus dari sana atau pilih profil lain.</string>
     <string name="openvpn_autosave_hint">Penyimpanan otomatis diaktifkan. Perubahan diterapkan setelah layanan dimulai ulang.</string>
     <string name="openvpn_config_summary_desc">client.ovpn diedit secara terpisah. Gunakan ikon pensil untuk membuka editor.</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn tersedia • %1$d baris tidak kosong</string>
@@ -1429,7 +1420,6 @@ Perlindungan tidak berfungsi dalam mode hotspot. Jika hotspot diaktifkan dan sin
     <string name="amneziawg_apps_title">Aplikasi AmneziaWG</string>
     <string name="amneziawg_apps_desc">Pilih nama paket yang lalu lintasnya harus menggunakan profil AmneziaWG ini. Ini adalah backend jaringan eksklusif.</string>
     <string name="amneziawg_enabled_empty_apps_warning">Profil diaktifkan, tetapi daftar aplikasi kosong. Pilih setidaknya satu aplikasi.</string>
-    <string name="amneziawg_app_conflict_error">Aplikasi ini sudah digunakan oleh program jaringan lain. Hapus dari sana atau pilih profil lain.</string>
     <string name="amneziawg_enable_requirements_error">Sebelum mengaktifkan, tambahkan client.conf dengan PrivateKey/PublicKey, alamat IPv4 yang valid, DNS, MTU, dan setidaknya satu aplikasi.</string>
     <string name="amneziawg_autosave_hint">Penyimpanan otomatis diaktifkan. Perubahan diterapkan setelah layanan dimulai ulang.</string>
     <string name="saved_apply_after_restart">Disimpan. Perubahan diterapkan setelah layanan dimulai ulang.</string>
@@ -1500,7 +1490,6 @@ Perlindungan tidak berfungsi dalam mode hotspot. Jika hotspot diaktifkan dan sin
     <string name="mihomo_apps_title">Aplikasi Mihomo</string>
     <string name="mihomo_apps_desc">Pilih nama paket yang lalu lintasnya harus menggunakan profil Mihomo ini. Penguraian UID dilakukan oleh daemon.</string>
     <string name="mihomo_enabled_empty_apps_warning">Profil diaktifkan, tetapi daftar aplikasi kosong.</string>
-    <string name="mihomo_app_conflict_error">Aplikasi ini sudah digunakan oleh program jaringan lain. Hapus dari sana atau pilih profil lain.</string>
     <string name="mihomo_advanced_title">Blok YAML lanjutan</string>
     <string name="mihomo_advanced_desc">Dashboard dan external-controller disimpan dalam config.yaml. Pertahankan external-controller di 127.0.0.1 kecuali Anda sengaja ingin mengeksposnya.</string>
     <string name="mihomo_no_managed_route_hint">UI tidak membuat rute, aturan iptables/netd, atau mode tun Mihomo. Daemon ZDT-D melakukan perutean runtime.</string>

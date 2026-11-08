@@ -443,8 +443,6 @@ private fun NonRootRoutingAppPicker(
                 selected = true,
                 compactWidth = isCompactWidth,
                 iconCache = iconCache,
-                enabled = true,
-                reason = null,
                 onToggle = { selected = selected - app.packageName },
               )
             }
@@ -486,8 +484,6 @@ private fun NonRootRoutingAppPicker(
                   selected = false,
                   compactWidth = isCompactWidth,
                   iconCache = iconCache,
-                  enabled = true,
-                  reason = null,
                   onToggle = { selected = selected + app.packageName },
                 )
               }

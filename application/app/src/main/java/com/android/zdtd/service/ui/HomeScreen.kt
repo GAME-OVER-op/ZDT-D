@@ -17,6 +17,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Subject
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -137,6 +139,12 @@ fun HomeScreen(
   }.collectAsStateWithLifecycle(initialValue = "")
 
   val on = ApiModels.isServiceOn(status)
+  // A stopped service can carry the daemon's last failure (for example an
+  // app-list overlap rejection). Show it only while stopped, idle and online so
+  // a stale message never lingers under STARTING/RUNNING or after the daemon
+  // became unreachable.
+  val lastError = status?.lastError.orEmpty()
+  val errorVisible = online && !busy && !on && lastError.isNotBlank()
   val landscape = rememberUseLandscapeControlLayout()
   val metrics = rememberHomeLayoutMetrics()
 
@@ -155,6 +163,7 @@ fun HomeScreen(
       busy = busy,
       logTail = logTail,
       detailedLogTail = detailedLogTail,
+      lastError = if (errorVisible) lastError else "",
       actions = actions,
       heroVisible = heroVisible,
       logsVisible = logsVisible,
@@ -199,6 +208,19 @@ fun HomeScreen(
     }
 
     Spacer(Modifier.height(metrics.sectionSpacing))
+
+    AnimatedVisibility(
+      visible = errorVisible,
+      enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+        expandVertically(tween(220, easing = FastOutSlowInEasing)),
+      exit = fadeOut(tween(160, easing = FastOutSlowInEasing)) +
+        shrinkVertically(tween(160, easing = FastOutSlowInEasing)),
+    ) {
+      Column(Modifier.fillMaxWidth()) {
+        ServiceErrorBanner(message = lastError, compact = metrics.compact)
+        Spacer(Modifier.height(metrics.sectionSpacing))
+      }
+    }
 
     AnimatedVisibility(
       visible = logsVisible,
@@ -364,6 +386,51 @@ private fun ServiceHeroCard(
           busy = busy,
           accent = accent,
           compact = compact,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun ServiceErrorBanner(
+  message: String,
+  compact: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val scheme = MaterialTheme.colorScheme
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = MaterialTheme.shapes.medium,
+    color = scheme.errorContainer,
+  ) {
+    Row(
+      modifier = Modifier.padding(
+        horizontal = if (compact) 10.dp else 12.dp,
+        vertical = if (compact) 8.dp else 10.dp,
+      ),
+      verticalAlignment = Alignment.Top,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      Icon(
+        imageVector = Icons.Filled.Warning,
+        contentDescription = null,
+        tint = scheme.onErrorContainer,
+        modifier = Modifier.size(if (compact) 16.dp else 18.dp),
+      )
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+          text = stringResource(R.string.common_error),
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = FontWeight.SemiBold,
+          color = scheme.onErrorContainer,
+        )
+        Text(
+          text = message,
+          style = MaterialTheme.typography.bodySmall,
+          color = scheme.onErrorContainer.copy(alpha = 0.92f),
+          maxLines = if (compact) 3 else 5,
+          overflow = TextOverflow.Ellipsis,
         )
       }
     }
@@ -1443,6 +1510,7 @@ private fun LandscapeHomeContent(
   busy: Boolean,
   logTail: String,
   detailedLogTail: String,
+  lastError: String,
   actions: ZdtdActions,
   heroVisible: Boolean,
   logsVisible: Boolean,
@@ -1485,14 +1553,29 @@ private fun LandscapeHomeContent(
         ),
       exit = fadeOut(tween(150)),
     ) {
-      HomeLogsCard(
-        logTail = logTail,
-        detailedLogTail = detailedLogTail,
-        compact = true,
-        shortHeight = true,
-        fillHeight = true,
-        modifier = Modifier.fillMaxSize(),
-      )
+      Column(Modifier.fillMaxSize()) {
+        AnimatedVisibility(
+          visible = lastError.isNotBlank(),
+          enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+            expandVertically(tween(220, easing = FastOutSlowInEasing)),
+          exit = fadeOut(tween(160, easing = FastOutSlowInEasing)) +
+            shrinkVertically(tween(160, easing = FastOutSlowInEasing)),
+        ) {
+          ServiceErrorBanner(
+            message = lastError,
+            compact = true,
+            modifier = Modifier.padding(bottom = 8.dp),
+          )
+        }
+        HomeLogsCard(
+          logTail = logTail,
+          detailedLogTail = detailedLogTail,
+          compact = true,
+          shortHeight = true,
+          fillHeight = true,
+          modifier = Modifier.weight(1f),
+        )
+      }
     }
   }
 }

@@ -54,8 +54,21 @@ pub fn start_full() -> Result<()> {
 
     settings::ensure_minimal_program_layouts()?;
     crate::runtime::sanitize::sanitize_runtime_files_best_effort();
+    let adopt_existing_runtime = can_adopt_existing_runtime();
+    if let Err(error) = validate_no_profile_app_overlap() {
+        if adopt_existing_runtime {
+            // Do not leave an unsafe runtime alive behind an OFF/error API state.
+            match stop_full() {
+                Ok(()) => {
+                    let _ = crate::platform::android::notification::send_app_state(false);
+                }
+                Err(cleanup_error) => log::error!("overlap rejection cleanup failed: {cleanup_error:#}"),
+            }
+        }
+        return Err(error);
+    }
 
-    if can_adopt_existing_runtime() {
+    if adopt_existing_runtime {
         crate::features::captive_portal::sync_from_settings_best_effort();
         final_sync_runtime_settings_best_effort("adopted runtime");
         crate::runtime::state::write_running(false, true).ok();
@@ -398,6 +411,18 @@ if !any_main_service_running(&runtime_plan) {
 fn final_sync_runtime_settings_best_effort(context: &str) {
     log::info!("runtime: final settings sync ({})", context);
     crate::platform::android::sysctl::sync_ipv4_forward_from_settings_best_effort();
+}
+
+/// Assignment stays free; every enabled runtime path rejects actual routing
+/// overlaps before it can claim the same package through two profiles.
+fn validate_no_profile_app_overlap() -> Result<()> {
+    let overlaps = crate::api::find_enabled_app_overlaps()?;
+    if overlaps.is_empty() {
+        return Ok(());
+    }
+    let details = crate::api::format_enabled_app_overlaps(&overlaps);
+    crate::logging::user_app_overlap_error(&details);
+    anyhow::bail!("enabled app lists overlap: {details}; disable one conflicting profile or remove the duplicates");
 }
 
 /// Stop all services and restore baseline iptables.

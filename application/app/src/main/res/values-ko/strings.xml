@@ -672,8 +672,6 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="log_root_access_required">루트 권한 필요</string>
     <string name="log_api_token_missing_fmt">API 토큰이 없습니다. %1$s을(를) 확인하세요</string>
     <string name="log_logs_cleared">로그 지움</string>
-    <string name="log_service_started">서비스 시작됨</string>
-    <string name="log_service_stopped">서비스 중지됨</string>
 
     <string name="mv_backup_restore_reopen_hint">다시 복원하기 전에 백업을 다시 선택하거나 이 창을 다시 여세요.</string>
     <string name="settings_delete_module_title">모듈 제거</string>
@@ -935,10 +933,6 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="settings_reset_identifier_done">식별자 초기화됨</string>
     <string name="settings_reset_identifier_failed">식별자 초기화 실패</string>
 
-    <string name="app_picker_conflict_used_in">%1$s에서 사용 중</string>
-    <string name="app_picker_conflict_will_move">저장 시 %1$s에서 제거됨</string>
-    <string name="app_picker_move_conflict_title">다른 목록에서 앱을 제거할까요?</string>
-    <string name="app_picker_move_conflict_body">선택한 앱 중 하나 이상이 이미 비활성화된 도구 목록에 있습니다. 해당 목록에서 제거하고 여기에 추가할까요?</string>
     <string name="apps_conflict_slot_common">공통</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">모바일</string>
@@ -1311,7 +1305,6 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="myvpn_apps_title">myvpn 앱</string>
     <string name="myvpn_apps_desc">이 myvpn 바인딩을 사용할 트래픽의 패키지 이름을 선택하세요. UID 파싱은 데몬이 수행합니다.</string>
     <string name="myvpn_enabled_empty_apps_warning">프로필이 활성화되어 있지만 앱 목록이 비어 있습니다.</string>
-    <string name="myvpn_app_conflict_error">이 앱은 이미 다른 네트워크 프로그램에서 사용 중입니다. 해당 프로그램에서 제거하거나 다른 프로필을 선택하세요.</string>
 
 
     <!-- tun2socks profiles -->
@@ -1344,7 +1337,6 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="tun2socks_apps_title">tun2socks 앱</string>
     <string name="tun2socks_apps_desc">이 tun2socks 프로필을 사용할 트래픽의 패키지 이름을 선택하세요. UID 파싱은 데몬이 수행합니다.</string>
     <string name="tun2socks_enabled_empty_apps_warning">프로필이 활성화되어 있지만 앱 목록이 비어 있습니다.</string>
-    <string name="tun2socks_app_conflict_error">이 앱은 이미 다른 네트워크 프로그램에서 사용 중입니다. 해당 프로그램에서 제거하거나 다른 프로필을 선택하세요.</string>
     <string name="tun2socks_debug_hint_title">디버그 로그</string>
     <string name="tun2socks_debug_hint_body">프로필이 시작되지 않으면 /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log 및 /data/adb/modules/ZDT-D/log/zdtd.log를 확인하세요.</string>
 
@@ -1380,7 +1372,6 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="openvpn_apps_title">OpenVPN 앱</string>
     <string name="openvpn_apps_desc">이 OpenVPN 프로필을 사용할 트래픽의 패키지 이름을 선택하세요. UID 파싱은 데몬이 수행합니다.</string>
     <string name="openvpn_enabled_empty_apps_warning">프로필이 활성화되어 있지만 앱 목록이 비어 있습니다.</string>
-    <string name="openvpn_app_conflict_error">이 앱은 이미 다른 네트워크 프로그램에서 사용 중입니다. 해당 프로그램에서 제거하거나 다른 프로필을 선택하세요.</string>
     <string name="openvpn_autosave_hint">자동 저장이 활성화되어 있습니다. 변경 사항은 서비스를 다시 시작한 후 적용됩니다.</string>
     <string name="openvpn_config_summary_desc">client.ovpn은 별도로 편집합니다. 연필 아이콘을 사용해 편집기를 여세요.</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn 있음 • 비어 있지 않은 줄 %1$d개</string>
@@ -1429,7 +1420,6 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="amneziawg_apps_title">AmneziaWG 앱</string>
     <string name="amneziawg_apps_desc">이 AmneziaWG 프로필을 사용할 트래픽의 패키지 이름을 선택하세요. 이 네트워크 백엔드는 독점적으로 사용됩니다.</string>
     <string name="amneziawg_enabled_empty_apps_warning">프로필이 활성화되어 있지만 앱 목록이 비어 있습니다. 앱을 하나 이상 선택하세요.</string>
-    <string name="amneziawg_app_conflict_error">이 앱은 이미 다른 네트워크 프로그램에서 사용 중입니다. 해당 프로그램에서 제거하거나 다른 프로필을 선택하세요.</string>
     <string name="amneziawg_enable_requirements_error">활성화하기 전에 PrivateKey/PublicKey, 유효한 IPv4 주소, DNS, MTU 및 앱 하나 이상이 포함된 client.conf를 추가하세요.</string>
     <string name="amneziawg_autosave_hint">자동 저장이 활성화되어 있습니다. 변경 사항은 서비스를 다시 시작한 후 적용됩니다.</string>
     <string name="saved_apply_after_restart">저장했습니다. 변경 사항은 서비스 재시작 후 적용됩니다.</string>
@@ -1500,7 +1490,6 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="mihomo_apps_title">Mihomo 앱</string>
     <string name="mihomo_apps_desc">이 Mihomo 프로필을 사용할 트래픽의 패키지 이름을 선택하세요. UID 파싱은 데몬이 수행합니다.</string>
     <string name="mihomo_enabled_empty_apps_warning">프로필이 활성화되어 있지만 앱 목록이 비어 있습니다.</string>
-    <string name="mihomo_app_conflict_error">이 앱은 이미 다른 네트워크 프로그램에서 사용 중입니다. 해당 프로그램에서 제거하거나 다른 프로필을 선택하세요.</string>
     <string name="mihomo_advanced_title">고급 YAML 블록</string>
     <string name="mihomo_advanced_desc">Dashboard와 external-controller는 config.yaml에 저장됩니다. 의도적으로 노출하지 않는 한 external-controller를 127.0.0.1로 유지하세요.</string>
     <string name="mihomo_no_managed_route_hint">UI는 경로, iptables/netd 규칙 또는 Mihomo tun 모드를 만들지 않습니다. ZDT-D 데몬이 런타임 라우팅을 수행합니다.</string>

@@ -570,8 +570,6 @@ fun MyVpnProfileScreen(
       path = "$basePath/apps/user",
       actions = actions,
       snackHost = snackHost,
-      programs = programs,
-      saveFailedMessage = stringResource(R.string.myvpn_app_conflict_error),
       onSavedSelection = { appCount = it.size },
     )
 

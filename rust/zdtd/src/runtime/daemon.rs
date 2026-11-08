@@ -117,6 +117,15 @@ pub fn run(_cfg: &Config) -> Result<()> {
     api::serve(state.clone(), "127.0.0.1:1006")
 }
 
+fn disable_autostart_after_start_failure(state: &SharedState) {
+    let mut start = settings::read_start_settings().unwrap_or_default();
+    start.enabled = false;
+    match settings::write_start_settings(&start) {
+        Ok(()) => lock_state(state).start = start,
+        Err(e) => logging::warn(&format!("failed to disable autostart after start failure: {e:#}")),
+    }
+}
+
 /// Schedule start in background and return immediately.
 ///
 /// If a start is already running, this is a no-op.
@@ -194,6 +203,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
                 Err(e) => {
                     logging::warn(&format!("start_full failed: {e:#}"));
                     crate::features::scan_detector::stop();
+                    disable_autostart_after_start_failure(&st_arc);
                     api_status::write_error_off(&format!("start_full failed: {e:#}"));
                     let mut st = lock_state(&st_arc);
                     st.services_running = false;
@@ -204,6 +214,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
                 logging::warn("start thread panicked");
                 crate::logging::user_error("Ошибка запуска: внутренний сбой потока");
                 crate::features::scan_detector::stop();
+                disable_autostart_after_start_failure(&st_arc);
                 api_status::write_error_off("start thread panicked");
                 let mut st = lock_state(&st_arc);
                 st.services_running = false;

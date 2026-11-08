@@ -154,6 +154,9 @@ interface ZdtdActions {
   /** Retry the daemon startup handshake shown after app launch. */
   fun retryDaemonStartup()
 
+  /** Restart the local daemon when its API is unavailable. */
+  fun startDaemonManually()
+
   fun retryRoot()
   fun openRemoteSetup()
   fun exitRemoteControl()

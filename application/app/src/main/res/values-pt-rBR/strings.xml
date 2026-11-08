@@ -712,6 +712,7 @@ Ao continuar, você concorda em restaurar o backup ignorando a verificação de 
     <string name="startup_stage_connecting">Etapa 1: Conectando ao serviço</string>
     <string name="startup_stage_loading">Etapa 2: Carregando informações do serviço</string>
     <string name="startup_reinstall_module">Reinstalar módulo</string>
+    <string name="startup_restart_daemon">Reiniciar daemon</string>
     <string name="startup_loading_title">Carregando aplicativo</string>
     <string name="startup_loading_subtitle">Preparando a interface e verificando a conexão com o módulo.</string>
     <string name="startup_stage_connecting_short">Conectando...</string>

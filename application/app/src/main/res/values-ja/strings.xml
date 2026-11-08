@@ -712,6 +712,7 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="startup_stage_connecting">ステージ1: サービスに接続</string>
     <string name="startup_stage_loading">ステージ2: サービスから情報を読み込み</string>
     <string name="startup_reinstall_module">モジュールを再インストール</string>
+    <string name="startup_restart_daemon">daemon を再起動</string>
     <string name="startup_loading_title">アプリケーションを読み込み中</string>
     <string name="startup_loading_subtitle">インターフェースを準備し、モジュールへの接続を確認しています。</string>
     <string name="startup_stage_connecting_short">接続中...</string>

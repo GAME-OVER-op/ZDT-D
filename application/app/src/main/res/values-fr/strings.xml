@@ -712,6 +712,7 @@ En continuant, vous acceptez de restaurer la sauvegarde en ignorant la vérifica
     <string name="startup_stage_connecting">Étape 1 : connexion au service</string>
     <string name="startup_stage_loading">Étape 2 : chargement des informations depuis le service</string>
     <string name="startup_reinstall_module">Réinstaller le module</string>
+    <string name="startup_restart_daemon">Redémarrer le daemon</string>
     <string name="startup_loading_title">Chargement de l’application</string>
     <string name="startup_loading_subtitle">Préparation de l’interface et vérification de la connexion au module.</string>
     <string name="startup_stage_connecting_short">Connexion...</string>

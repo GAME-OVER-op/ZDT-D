@@ -712,6 +712,7 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="startup_stage_connecting">1단계: 서비스에 연결</string>
     <string name="startup_stage_loading">2단계: 서비스에서 정보 불러오기</string>
     <string name="startup_reinstall_module">모듈 다시 설치</string>
+    <string name="startup_restart_daemon">daemon 다시 시작</string>
     <string name="startup_loading_title">애플리케이션 불러오는 중</string>
     <string name="startup_loading_subtitle">인터페이스를 준비하고 모듈 연결을 확인하는 중입니다.</string>
     <string name="startup_stage_connecting_short">연결 중...</string>

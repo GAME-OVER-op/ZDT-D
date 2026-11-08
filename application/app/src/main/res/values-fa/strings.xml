@@ -712,6 +712,7 @@ APatch: 10700+</string>
     <string name="startup_stage_connecting">مرحله ۱: اتصال به سرویس</string>
     <string name="startup_stage_loading">مرحله ۲: بارگیری اطلاعات از سرویس</string>
     <string name="startup_reinstall_module">نصب مجدد ماژول</string>
+    <string name="startup_restart_daemon">راه‌اندازی مجدد daemon</string>
     <string name="startup_loading_title">در حال بارگیری برنامه</string>
     <string name="startup_loading_subtitle">در حال آماده‌سازی رابط و بررسی اتصال به ماژول.</string>
     <string name="startup_stage_connecting_short">در حال اتصال...</string>

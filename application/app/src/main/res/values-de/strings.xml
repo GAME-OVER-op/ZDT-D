@@ -712,6 +712,7 @@ Wenn Sie fortfahren, stimmen Sie der Wiederherstellung der Sicherung unter Umgeh
     <string name="startup_stage_connecting">Phase 1: Verbindung zum Dienst</string>
     <string name="startup_stage_loading">Phase 2: Informationen vom Dienst laden</string>
     <string name="startup_reinstall_module">Modul neu installieren</string>
+    <string name="startup_restart_daemon">Daemon neu starten</string>
     <string name="startup_loading_title">Anwendung wird geladen</string>
     <string name="startup_loading_subtitle">Oberfläche wird vorbereitet und Verbindung zum Modul geprüft.</string>
     <string name="startup_stage_connecting_short">Verbindung wird hergestellt...</string>

@@ -152,6 +152,10 @@ Hosts diagnostics such as DPI detector and NFQWS strategy tester.
 Contains app/theme/language settings and daemon-level options such as protection
 or hotspot-related settings.
 
+The startup failure and runtime service-unavailable screens provide an explicit
+daemon restart action. Restart preserves the saved runtime state; Retry only
+repeats the connection handshake.
+
 ### Support
 
 Shows project support links and related user information.

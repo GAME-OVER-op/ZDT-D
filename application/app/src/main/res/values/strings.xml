@@ -712,6 +712,7 @@ By continuing, you agree to restore the backup while ignoring the versionCode ch
     <string name="startup_stage_connecting">Stage 1: Connecting to service</string>
     <string name="startup_stage_loading">Stage 2: Loading information from service</string>
     <string name="startup_reinstall_module">Reinstall module</string>
+    <string name="startup_restart_daemon">Restart daemon</string>
     <string name="startup_loading_title">Loading application</string>
     <string name="startup_loading_subtitle">Preparing the interface and checking the connection to the module.</string>
     <string name="startup_stage_connecting_short">Connecting...</string>

@@ -712,6 +712,7 @@ Khi tiếp tục, bạn đồng ý khôi phục bản sao lưu và bỏ qua ki�
     <string name="startup_stage_connecting">Giai đoạn 1: Kết nối với dịch vụ</string>
     <string name="startup_stage_loading">Giai đoạn 2: Tải thông tin từ dịch vụ</string>
     <string name="startup_reinstall_module">Cài đặt lại mô-đun</string>
+    <string name="startup_restart_daemon">Khởi động lại daemon</string>
     <string name="startup_loading_title">Đang tải ứng dụng</string>
     <string name="startup_loading_subtitle">Đang chuẩn bị giao diện và kiểm tra kết nối với mô-đun.</string>
     <string name="startup_stage_connecting_short">Đang kết nối...</string>

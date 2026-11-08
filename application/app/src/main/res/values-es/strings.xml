@@ -712,6 +712,7 @@ Al continuar, aceptas restaurar la copia de seguridad ignorando la comprobación
     <string name="startup_stage_connecting">Etapa 1: Conectando con el servicio</string>
     <string name="startup_stage_loading">Etapa 2: Cargando información del servicio</string>
     <string name="startup_reinstall_module">Reinstalar módulo</string>
+    <string name="startup_restart_daemon">Reiniciar daemon</string>
     <string name="startup_loading_title">Cargando aplicación</string>
     <string name="startup_loading_subtitle">Preparando la interfaz y comprobando la conexión con el módulo.</string>
     <string name="startup_stage_connecting_short">Conectando...</string>

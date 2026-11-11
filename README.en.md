@@ -212,6 +212,8 @@ ZDT-D refuses an enabled runtime overlap: two different enabled app lists claimi
 
 Overlaps are rejected before a cold start, before adopting an already running runtime, and before a live hot-apply. Cold-start and adoption failures appear on Home through the daemon `last_error`; rejected adoption also stops the old runtime. A refused hot-apply keeps the saved assignment and shows the rejected state with `RuntimeApplyStatus.error` in the apply indicator. Both diagnostics name the conflicting profiles and overlapping package IDs.
 
+Autostart is preserved for transient startup failures (Android services or network not ready yet): the daemon reports the error and retries on the next boot. Autostart is disabled only for persistent configuration errors such as an enabled app-list overlap.
+
 `myprogram` lists do not claim routing while app routing is off for the profile. Storage or parse failures fail closed: an unreadable enabled list is reported as an error, never treated as conflict-free.
 
 Helper features keep their own rules. `blockedquic` can be used alongside other routing modes when it only blocks UDP/443 for its own list, and `proxyInfo` applies a separate port-protection rule to the packages it protects.

@@ -203,18 +203,24 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
                 Err(e) => {
                     logging::warn(&format!("start_full failed: {e:#}"));
                     crate::features::scan_detector::stop();
-                    disable_autostart_after_start_failure(&st_arc);
+                    // Transient failures (services/network not ready yet) keep
+                    // autostart on so the next boot retries; only persistent
+                    // config errors such as app-list overlaps turn it off.
+                    if runtime::is_persistent_start_failure(&e) {
+                        disable_autostart_after_start_failure(&st_arc);
+                    }
                     api_status::write_error_off(&format!("start_full failed: {e:#}"));
                     let mut st = lock_state(&st_arc);
                     st.services_running = false;
                     st.services_partial = false;
                 }
             },
+            // A panic is treated as transient: autostart stays on so the next
+            // boot retries (see the persistent-failure note above).
             Err(_) => {
                 logging::warn("start thread panicked");
                 crate::logging::user_error("Ошибка запуска: внутренний сбой потока");
                 crate::features::scan_detector::stop();
-                disable_autostart_after_start_failure(&st_arc);
                 api_status::write_error_off("start thread panicked");
                 let mut st = lock_state(&st_arc);
                 st.services_running = false;

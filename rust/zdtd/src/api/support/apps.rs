@@ -961,3 +961,19 @@ mod app_list_rule_tests {
     }
 }
 
+#[cfg(test)]
+mod start_failure_classification_tests {
+    use crate::runtime::{is_persistent_start_failure, AppListOverlapError};
+
+    #[test]
+    fn overlap_failure_is_persistent() {
+        let e = anyhow::Error::new(AppListOverlapError).context("profiles a and b");
+        assert!(is_persistent_start_failure(&e));
+    }
+
+    #[test]
+    fn transient_failure_keeps_autostart() {
+        assert!(!is_persistent_start_failure(&anyhow::anyhow!("boot wait failed")));
+    }
+}
+

@@ -415,6 +415,25 @@ fn final_sync_runtime_settings_best_effort(context: &str) {
 
 /// Assignment stays free; every enabled runtime path rejects actual routing
 /// overlaps before it can claim the same package through two profiles.
+///
+/// The returned error is a persistent configuration error: the daemon keeps
+/// the user's autostart preference for transient failures, but disables
+/// autostart for this one so a reboot cannot retry a broken config forever.
+#[derive(Debug)]
+pub struct AppListOverlapError;
+
+impl std::fmt::Display for AppListOverlapError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("enabled app lists overlap")
+    }
+}
+
+impl std::error::Error for AppListOverlapError {}
+
+pub fn is_persistent_start_failure(e: &anyhow::Error) -> bool {
+    e.chain().any(|cause| cause.downcast_ref::<AppListOverlapError>().is_some())
+}
+
 fn validate_no_profile_app_overlap() -> Result<()> {
     let overlaps = crate::api::find_enabled_app_overlaps()?;
     if overlaps.is_empty() {
@@ -422,7 +441,9 @@ fn validate_no_profile_app_overlap() -> Result<()> {
     }
     let details = crate::api::format_enabled_app_overlaps(&overlaps);
     crate::logging::user_app_overlap_error(&details);
-    anyhow::bail!("enabled app lists overlap: {details}; disable one conflicting profile or remove the duplicates");
+    anyhow::bail!(anyhow::Error::new(AppListOverlapError).context(format!(
+        "enabled app lists overlap: {details}; disable one conflicting profile or remove the duplicates"
+    )))
 }
 
 /// Stop all services and restore baseline iptables.

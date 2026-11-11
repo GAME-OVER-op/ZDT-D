@@ -9,4 +9,5 @@ pub mod start;
 pub mod state;
 pub mod stop;
 
-pub use start::{last_start_partial, start_full, stop_full};
+pub use start::{is_persistent_start_failure, last_start_partial, start_full, stop_full};
+pub use start::AppListOverlapError;

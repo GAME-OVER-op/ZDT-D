@@ -256,6 +256,11 @@ fn worker_loop(generation: u64) {
         ));
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let overlaps = crate::api::find_enabled_app_overlaps()?;
+            if !overlaps.is_empty() {
+                let details = crate::api::format_enabled_app_overlaps(&overlaps);
+                anyhow::bail!("enabled app lists overlap: {details}; assignment saved, runtime apply refused");
+            }
             crate::runtime::refresh::refresh_apps(&task.program, task.profile.as_deref(), &task.slot)
         }));
 

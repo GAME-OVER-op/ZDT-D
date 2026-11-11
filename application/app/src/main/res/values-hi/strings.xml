@@ -672,8 +672,6 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="log_root_access_required">रूट एक्सेस आवश्यक है</string>
     <string name="log_api_token_missing_fmt">API टोकन गायब है। %1$s जाँचें</string>
     <string name="log_logs_cleared">लॉग साफ़ किए गए</string>
-    <string name="log_service_started">सेवा शुरू हुई</string>
-    <string name="log_service_stopped">सेवा रोकी गई</string>
 
     <string name="mv_backup_restore_reopen_hint">दोबारा पुनर्स्थापित करने से पहले बैकअप फिर चुनें (या यह विंडो दोबारा खोलें)।</string>
     <string name="settings_delete_module_title">मॉड्यूल हटाना</string>
@@ -935,10 +933,6 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="settings_reset_identifier_done">पहचानकर्ता रीसेट किया गया</string>
     <string name="settings_reset_identifier_failed">पहचानकर्ता रीसेट करना विफल रहा</string>
 
-    <string name="app_picker_conflict_used_in">%1$s में उपयोग</string>
-    <string name="app_picker_conflict_will_move">सहेजने पर %1$s से हटा दिया जाएगा</string>
-    <string name="app_picker_move_conflict_title">ऐप को दूसरी सूची से हटाएँ?</string>
-    <string name="app_picker_move_conflict_body">एक या अधिक चुने गए ऐप पहले से अक्षम टूल सूचियों में हैं। उन्हें वहाँ से हटाकर यहाँ जोड़ें?</string>
     <string name="apps_conflict_slot_common">सामान्य</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">मोबाइल</string>
@@ -1312,7 +1306,6 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="myvpn_apps_title">myvpn ऐप्स</string>
     <string name="myvpn_apps_desc">वे पैकेज नाम चुनें जिनका ट्रैफ़िक इस myvpn बाइंडिंग का उपयोग करे। UID पार्सिंग डेमन द्वारा की जाती है।</string>
     <string name="myvpn_enabled_empty_apps_warning">प्रोफ़ाइल सक्षम है, लेकिन ऐप सूची खाली है।</string>
-    <string name="myvpn_app_conflict_error">यह ऐप पहले से किसी अन्य नेटवर्क प्रोग्राम द्वारा उपयोग किया जा रहा है। इसे वहाँ से हटाएँ या दूसरा प्रोफ़ाइल चुनें।</string>
 
 
     <!-- tun2socks profiles -->
@@ -1345,7 +1338,6 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="tun2socks_apps_title">tun2socks ऐप्स</string>
     <string name="tun2socks_apps_desc">वे पैकेज नाम चुनें जिनका ट्रैफ़िक इस tun2socks प्रोफ़ाइल का उपयोग करे। UID पार्सिंग डेमन द्वारा की जाती है।</string>
     <string name="tun2socks_enabled_empty_apps_warning">प्रोफ़ाइल सक्षम है, लेकिन ऐप सूची खाली है।</string>
-    <string name="tun2socks_app_conflict_error">यह ऐप पहले से किसी अन्य नेटवर्क प्रोग्राम द्वारा उपयोग किया जा रहा है। इसे वहाँ से हटाएँ या दूसरा प्रोफ़ाइल चुनें।</string>
     <string name="tun2socks_debug_hint_title">डीबग लॉग</string>
     <string name="tun2socks_debug_hint_body">यदि कोई प्रोफ़ाइल शुरू नहीं होती, तो /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log और /data/adb/modules/ZDT-D/log/zdtd.log जाँचें।</string>
 
@@ -1381,7 +1373,6 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="openvpn_apps_title">OpenVPN ऐप्स</string>
     <string name="openvpn_apps_desc">वे पैकेज नाम चुनें जिनका ट्रैफ़िक इस OpenVPN प्रोफ़ाइल का उपयोग करे। UID पार्सिंग डेमन द्वारा की जाती है।</string>
     <string name="openvpn_enabled_empty_apps_warning">प्रोफ़ाइल सक्षम है, लेकिन ऐप सूची खाली है।</string>
-    <string name="openvpn_app_conflict_error">यह ऐप पहले से किसी अन्य नेटवर्क प्रोग्राम द्वारा उपयोग किया जा रहा है। इसे वहाँ से हटाएँ या दूसरा प्रोफ़ाइल चुनें।</string>
     <string name="openvpn_autosave_hint">स्वतः सहेजना सक्षम है। परिवर्तन सेवा पुनः प्रारंभ होने के बाद लागू होते हैं।</string>
     <string name="openvpn_config_summary_desc">client.ovpn अलग से संपादित किया जाता है। संपादक खोलने के लिए पेंसिल का उपयोग करें।</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn मौजूद • %1$d गैर-रिक्त पंक्तियाँ</string>
@@ -1430,7 +1421,6 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="amneziawg_apps_title">AmneziaWG ऐप्स</string>
     <string name="amneziawg_apps_desc">उन पैकेज नामों को चुनें जिनका ट्रैफ़िक इस AmneziaWG प्रोफ़ाइल का उपयोग करे। यह एक विशिष्ट नेटवर्क बैकएंड है।</string>
     <string name="amneziawg_enabled_empty_apps_warning">प्रोफ़ाइल सक्षम है, लेकिन ऐप सूची खाली है। कम से कम एक ऐप चुनें।</string>
-    <string name="amneziawg_app_conflict_error">यह ऐप पहले से किसी अन्य नेटवर्क प्रोग्राम द्वारा उपयोग किया जा रहा है। इसे वहाँ से हटाएँ या दूसरा प्रोफ़ाइल चुनें।</string>
     <string name="amneziawg_enable_requirements_error">सक्षम करने से पहले PrivateKey/PublicKey, मान्य IPv4 पता, DNS, MTU और कम से कम एक ऐप वाला client.conf जोड़ें।</string>
     <string name="amneziawg_autosave_hint">स्वतः सहेजना सक्षम है। परिवर्तन सेवा पुनः प्रारंभ होने के बाद लागू होते हैं।</string>
     <string name="saved_apply_after_restart">सहेजा गया। सेवा पुनः शुरू होने के बाद बदलाव लागू होंगे।</string>
@@ -1501,7 +1491,6 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="mihomo_apps_title">Mihomo ऐप्स</string>
     <string name="mihomo_apps_desc">उन पैकेज नामों को चुनें जिनका ट्रैफ़िक इस Mihomo प्रोफ़ाइल का उपयोग करे। UID पार्सिंग डेमन करता है।</string>
     <string name="mihomo_enabled_empty_apps_warning">प्रोफ़ाइल सक्षम है, लेकिन ऐप सूची खाली है।</string>
-    <string name="mihomo_app_conflict_error">यह ऐप पहले से किसी अन्य नेटवर्क प्रोग्राम द्वारा उपयोग किया जा रहा है। इसे वहाँ से हटाएँ या दूसरा प्रोफ़ाइल चुनें।</string>
     <string name="mihomo_advanced_title">उन्नत YAML ब्लॉक</string>
     <string name="mihomo_advanced_desc">Dashboard और external-controller config.yaml में संग्रहीत होते हैं। जब तक आप जानबूझकर इसे उजागर न करना चाहें, external-controller को 127.0.0.1 पर रखें।</string>
     <string name="mihomo_no_managed_route_hint">UI रूट, iptables या netd नियम अथवा Mihomo tun मोड नहीं बनाता। ZDT-D डेमन रनटाइम रूटिंग करता है।</string>

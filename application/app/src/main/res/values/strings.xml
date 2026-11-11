@@ -672,8 +672,6 @@ Use another editor to modify it.</string>
     <string name="log_root_access_required">Root access required</string>
     <string name="log_api_token_missing_fmt">API token missing. Check %1$s</string>
     <string name="log_logs_cleared">Logs cleared</string>
-    <string name="log_service_started">Service started</string>
-    <string name="log_service_stopped">Service stopped</string>
 
     <string name="mv_backup_restore_reopen_hint">Select the backup again (or reopen this window) before restoring again.</string>
     <string name="settings_delete_module_title">Module removal</string>
@@ -935,10 +933,6 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="settings_reset_identifier_done">Identifier reset</string>
     <string name="settings_reset_identifier_failed">Failed to reset identifier</string>
 
-    <string name="app_picker_conflict_used_in">Used in %1$s</string>
-    <string name="app_picker_conflict_will_move">Will be removed from %1$s on save</string>
-    <string name="app_picker_move_conflict_title">Remove app from another list?</string>
-    <string name="app_picker_move_conflict_body">One or more selected apps are already present in disabled tool lists. Remove them from those lists and add them here?</string>
     <string name="apps_conflict_slot_common">Common</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">Mobile</string>
@@ -1312,7 +1306,6 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myvpn_apps_title">myvpn apps</string>
     <string name="myvpn_apps_desc">Select package names whose traffic should use this myvpn binding. UID parsing is done by the daemon.</string>
     <string name="myvpn_enabled_empty_apps_warning">The profile is enabled, but the app list is empty.</string>
-    <string name="myvpn_app_conflict_error">This app is already used by another network program. Remove it there or choose another profile.</string>
 
 
     <!-- tun2socks profiles -->
@@ -1345,7 +1338,6 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="tun2socks_apps_title">tun2socks apps</string>
     <string name="tun2socks_apps_desc">Select package names whose traffic should use this tun2socks profile. UID parsing is done by the daemon.</string>
     <string name="tun2socks_enabled_empty_apps_warning">The profile is enabled, but the app list is empty.</string>
-    <string name="tun2socks_app_conflict_error">This app is already used by another network program. Remove it there or choose another profile.</string>
     <string name="tun2socks_debug_hint_title">Debug logs</string>
     <string name="tun2socks_debug_hint_body">If a profile does not start, check /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log and /data/adb/modules/ZDT-D/log/zdtd.log.</string>
 
@@ -1381,7 +1373,6 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="openvpn_apps_title">OpenVPN apps</string>
     <string name="openvpn_apps_desc">Select package names whose traffic should use this OpenVPN profile. UID parsing is done by the daemon.</string>
     <string name="openvpn_enabled_empty_apps_warning">The profile is enabled, but the app list is empty.</string>
-    <string name="openvpn_app_conflict_error">This app is already used by another network program. Remove it there or choose another profile.</string>
     <string name="openvpn_autosave_hint">Auto-save is enabled. Changes apply after service restart.</string>
     <string name="openvpn_config_summary_desc">client.ovpn is edited separately. Use the pencil to open the editor.</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn is present • %1$d non-empty lines</string>
@@ -1430,7 +1421,6 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="amneziawg_apps_title">AmneziaWG apps</string>
     <string name="amneziawg_apps_desc">Select package names whose traffic should use this AmneziaWG profile. This is an exclusive network backend.</string>
     <string name="amneziawg_enabled_empty_apps_warning">The profile is enabled, but the app list is empty. Select at least one app.</string>
-    <string name="amneziawg_app_conflict_error">This app is already used by another network program. Remove it there or choose another profile.</string>
     <string name="amneziawg_enable_requirements_error">Before enabling, add client.conf with PrivateKey/PublicKey, valid IPv4 address, DNS, MTU and at least one app.</string>
     <string name="amneziawg_autosave_hint">Auto-save is enabled. Changes apply after service restart.</string>
     <string name="saved_apply_after_restart">Saved. Changes apply after service restart.</string>
@@ -1501,7 +1491,6 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="mihomo_apps_title">Mihomo apps</string>
     <string name="mihomo_apps_desc">Select package names whose traffic should use this Mihomo profile. UID parsing is done by the daemon.</string>
     <string name="mihomo_enabled_empty_apps_warning">The profile is enabled, but the app list is empty.</string>
-    <string name="mihomo_app_conflict_error">This app is already used by another network program. Remove it there or choose another profile.</string>
     <string name="mihomo_advanced_title">Advanced YAML blocks</string>
     <string name="mihomo_advanced_desc">Dashboard and external-controller are stored in config.yaml. Keep external-controller on 127.0.0.1 unless you intentionally expose it.</string>
     <string name="mihomo_no_managed_route_hint">The UI does not create routes, iptables, netd rules or Mihomo tun mode. ZDT-D daemon does runtime routing.</string>

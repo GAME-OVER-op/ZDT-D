@@ -156,7 +156,7 @@ UID lists are used by:
 - NFQUEUE rules;
 - transparent redirects;
 - Android `netd` UID bindings;
-- conflict validation;
+- enabled app-list overlap checks;
 - protection helpers.
 
 If packages are installed/removed, cloned, moved between Android users or hidden
@@ -514,9 +514,9 @@ Upstream:
 AmneziaWG is a WireGuard-derived VPN tool with additional anti-censorship
 features.
 
-ZDT-D treats it as an exclusive VPN/TUN backend. A package routed through an
-AmneziaWG profile should not be assigned to another incompatible main routing
-profile at the same time.
+ZDT-D treats it as an exclusive VPN/TUN backend: its enabled app list may not
+claim a package that another enabled list already claims in the same slot. The
+package can still be assigned to any other list, including a disabled profile.
 
 Routing model:
 
@@ -692,18 +692,37 @@ API/status files:
 
 ## Conflict model
 
-An application should not be assigned to multiple incompatible main traffic paths.
-Examples of incompatible combinations include two exclusive VPN/TUN profiles or
-two independent transparent proxy profiles that both try to own the same UID.
+Assignment is always allowed: one package may sit in any number of profiles and
+programs, including disabled ones. The constraint applies to runtime, where two
+enabled app lists claiming the same package would drive that traffic twice.
 
-Helper features may coexist when they do not own the main route. Examples:
+The check is slot-aware:
 
-- blockedquic with a proxy/VPN profile;
-- proxyInfo with local proxy profiles;
+```text
+common  app/uid/user_program    conflicts with the same package in any slot
+mobile  app/uid/mobile_program  conflicts with mobile only
+wifi    app/uid/wifi_program    conflicts with wifi only
+```
+
+`mobile` and `wifi` lists are compatible because they are applied under
+different interface rules. `myprogram` lists do not claim routing while
+`apps_mode` is off for the profile.
+
+The daemon rejects an enabled overlap before a cold start, before adopting an
+already running runtime, and before a live hot-apply. A refused hot-apply keeps
+the saved assignment: the apply status reports the deferred/rejected state and
+the diagnostic names both conflicting profiles and the overlapping package IDs.
+Storage or parse failures fail closed instead of being read as no conflict.
+
+Helper features keep their own exclusion rules:
+
+- blockedquic with a proxy/VPN profile, as long as it only blocks UDP/443 for its
+  own list;
+- proxyInfo with local proxy profiles, under its separate port-protection rule;
 - diagnostics outside the normal runtime path.
 
-The daemon validates known conflicts before applying runtime state. Conflict
-rules should be updated whenever a new program type or routing model is added.
+Conflict rules should be updated whenever a new program type, routing model or
+app-list slot is added.
 
 
 ## Optional Zygisk interface layer
@@ -747,7 +766,7 @@ A new program usually needs changes in several places:
 2. program registration in daemon program/runtime logic;
 3. default minimal layout in `settings.rs`;
 4. port collection and conflict handling where needed;
-5. app-list validation path if the program routes apps;
+5. enabled app-list overlap path (slot rule) if the program routes apps;
 6. Android API models/actions;
 7. Compose UI screen under `application/app/src/main/java/.../ui`;
 8. string resources in default and Russian `strings.xml`;

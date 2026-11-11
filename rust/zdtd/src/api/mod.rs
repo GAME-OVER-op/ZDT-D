@@ -6,6 +6,7 @@ mod routes;
 
 pub use server::serve;
 use cache::API_SLOW_WARN_THRESHOLD;
+pub(crate) use support::apps::{find_enabled_app_overlaps, format_enabled_app_overlaps};
 use http::{is_authorized, parse_http_request, write_empty_404};
 
 use anyhow::Result;

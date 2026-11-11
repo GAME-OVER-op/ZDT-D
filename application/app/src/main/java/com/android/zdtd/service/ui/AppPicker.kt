@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -107,8 +106,6 @@ fun AppListPickerCard(
   initialContent: String? = null,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
-  saveFailedMessage: String? = null,
-  programs: List<ApiModels.Program> = emptyList(),
   onSavedSelection: ((Set<String>) -> Unit)? = null,
 ) {
   // Snackbar messages must be resolved in a composable context.
@@ -120,7 +117,7 @@ fun AppListPickerCard(
   var showPicker by remember { mutableStateOf(false) }
   val scope = rememberCoroutineScope()
 
-  fun saveSelection(newSel: Set<String>, removalsByPath: Map<String, Set<String>> = emptyMap()) {
+  fun saveSelection(newSel: Set<String>) {
     selected = newSel
     val payload = if (newSel.isEmpty()) "" else newSel.sorted().joinToString("\n", postfix = "\n")
     saving = true
@@ -129,15 +126,11 @@ fun AppListPickerCard(
       if (ok) onSavedSelection?.invoke(newSel)
       scope.launch {
         if (!ok || !isRuntimeApplyAppListPath(path)) {
-          snackHost.showSnackbar(if (ok) msgSaved else (saveFailedMessage ?: msgSaveFailed))
+          snackHost.showSnackbar(if (ok) msgSaved else msgSaveFailed)
         }
       }
     }
-    if (removalsByPath.isEmpty()) {
-      actions.saveText(path, payload, done)
-    } else {
-      actions.saveAppListResolvingConflicts(path, payload, removalsByPath, done)
-    }
+    actions.saveText(path, payload, done)
   }
 
   LaunchedEffect(path) {
@@ -155,12 +148,11 @@ fun AppListPickerCard(
       title = title,
       path = path,
       actions = actions,
-      programs = programs,
       initialSelected = selected,
       onDismiss = { showPicker = false },
-      onSave = { newSel, removalsByPath ->
+      onSave = { newSel ->
         showPicker = false
-        saveSelection(newSel, removalsByPath)
+        saveSelection(newSel)
       },
     )
   }
@@ -228,7 +220,6 @@ fun NfqwsAppListsSection(
   pfx: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
-  programs: List<ApiModels.Program> = emptyList(),
   onSavedSelection: ((String, Set<String>) -> Unit)? = null,
 ) {
   Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -241,7 +232,6 @@ fun NfqwsAppListsSection(
       path = userPath,
       actions = actions,
       snackHost = snackHost,
-      programs = programs,
       onSavedSelection = { onSavedSelection?.invoke(userPath, it) },
     )
     AppListPickerCard(
@@ -250,7 +240,6 @@ fun NfqwsAppListsSection(
       path = mobilePath,
       actions = actions,
       snackHost = snackHost,
-      programs = programs,
       onSavedSelection = { onSavedSelection?.invoke(mobilePath, it) },
     )
     AppListPickerCard(
@@ -259,16 +248,10 @@ fun NfqwsAppListsSection(
       path = wifiPath,
       actions = actions,
       snackHost = snackHost,
-      programs = programs,
       onSavedSelection = { onSavedSelection?.invoke(wifiPath, it) },
     )
   }
 }
-
-private data class AppPickerMoveConfirm(
-  val removalsByPath: Map<String, Set<String>>,
-  val entries: List<ApiModels.AppAssignmentEntry>,
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -276,10 +259,9 @@ internal fun AppPickerSheet(
   title: String,
   path: String,
   actions: ZdtdActions,
-  programs: List<ApiModels.Program>,
   initialSelected: Set<String>,
   onDismiss: () -> Unit,
-  onSave: (Set<String>, Map<String, Set<String>>) -> Unit,
+  onSave: (Set<String>) -> Unit,
 ) {
   val ctx = LocalContext.current
 
@@ -321,163 +303,13 @@ internal fun AppPickerSheet(
     if (debouncedQuery.isBlank()) apps else apps.filter { matchesSearch(it, debouncedQuery) }
   }
 
-  val currentEntry = remember(assignments, path) {
-    assignments?.lists?.firstOrNull { it.path == path }
-  }
-
-  val slotCommonLabel = stringResource(R.string.apps_conflict_slot_common)
-  val slotWifiLabel = stringResource(R.string.apps_conflict_slot_wifi)
-  val slotMobileLabel = stringResource(R.string.apps_conflict_slot_mobile)
-  val programOperaLabel = stringResource(R.string.apps_conflict_program_operaproxy)
-  val programSingboxLabel = stringResource(R.string.apps_conflict_program_singbox)
-  val programHysteria2Label = "hysteria2"
-  val programDpitunnelLabel = stringResource(R.string.apps_conflict_program_dpitunnel)
-  val programByedpiLabel = stringResource(R.string.apps_conflict_program_byedpi)
-  val programZapretLabel = stringResource(R.string.apps_conflict_program_zapret)
-  val programZapret2Label = stringResource(R.string.apps_conflict_program_zapret2)
-  val programWireproxyLabel = stringResource(R.string.apps_conflict_program_wireproxy)
-  val programTorLabel = stringResource(R.string.apps_conflict_program_tor)
-  val programMyproxyLabel = stringResource(R.string.apps_conflict_program_myproxy)
-  val programMyprogramLabel = stringResource(R.string.apps_conflict_program_myprogram)
-  val programOpenVpnLabel = stringResource(R.string.apps_conflict_program_openvpn)
-  val programTun2SocksLabel = stringResource(R.string.apps_conflict_program_tun2socks)
-  val programMyVpnLabel = stringResource(R.string.apps_conflict_program_myvpn)
-  val programMihomoLabel = stringResource(R.string.apps_conflict_program_mihomo)
-  val programMieruLabel = stringResource(R.string.apps_conflict_program_mieru)
-  val programAmneziaWgLabel = stringResource(R.string.apps_conflict_program_amneziawg)
-
-  fun slotLabel(slot: String): String = when (slot.lowercase(Locale.ROOT)) {
-    "common" -> slotCommonLabel
-    "wifi" -> slotWifiLabel
-    "mobile" -> slotMobileLabel
-    else -> slot
-  }
-
-  fun programLabel(programId: String): String = when (programId) {
-    "operaproxy" -> programOperaLabel
-    "sing-box" -> programSingboxLabel
-    "sing-box-lx" -> "sing-box-lx"
-    "hysteria2" -> programHysteria2Label
-    "dpitunnel" -> programDpitunnelLabel
-    "byedpi" -> programByedpiLabel
-    "nfqws" -> programZapretLabel
-    "nfqws2" -> programZapret2Label
-    "wireproxy" -> programWireproxyLabel
-    "tor" -> programTorLabel
-    "myproxy" -> programMyproxyLabel
-    "myprogram" -> programMyprogramLabel
-    "openvpn" -> programOpenVpnLabel
-    "tun2socks" -> programTun2SocksLabel
-    "myvpn" -> programMyVpnLabel
-    "mihomo" -> programMihomoLabel
-    "mieru" -> programMieruLabel
-    "amneziawg" -> programAmneziaWgLabel
-    else -> programId
-  }
-
-  fun programGroup(programId: String): String? = when (programId) {
-    "operaproxy", "sing-box", "sing-box-lx", "hysteria2", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg" -> "tunnel"
-    "nfqws", "nfqws2" -> "zapret"
-    else -> null
-  }
-
-  fun appListsConflict(leftProgramId: String, rightProgramId: String): Boolean {
-    val left = programGroup(leftProgramId) ?: return false
-    val right = programGroup(rightProgramId) ?: return false
-    if (leftProgramId == "openvpn" || rightProgramId == "openvpn") return true
-    if (leftProgramId == "tun2socks" || rightProgramId == "tun2socks") return true
-    if (leftProgramId == "myvpn" || rightProgramId == "myvpn") return true
-    if (leftProgramId == "mihomo" || rightProgramId == "mihomo") return true
-    if (leftProgramId == "mieru" || rightProgramId == "mieru") return true
-    if (leftProgramId == "hysteria2" || rightProgramId == "hysteria2") {
-      return left != "zapret" && right != "zapret"
-    }
-    if (leftProgramId == "amneziawg" || rightProgramId == "amneziawg") return true
-    return left == right
-  }
-
-  fun entryLabel(entry: ApiModels.AppAssignmentEntry): String {
-    val base = programLabel(entry.programId)
-    val slot = slotLabel(entry.slot)
-    return if (entry.profile.isNullOrBlank()) "$base / $slot" else "$base / ${entry.profile} / $slot"
-  }
-
-  fun sameProgramId(left: String, right: String): Boolean {
-    fun normalize(id: String): String = id.trim().lowercase(Locale.ROOT).replace("_", "-")
-    val l = normalize(left)
-    val r = normalize(right)
-    return l == r ||
-      (l == "singbox" && r == "sing-box") || (l == "sing-box" && r == "singbox") ||
-      (l in setOf("singbox-lx", "sing-box-lx") && r in setOf("singbox-lx", "sing-box-lx"))
-  }
-
-  fun isAssignmentEnabled(entry: ApiModels.AppAssignmentEntry): Boolean {
-    if (programs.isEmpty()) return true
-    val program = programs.firstOrNull { sameProgramId(it.id, entry.programId) } ?: return true
-    val profile = entry.profile?.trim().orEmpty()
-    if (profile.isNotEmpty()) {
-      return program.profiles.firstOrNull { it.name == profile }?.enabled ?: true
-    }
-    return program.enabled
-  }
-
+  // proxyInfo resolves cross-program conflicts in its own dialog. Packages it
+  // already routes are hidden here instead of being offered for assignment.
   val hiddenPackages = remember(assignments, selected) {
     ((assignments?.proxyInfoPackages ?: emptySet()) - selected - ZDTD_APP_PACKAGE_NAME)
   }
 
-  fun buildConflictReasons(active: Boolean): Map<String, List<ApiModels.AppAssignmentEntry>> {
-    val out = linkedMapOf<String, MutableList<ApiModels.AppAssignmentEntry>>()
-    val entry = currentEntry
-    val data = assignments
-    if (entry != null && data != null) {
-      if (programGroup(entry.programId) != null) {
-        for (other in data.lists) {
-          if (other.path == entry.path) continue
-          val requiresSameSlot = entry.programId != "openvpn" && other.programId != "openvpn" && entry.programId != "tun2socks" && other.programId != "tun2socks" && entry.programId != "myvpn" && other.programId != "myvpn" && entry.programId != "mihomo" && other.programId != "mihomo" && entry.programId != "mieru" && other.programId != "mieru" && entry.programId != "hysteria2" && other.programId != "hysteria2" && entry.programId != "amneziawg" && other.programId != "amneziawg"
-          if (requiresSameSlot && other.slot != entry.slot) continue
-          if (!appListsConflict(entry.programId, other.programId)) continue
-          if (isAssignmentEnabled(other) != active) continue
-          for (pkg in other.packages) {
-            if (pkg == ZDTD_APP_PACKAGE_NAME) continue
-            out.getOrPut(pkg) { mutableListOf() }.add(other)
-          }
-        }
-      }
-    }
-    return out
-  }
-
-  val activeConflictReasons = remember(assignments, currentEntry, programs) { buildConflictReasons(active = true) }
-  val inactiveConflictReasons = remember(assignments, currentEntry, programs) { buildConflictReasons(active = false) }
-
-  var pendingMoveConfirm by remember { mutableStateOf<AppPickerMoveConfirm?>(null) }
-
-  fun conflictRemovalsForSave(): Map<String, Set<String>> {
-    val added = selected - initialSelected - ZDTD_APP_PACKAGE_NAME
-    if (added.isEmpty()) return emptyMap()
-    val out = linkedMapOf<String, MutableSet<String>>()
-    for (pkg in added) {
-      val reasons = inactiveConflictReasons[pkg].orEmpty()
-      for (entry in reasons) {
-        if (entry.path == path) continue
-        out.getOrPut(entry.path) { linkedSetOf() }.add(pkg)
-      }
-    }
-    return out
-  }
-
-  fun requestSave() {
-    val removals = conflictRemovalsForSave()
-    if (removals.isEmpty()) {
-      onSave(selected, emptyMap())
-    } else {
-      val entries = assignments?.lists.orEmpty().filter { entry ->
-        val pkgs = removals[entry.path].orEmpty()
-        pkgs.isNotEmpty()
-      }
-      pendingMoveConfirm = AppPickerMoveConfirm(removals, entries)
-    }
-  }
+  fun requestSave() = onSave(selected)
 
   val appsByPackage = remember(apps) { apps.associateBy { it.packageName } }
   val selectedAppsAll = remember(appsByPackage, selected) {
@@ -499,47 +331,6 @@ internal fun AppPickerSheet(
 
   LaunchedEffect(debouncedQuery, appsLoading) {
     if (!appsLoading) listState.animateScrollToItem(0)
-  }
-
-
-  pendingMoveConfirm?.let { confirm ->
-    val detailLines = confirm.entries.mapNotNull { entry ->
-      val pkgs = confirm.removalsByPath[entry.path].orEmpty()
-      if (pkgs.isEmpty()) null else "${entryLabel(entry)}: ${pkgs.sorted().joinToString(", ")}"
-    }.take(8)
-    AlertDialog(
-      onDismissRequest = { pendingMoveConfirm = null },
-      title = { Text(stringResource(R.string.app_picker_move_conflict_title)) },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text(stringResource(R.string.app_picker_move_conflict_body))
-          if (detailLines.isNotEmpty()) {
-            Surface(
-              color = MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
-              shape = MaterialTheme.shapes.medium,
-              border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)),
-            ) {
-              Text(
-                detailLines.joinToString("\n"),
-                modifier = Modifier.padding(10.dp),
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
-          }
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { pendingMoveConfirm = null }) { Text(stringResource(R.string.common_no)) }
-      },
-      confirmButton = {
-        Button(onClick = {
-          val removals = confirm.removalsByPath
-          pendingMoveConfirm = null
-          onSave(selected, removals)
-        }) { Text(stringResource(R.string.common_yes)) }
-      },
-    )
   }
 
   ModalBottomSheet(
@@ -677,8 +468,6 @@ internal fun AppPickerSheet(
                 selected = true,
                 compactWidth = isCompactWidth,
                 iconCache = iconCache,
-                enabled = true,
-                reason = null,
                 onToggle = { selected = selected - app.packageName },
               )
             }
@@ -715,24 +504,11 @@ internal fun AppPickerSheet(
               }
             } else {
               items(notSelectedApps, key = { "all:" + it.packageName }, contentType = { "app_available" }) { app ->
-                val activeReasons = activeConflictReasons[app.packageName].orEmpty()
-                val inactiveReasons = inactiveConflictReasons[app.packageName].orEmpty()
-                val activeReason = if (activeReasons.isEmpty()) null else stringResource(
-                  R.string.app_picker_conflict_used_in,
-                  activeReasons.joinToString(", ") { entryLabel(it) },
-                )
-                val inactiveReason = if (activeReason == null && inactiveReasons.isNotEmpty()) stringResource(
-                  R.string.app_picker_conflict_will_move,
-                  inactiveReasons.joinToString(", ") { entryLabel(it) },
-                ) else null
                 AppPickerRow(
                   app = app,
                   selected = false,
                   compactWidth = isCompactWidth,
                   iconCache = iconCache,
-                  enabled = activeReason == null,
-                  reason = activeReason ?: inactiveReason,
-                  reasonIsWarning = inactiveReason != null,
                   onToggle = { selected = selected + app.packageName },
                 )
               }
@@ -752,9 +528,6 @@ internal fun AppPickerRow(
   selected: Boolean,
   compactWidth: Boolean,
   iconCache: MutableMap<String, ImageBitmap?>,
-  enabled: Boolean,
-  reason: String?,
-  reasonIsWarning: Boolean = false,
   onToggle: () -> Unit,
 ) {
   val isOwnApp = app.packageName == ZDTD_APP_PACKAGE_NAME
@@ -771,7 +544,7 @@ internal fun AppPickerRow(
     Row(
       Modifier
         .fillMaxWidth()
-        .clickable(enabled = enabled) { onToggle() }
+        .clickable { onToggle() }
         .padding(horizontal = 10.dp, vertical = 10.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -779,21 +552,20 @@ internal fun AppPickerRow(
       AppIcon(packageName = app.packageName, cache = iconCache)
       Checkbox(
         checked = selected,
-        onCheckedChange = { if (enabled) onToggle() },
-        enabled = enabled,
+        onCheckedChange = { onToggle() },
       )
       Column(Modifier.weight(1f)) {
         Text(
           app.label,
           maxLines = if (compactWidth) 2 else 1,
           overflow = TextOverflow.Ellipsis,
-          color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
+          color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
           app.packageName,
           style = MaterialTheme.typography.bodySmall,
           fontFamily = FontFamily.Monospace,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.60f else 0.42f),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
           maxLines = if (compactWidth) 2 else 1,
           overflow = TextOverflow.Ellipsis,
         )
@@ -804,16 +576,6 @@ internal fun AppPickerRow(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
-        if (!reason.isNullOrBlank()) {
-          Spacer(Modifier.height(2.dp))
-          Text(
-            reason,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (reasonIsWarning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-            maxLines = 3,
             overflow = TextOverflow.Ellipsis,
           )
         }

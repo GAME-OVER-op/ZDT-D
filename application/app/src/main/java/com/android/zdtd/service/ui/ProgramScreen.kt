@@ -327,7 +327,6 @@ isProfileProgramType(program.type) -> {
       program.id == "operaproxy" -> {
         item {
           OperaProxySection(
-            programs = programs,
             actions = actions,
             snackHost = snackHost,
             onAppsSelectionSaved = { path, selected ->
@@ -339,13 +338,13 @@ isProfileProgramType(program.type) -> {
 
       program.id == "tor" -> {
         item {
-          TorSection(program = program, programs = programs, actions = actions, snackHost = snackHost)
+          TorSection(program = program, actions = actions, snackHost = snackHost)
         }
       }
 
       program.id == "sing-box" -> {
         item {
-          SingBoxSection(program = program, programs = programs, actions = actions, snackHost = snackHost)
+          SingBoxSection(program = program, actions = actions, snackHost = snackHost)
         }
       }
 
@@ -842,7 +841,6 @@ private fun updateSingProfilePort(setting: SingSetting, profileName: String, new
 @Composable
 private fun SingBoxSection(
   program: ApiModels.Program,
-  programs: List<ApiModels.Program>,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   topContentPadding: Dp = 0.dp,
@@ -1436,7 +1434,6 @@ private fun SingBoxSection(
       path = "/api/programs/sing-box/apps/user",
       actions = actions,
       snackHost = snackHost,
-      programs = programs,
     )
 
     Card {
@@ -2105,7 +2102,6 @@ private fun normalizeProfileName(input: String): String {
 
 @Composable
 private fun OperaProxySection(
-  programs: List<ApiModels.Program>,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   onAppsSelectionSaved: ((String, Set<String>) -> Unit)? = null,
@@ -2141,7 +2137,6 @@ private fun OperaProxySection(
           pfx = "/api/programs/operaproxy",
           actions = actions,
           snackHost = snackHost,
-          programs = programs,
           onSavedSelection = onAppsSelectionSaved,
         )
       }

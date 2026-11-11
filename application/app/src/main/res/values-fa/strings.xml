@@ -672,8 +672,6 @@ APatch: 10700+</string>
     <string name="log_root_access_required">دسترسی روت لازم است</string>
     <string name="log_api_token_missing_fmt">توکن API موجود نیست. %1$s را بررسی کنید</string>
     <string name="log_logs_cleared">گزارش‌ها پاک شدند</string>
-    <string name="log_service_started">سرویس شروع شد</string>
-    <string name="log_service_stopped">سرویس متوقف شد</string>
 
     <string name="mv_backup_restore_reopen_hint">پیش از بازیابی دوباره، پشتیبان را مجدداً انتخاب کنید (یا این پنجره را دوباره باز کنید).</string>
     <string name="settings_delete_module_title">حذف ماژول</string>
@@ -935,10 +933,6 @@ APatch: 10700+</string>
     <string name="settings_reset_identifier_done">شناسه بازنشانی شد</string>
     <string name="settings_reset_identifier_failed">بازنشانی شناسه ناموفق بود</string>
 
-    <string name="app_picker_conflict_used_in">استفاده‌شده در %1$s</string>
-    <string name="app_picker_conflict_will_move">هنگام ذخیره از %1$s حذف می‌شود</string>
-    <string name="app_picker_move_conflict_title">حذف برنامه از فهرست دیگر؟</string>
-    <string name="app_picker_move_conflict_body">یک یا چند برنامه انتخاب‌شده از قبل در فهرست ابزارهای غیرفعال وجود دارند. از آن فهرست‌ها حذف و اینجا اضافه شوند؟</string>
     <string name="apps_conflict_slot_common">مشترک</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">داده همراه</string>
@@ -1312,7 +1306,6 @@ APatch: 10700+</string>
     <string name="myvpn_apps_title">برنامه‌های myvpn</string>
     <string name="myvpn_apps_desc">نام بسته‌هایی را انتخاب کنید که ترافیکشان باید از این اتصال myvpn استفاده کند. پردازش UID توسط سرویس پس‌زمینه انجام می‌شود.</string>
     <string name="myvpn_enabled_empty_apps_warning">نمایه فعال است، اما فهرست برنامه‌ها خالی است.</string>
-    <string name="myvpn_app_conflict_error">این برنامه از قبل توسط برنامه شبکه دیگری استفاده می‌شود. آن را از آنجا حذف کنید یا نمایه دیگری انتخاب کنید.</string>
 
 
     <!-- tun2socks profiles -->
@@ -1345,7 +1338,6 @@ APatch: 10700+</string>
     <string name="tun2socks_apps_title">برنامه‌های tun2socks</string>
     <string name="tun2socks_apps_desc">نام بسته‌هایی را انتخاب کنید که ترافیکشان باید از این نمایه tun2socks استفاده کند. پردازش UID توسط سرویس پس‌زمینه انجام می‌شود.</string>
     <string name="tun2socks_enabled_empty_apps_warning">نمایه فعال است، اما فهرست برنامه‌ها خالی است.</string>
-    <string name="tun2socks_app_conflict_error">این برنامه از قبل توسط برنامه شبکه دیگری استفاده می‌شود. آن را از آنجا حذف کنید یا نمایه دیگری انتخاب کنید.</string>
     <string name="tun2socks_debug_hint_title">گزارش‌های اشکال‌زدایی</string>
     <string name="tun2socks_debug_hint_body">اگر نمایه‌ای شروع نمی‌شود، فایل‌های /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log و /data/adb/modules/ZDT-D/log/zdtd.log را بررسی کنید.</string>
 
@@ -1381,7 +1373,6 @@ APatch: 10700+</string>
     <string name="openvpn_apps_title">برنامه‌های OpenVPN</string>
     <string name="openvpn_apps_desc">نام بسته‌هایی را انتخاب کنید که ترافیکشان باید از این نمایه OpenVPN استفاده کند. پردازش UID توسط سرویس پس‌زمینه انجام می‌شود.</string>
     <string name="openvpn_enabled_empty_apps_warning">نمایه فعال است، اما فهرست برنامه‌ها خالی است.</string>
-    <string name="openvpn_app_conflict_error">این برنامه از قبل توسط برنامه شبکه دیگری استفاده می‌شود. آن را از آنجا حذف کنید یا نمایه دیگری انتخاب کنید.</string>
     <string name="openvpn_autosave_hint">ذخیره خودکار فعال است. تغییرات پس از راه‌اندازی دوباره سرویس اعمال می‌شوند.</string>
     <string name="openvpn_config_summary_desc">client.ovpn جداگانه ویرایش می‌شود. برای بازکردن ویرایشگر از نماد مداد استفاده کنید.</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn موجود است • %1$d خط غیرخالی</string>
@@ -1430,7 +1421,6 @@ APatch: 10700+</string>
     <string name="amneziawg_apps_title">برنامه‌های AmneziaWG</string>
     <string name="amneziawg_apps_desc">نام بسته‌هایی را انتخاب کنید که ترافیکشان باید از این پروفایل AmneziaWG استفاده کند. این یک backend شبکه انحصاری است.</string>
     <string name="amneziawg_enabled_empty_apps_warning">پروفایل فعال است، اما فهرست برنامه‌ها خالی است. دست‌کم یک برنامه را انتخاب کنید.</string>
-    <string name="amneziawg_app_conflict_error">این برنامه از قبل توسط برنامه شبکه دیگری استفاده می‌شود. آن را از آنجا حذف کنید یا نمایه دیگری انتخاب کنید.</string>
     <string name="amneziawg_enable_requirements_error">پیش از فعال‌سازی، client.conf شامل PrivateKey/PublicKey، آدرس معتبر IPv4، DNS، MTU و دست‌کم یک برنامه را اضافه کنید.</string>
     <string name="amneziawg_autosave_hint">ذخیره خودکار فعال است. تغییرات پس از راه‌اندازی دوباره سرویس اعمال می‌شوند.</string>
     <string name="saved_apply_after_restart">ذخیره شد. تغییرات پس از راه‌اندازی مجدد سرویس اعمال می‌شوند.</string>
@@ -1501,7 +1491,6 @@ APatch: 10700+</string>
     <string name="mihomo_apps_title">برنامه‌های Mihomo</string>
     <string name="mihomo_apps_desc">نام بسته‌هایی را انتخاب کنید که ترافیکشان باید از این پروفایل Mihomo استفاده کند. تحلیل UID توسط دیمون انجام می‌شود.</string>
     <string name="mihomo_enabled_empty_apps_warning">نمایه فعال است، اما فهرست برنامه‌ها خالی است.</string>
-    <string name="mihomo_app_conflict_error">این برنامه از قبل توسط برنامه شبکه دیگری استفاده می‌شود. آن را از آنجا حذف کنید یا نمایه دیگری انتخاب کنید.</string>
     <string name="mihomo_advanced_title">بلوک‌های پیشرفته YAML</string>
     <string name="mihomo_advanced_desc">Dashboard و external-controller در config.yaml ذخیره می‌شوند. مگر اینکه عمداً قصد انتشار آن را دارید، external-controller را روی 127.0.0.1 نگه دارید.</string>
     <string name="mihomo_no_managed_route_hint">رابط کاربری مسیرها، قوانین iptables یا netd و حالت tun در Mihomo را ایجاد نمی‌کند. دیمون ZDT-D مسیریابی زمان اجرا را انجام می‌دهد.</string>

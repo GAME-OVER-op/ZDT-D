@@ -153,7 +153,7 @@ ZDT-D is designed for selective routing. It does not force every application int
 
 ZDT-D is built around profile-based programs rather than a single fixed binary.
 
-Different programs can have their own profiles, settings, app lists, logs, and runtime behavior. The daemon collects enabled profiles, validates conflicts, starts the required engines, and applies the correct routing model for each one.
+Different programs can have their own profiles, settings, app lists, logs, and runtime behavior. The daemon collects enabled profiles, checks enabled app-list overlaps, starts the required engines, and applies the correct routing model for each one.
 
 The project supports several categories of components:
 
@@ -178,7 +178,7 @@ For example:
 - `myprogram` can launch a user-provided binary or script
 - that binary can create a local proxy, a service, or a TUN interface
 - `myvpn` can bind selected applications to an already existing TUN interface
-- the daemon can still handle UID parsing, conflict checks, and Android `netd` binding
+- the daemon can still handle UID parsing, enabled app-list overlap checks, and Android `netd` binding
 
 This allows ZDT-D to be used as a base for custom Android networking setups, not only as a ready-made module with fixed behavior.
 
@@ -206,11 +206,17 @@ ZDT-D can manage local DNS components such as dnscrypt-proxy and route DNS-relat
 
 ## Conflict control
 
-Because several programs can target the same applications, ZDT-D checks app-list conflicts.
+Assignment and runtime application are separate. The same package can be assigned to any number of profiles and programs, including disabled ones, and every assignment is saved.
 
-An application should not be assigned to multiple incompatible network pipelines at the same time. This reduces broken routing, duplicated redirection, and hard-to-debug conflicts between profiles.
+ZDT-D refuses an enabled runtime overlap: two different enabled app lists claiming the same package at the same time would make the daemon drive that traffic twice. The check is slot-aware — a common list conflicts with the same package in any slot of another enabled list, a mobile list only with mobile lists, and a Wi-Fi list only with Wi-Fi lists. Mobile and Wi-Fi lists are compatible because they are applied under different interface rules.
 
-Some helper features, such as QUIC blocking, can be used alongside other routing modes when they do not conflict with the main traffic path.
+Overlaps are rejected before a cold start, before adopting an already running runtime, and before a live hot-apply. Cold-start and adoption failures appear on Home through the daemon `last_error`; rejected adoption also stops the old runtime. A refused hot-apply keeps the saved assignment and shows the rejected state with `RuntimeApplyStatus.error` in the apply indicator. Both diagnostics name the conflicting profiles and overlapping package IDs.
+
+Autostart is preserved for transient startup failures (Android services or network not ready yet): the daemon reports the error and retries on the next boot. Autostart is disabled only for persistent configuration errors such as an enabled app-list overlap.
+
+`myprogram` lists do not claim routing while app routing is off for the profile. Storage or parse failures fail closed: an unreadable enabled list is reported as an error, never treated as conflict-free.
+
+Helper features keep their own rules. `blockedquic` can be used alongside other routing modes when it only blocks UDP/443 for its own list, and `proxyInfo` applies a separate port-protection rule to the packages it protects.
 
 ## Documentation
 

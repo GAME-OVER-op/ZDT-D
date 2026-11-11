@@ -672,8 +672,6 @@ Dùng trình chỉnh sửa khác để sửa đổi.</string>
     <string name="log_root_access_required">Cần quyền root</string>
     <string name="log_api_token_missing_fmt">Thiếu mã thông báo API. Kiểm tra %1$s</string>
     <string name="log_logs_cleared">Đã xóa nhật ký</string>
-    <string name="log_service_started">Dịch vụ đã khởi động</string>
-    <string name="log_service_stopped">Dịch vụ đã dừng</string>
 
     <string name="mv_backup_restore_reopen_hint">Hãy chọn lại bản sao lưu (hoặc mở lại cửa sổ này) trước khi khôi phục lần nữa.</string>
     <string name="settings_delete_module_title">Gỡ mô-đun</string>
@@ -935,10 +933,6 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="settings_reset_identifier_done">Đã đặt lại mã định danh</string>
     <string name="settings_reset_identifier_failed">Không thể đặt lại mã định danh</string>
 
-    <string name="app_picker_conflict_used_in">Được dùng trong %1$s</string>
-    <string name="app_picker_conflict_will_move">Sẽ bị xóa khỏi %1$s khi lưu</string>
-    <string name="app_picker_move_conflict_title">Xóa ứng dụng khỏi danh sách khác?</string>
-    <string name="app_picker_move_conflict_body">Một hoặc nhiều ứng dụng đã chọn đã có trong danh sách công cụ bị tắt. Xóa chúng khỏi các danh sách đó và thêm vào đây?</string>
     <string name="apps_conflict_slot_common">Chung</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">Di động</string>
@@ -1311,7 +1305,6 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="myvpn_apps_title">Ứng dụng myvpn</string>
     <string name="myvpn_apps_desc">Chọn tên gói có lưu lượng cần dùng liên kết myvpn này. Daemon sẽ phân tích UID.</string>
     <string name="myvpn_enabled_empty_apps_warning">Hồ sơ đã được bật nhưng danh sách ứng dụng trống.</string>
-    <string name="myvpn_app_conflict_error">Ứng dụng này đã được chương trình mạng khác sử dụng. Hãy xóa ứng dụng khỏi đó hoặc chọn hồ sơ khác.</string>
 
 
     <!-- tun2socks profiles -->
@@ -1344,7 +1337,6 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="tun2socks_apps_title">Ứng dụng tun2socks</string>
     <string name="tun2socks_apps_desc">Chọn tên gói có lưu lượng cần dùng hồ sơ tun2socks này. Daemon sẽ phân tích UID.</string>
     <string name="tun2socks_enabled_empty_apps_warning">Hồ sơ đã được bật nhưng danh sách ứng dụng trống.</string>
-    <string name="tun2socks_app_conflict_error">Ứng dụng này đã được chương trình mạng khác sử dụng. Hãy xóa ứng dụng khỏi đó hoặc chọn hồ sơ khác.</string>
     <string name="tun2socks_debug_hint_title">Nhật ký gỡ lỗi</string>
     <string name="tun2socks_debug_hint_body">Nếu hồ sơ không khởi chạy, hãy kiểm tra /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log và /data/adb/modules/ZDT-D/log/zdtd.log.</string>
 
@@ -1380,7 +1372,6 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="openvpn_apps_title">Ứng dụng OpenVPN</string>
     <string name="openvpn_apps_desc">Chọn tên gói có lưu lượng cần dùng hồ sơ OpenVPN này. Daemon sẽ phân tích UID.</string>
     <string name="openvpn_enabled_empty_apps_warning">Hồ sơ đã được bật nhưng danh sách ứng dụng trống.</string>
-    <string name="openvpn_app_conflict_error">Ứng dụng này đã được chương trình mạng khác sử dụng. Hãy xóa ứng dụng khỏi đó hoặc chọn hồ sơ khác.</string>
     <string name="openvpn_autosave_hint">Đã bật tự động lưu. Thay đổi được áp dụng sau khi khởi động lại dịch vụ.</string>
     <string name="openvpn_config_summary_desc">client.ovpn được chỉnh sửa riêng. Dùng biểu tượng bút chì để mở trình chỉnh sửa.</string>
     <string name="openvpn_config_summary_present_fmt">Có client.ovpn • %1$d dòng không trống</string>
@@ -1429,7 +1420,6 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="amneziawg_apps_title">Ứng dụng AmneziaWG</string>
     <string name="amneziawg_apps_desc">Chọn tên gói có lưu lượng cần dùng hồ sơ AmneziaWG này. Đây là backend mạng độc quyền.</string>
     <string name="amneziawg_enabled_empty_apps_warning">Hồ sơ đã bật nhưng danh sách ứng dụng trống. Hãy chọn ít nhất một ứng dụng.</string>
-    <string name="amneziawg_app_conflict_error">Ứng dụng này đã được chương trình mạng khác sử dụng. Hãy xóa ứng dụng khỏi đó hoặc chọn hồ sơ khác.</string>
     <string name="amneziawg_enable_requirements_error">Trước khi bật, hãy thêm client.conf có PrivateKey/PublicKey, địa chỉ IPv4 hợp lệ, DNS, MTU và ít nhất một ứng dụng.</string>
     <string name="amneziawg_autosave_hint">Đã bật tự động lưu. Thay đổi được áp dụng sau khi khởi động lại dịch vụ.</string>
     <string name="saved_apply_after_restart">Đã lưu. Thay đổi sẽ được áp dụng sau khi khởi động lại dịch vụ.</string>
@@ -1500,7 +1490,6 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="mihomo_apps_title">Ứng dụng Mihomo</string>
     <string name="mihomo_apps_desc">Chọn tên gói có lưu lượng cần dùng hồ sơ Mihomo này. Daemon sẽ phân tích UID.</string>
     <string name="mihomo_enabled_empty_apps_warning">Hồ sơ đã được bật nhưng danh sách ứng dụng trống.</string>
-    <string name="mihomo_app_conflict_error">Ứng dụng này đã được chương trình mạng khác sử dụng. Hãy xóa ứng dụng khỏi đó hoặc chọn hồ sơ khác.</string>
     <string name="mihomo_advanced_title">Khối YAML nâng cao</string>
     <string name="mihomo_advanced_desc">Dashboard và external-controller được lưu trong config.yaml. Giữ external-controller ở 127.0.0.1 trừ khi bạn chủ ý công khai nó.</string>
     <string name="mihomo_no_managed_route_hint">UI không tạo tuyến, quy tắc iptables/netd hoặc chế độ tun của Mihomo. Daemon ZDT-D thực hiện định tuyến runtime.</string>

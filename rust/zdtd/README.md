@@ -17,7 +17,7 @@ client. It expects Android, root access, the module filesystem, Android `netd`,
 - preparing the runtime directory layout under `/data/adb/modules/ZDT-D`;
 - reading global settings and per-program profile settings;
 - resolving Android package names into Linux UIDs;
-- validating app-list conflicts between incompatible programs;
+- validating enabled app-list runtime overlaps across enabled profiles;
 - starting and stopping supported helper programs;
 - applying and removing `iptables` / `ip6tables` rules;
 - applying NFQUEUE routing for zapret-style engines;
@@ -139,7 +139,7 @@ Major API groups include:
 - `/api/start` and `/api/stop` — runtime lifecycle;
 - `/api/setting` — global daemon/module settings;
 - `/api/programs` and `/api/programs/...` — program/profile management;
-- `/api/apps/assignments` — app-list ownership view;
+- `/api/apps/assignments` — app-list ownership view across every program and profile, enabled or not;
 - `/api/blockedquic/...` — QUIC blocking helper;
 - `/api/proxyinfo/...` — local proxy protection helper;
 - `/api/strategic/...` — strategic files;
@@ -160,7 +160,7 @@ A typical startup flow is:
 7. Wait for package manager and Android `netd` readiness.
 8. Read global settings and enabled program/profile state.
 9. Resolve selected packages into UIDs.
-10. Validate app assignment conflicts.
+10. Validate enabled app-list runtime overlaps with the slot rule.
 11. Backup baseline firewall state if needed.
 12. Start enabled programs and helper binaries.
 13. Apply routing rules: NFQUEUE, redirects, port filters and `netd` bindings.
@@ -318,13 +318,43 @@ TUN mode.
 ZDT-D routes by Linux UID. The UI stores package names; the daemon resolves them
 into UID files. These files are used by firewall rules and Android `netd`.
 
-The same app should not be assigned to multiple incompatible main routing
-profiles at the same time. For example, an app should not be routed through two
-independent VPN/TUN profiles or two incompatible transparent proxy pipelines.
+Assignment and runtime application are separate. The same package may be assigned
+to any number of profiles and programs, including disabled ones, and every
+assignment is kept. What the daemon refuses is an enabled runtime overlap: two
+different enabled app lists claiming the same package at the same time would
+drive that traffic twice.
 
-Some helper features can coexist with a main routing profile. `blockedquic`, for
-example, can be used alongside other routing modes when it only blocks UDP/443
-for the selected app list.
+Comparison is slot-aware and uses the on-disk app-list files:
+
+```text
+common  app/uid/user_program    conflicts with the same package in any slot
+mobile  app/uid/mobile_program  conflicts with mobile only
+wifi    app/uid/wifi_program    conflicts with wifi only
+```
+
+`mobile` and `wifi` lists are compatible with each other because they are applied
+under different interface rules.
+
+An enabled overlap is rejected before a cold start, before adopting an already
+running runtime, and before a live hot-apply. Rejected adoption stops the old
+runtime so it cannot stay active behind an OFF/error API state. Cold-start and
+adoption failures are exposed on Home through daemon `last_error`.
+
+A refused hot-apply does not discard the assignment: the new list is saved and
+the apply status reports the rejected state. Its `error` field names the
+conflicting profile pairs and overlapping package IDs; the app displays that
+field in the runtime-apply indicator.
+
+`myprogram` app lists do not claim routing while `apps_mode` is off for the
+profile. They are stored, but stay out of the runtime overlap comparison.
+
+Storage and parse failures fail closed: an enabled list or its enablement state
+that cannot be read is reported as an error, never treated as conflict-free.
+
+Some helper features can coexist with a main routing profile and keep their own
+rules. `blockedquic` can be used alongside other routing modes when it only blocks
+UDP/443 for its own app list; `proxyInfo` has a separate port-protection rule that
+refuses packages already used by other ZDT-D program lists.
 
 ## Source tree overview
 
@@ -362,7 +392,7 @@ Be careful when changing:
 - firewall backup/restore logic;
 - NFQUEUE queue/rule generation;
 - Android `netd` binding and cleanup;
-- app-list conflict validation;
+- enabled app-list overlap validation and its slot rule;
 - profile runtime state paths;
 - token/API authentication behavior;
 - module service scripts that start the daemon.

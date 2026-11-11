@@ -493,7 +493,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
           _appUpdate.update { it.copy(runtimeApplyStatus = status, runtimeApplyVisible = true) }
           if (status.state != lastState) {
             lastState = status.state
-            log("OK", "runtime apply ${status.state}: ${status.message}")
+            val detail = status.error?.takeIf { it.isNotBlank() } ?: status.message
+            log(if (status.state == "failed") "ERR" else "OK", "runtime apply ${status.state}: $detail")
           }
         }
         if (status.finished) {
@@ -503,12 +504,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
         }
         delay(550L)
       }
-    }
-  }
-
-  private fun beginRuntimeApplyPollingIfAppList(path: String, reason: String = path) {
-    if (isRuntimeApplyAppListPath(path)) {
-      beginRuntimeApplyPolling(reason)
     }
   }
 
@@ -7042,12 +7037,15 @@ private fun shQuote(s: String): String {
           log("ERR", "start blocked: nfqws tester session is active")
           return@launchIO
         }
+        // Both endpoints only acknowledge an async request: the real outcome
+        // arrives through the authoritative status fetch in `finally`, which
+        // also owns the cached tile/widget state.
         val ok = if (wasOn) api.stopService() else api.startService()
-        if (ok) root.setCachedServiceOn(!wasOn)
+        val request = if (wasOn) "/api/stop" else "/api/start"
         if (ok) {
-          log("OK", str(if (wasOn) R.string.log_service_stopped else R.string.log_service_started))
+          log("INFO", "$request: ${str(if (wasOn) R.string.home_power_stopping else R.string.home_power_starting)}")
         } else {
-          log("ERR", if (wasOn) "/api/stop failed" else "/api/start failed")
+          log("ERR", "$request failed")
         }
       } catch (e: Throwable) {
         log("ERR", "toggle failed: ${e.message ?: e}")
@@ -7824,68 +7822,6 @@ private fun shQuote(s: String): String {
           log("OK", "$path: saved (apply after stop/start)")
         }
       } else log("ERR", "$path: save failed")
-      withContext(Dispatchers.Main.immediate) { onDone(ok) }
-    }
-  }
-
-  override fun saveAppListResolvingConflicts(
-    targetPath: String,
-    targetContent: String,
-    removalsByPath: Map<String, Set<String>>,
-    onDone: (Boolean) -> Unit,
-  ) {
-    fun parseAppPackages(content: String): Set<String> {
-      return content
-        .lineSequence()
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .filterNot { it.startsWith("#") || it.startsWith("//") }
-        .toSet()
-    }
-
-    fun formatAppPackages(packages: Set<String>): String {
-      return if (packages.isEmpty()) "" else packages.sorted().joinToString("\n", postfix = "\n")
-    }
-
-    launchIO {
-      val ok = runCatching {
-        val removals = removalsByPath
-          .filterKeys { it.isNotBlank() && it != targetPath }
-          .mapValues { (_, pkgs) -> pkgs.map { it.trim() }.filter { it.isNotEmpty() }.toSet() }
-          .filterValues { it.isNotEmpty() }
-
-        val originals = linkedMapOf<String, String>()
-        for ((sourcePath, packagesToRemove) in removals) {
-          val current = api.getTextContent(sourcePath)
-          originals[sourcePath] = current
-          val updated = parseAppPackages(current) - packagesToRemove
-          val saved = api.putTextContent(sourcePath, formatAppPackages(updated))
-          if (!saved) {
-            log("ERR", "$sourcePath: conflict removal failed")
-            return@runCatching false
-          }
-          log("OK", "$sourcePath: removed moved app(s)")
-        }
-
-        val targetSaved = api.putTextContent(targetPath, targetContent)
-        if (!targetSaved) {
-          log("ERR", "$targetPath: save failed")
-          for ((sourcePath, originalContent) in originals) {
-            val rolledBack = runCatching { api.putTextContent(sourcePath, originalContent) }.getOrDefault(false)
-            if (rolledBack) log("OK", "$sourcePath: conflict removal rolled back")
-            else log("ERR", "$sourcePath: rollback after target save failure failed")
-          }
-        }
-        targetSaved
-      }.getOrElse {
-        log("ERR", "$targetPath: save with conflict removal failed: ${it.message ?: it}")
-        false
-      }
-
-      if (ok) {
-        log("OK", "$targetPath: saved and conflicts resolved")
-        beginRuntimeApplyPollingIfAppList(targetPath, "conflict-resolve")
-      }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }
   }

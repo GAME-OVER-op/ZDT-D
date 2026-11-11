@@ -103,7 +103,8 @@ pub fn main_pids_exact() -> Vec<i32> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::config::{resolve_remote_lines, split_openvpn_inline_comment};
+    use super::super::profile::normalize_setting_value;
 
     #[test]
     fn old_setting_defaults_endpoint_resolution_on() {

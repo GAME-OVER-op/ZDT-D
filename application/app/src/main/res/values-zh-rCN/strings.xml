@@ -672,8 +672,6 @@ APatch：10700+</string>
     <string name="log_root_access_required">需要 root 权限</string>
     <string name="log_api_token_missing_fmt">缺少 API 令牌。请检查 %1$s</string>
     <string name="log_logs_cleared">日志已清除</string>
-    <string name="log_service_started">服务已启动</string>
-    <string name="log_service_stopped">服务已停止</string>
 
     <string name="mv_backup_restore_reopen_hint">再次恢复前，请重新选择备份（或重新打开此窗口）。</string>
     <string name="settings_delete_module_title">移除模块</string>
@@ -935,10 +933,6 @@ APatch：10700+</string>
     <string name="settings_reset_identifier_done">标识符已重置</string>
     <string name="settings_reset_identifier_failed">重置标识符失败</string>
 
-    <string name="app_picker_conflict_used_in">用于 %1$s</string>
-    <string name="app_picker_conflict_will_move">保存时将从 %1$s 中移除</string>
-    <string name="app_picker_move_conflict_title">从其他列表中移除应用？</string>
-    <string name="app_picker_move_conflict_body">一个或多个所选应用已存在于已禁用工具列表中。是否将其从那些列表移除并添加到此处？</string>
     <string name="apps_conflict_slot_common">通用</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">移动网络</string>
@@ -1311,7 +1305,6 @@ APatch：10700+</string>
     <string name="myvpn_apps_title">myvpn 应用</string>
     <string name="myvpn_apps_desc">选择流量应使用此 myvpn 绑定的软件包名称。UID 解析由守护进程完成。</string>
     <string name="myvpn_enabled_empty_apps_warning">配置文件已启用，但应用列表为空。</string>
-    <string name="myvpn_app_conflict_error">此应用已被其他网络程序使用。请从该程序中移除，或选择其他配置文件。</string>
 
 
     <!-- tun2socks profiles -->
@@ -1344,7 +1337,6 @@ APatch：10700+</string>
     <string name="tun2socks_apps_title">tun2socks 应用</string>
     <string name="tun2socks_apps_desc">选择流量应使用此 tun2socks 配置文件的软件包名称。UID 解析由守护进程完成。</string>
     <string name="tun2socks_enabled_empty_apps_warning">配置文件已启用，但应用列表为空。</string>
-    <string name="tun2socks_app_conflict_error">此应用已被其他网络程序使用。请从该程序中移除，或选择其他配置文件。</string>
     <string name="tun2socks_debug_hint_title">调试日志</string>
     <string name="tun2socks_debug_hint_body">如果配置文件无法启动，请检查 /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log 和 /data/adb/modules/ZDT-D/log/zdtd.log。</string>
 
@@ -1380,7 +1372,6 @@ APatch：10700+</string>
     <string name="openvpn_apps_title">OpenVPN 应用</string>
     <string name="openvpn_apps_desc">选择流量应使用此 OpenVPN 配置文件的软件包名称。UID 解析由守护进程完成。</string>
     <string name="openvpn_enabled_empty_apps_warning">配置文件已启用，但应用列表为空。</string>
-    <string name="openvpn_app_conflict_error">此应用已被其他网络程序使用。请从该程序中移除，或选择其他配置文件。</string>
     <string name="openvpn_autosave_hint">已启用自动保存。更改将在服务重启后生效。</string>
     <string name="openvpn_config_summary_desc">client.ovpn 需单独编辑。使用铅笔图标打开编辑器。</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn 存在 • %1$d 个非空行</string>
@@ -1429,7 +1420,6 @@ APatch：10700+</string>
     <string name="amneziawg_apps_title">AmneziaWG 应用</string>
     <string name="amneziawg_apps_desc">选择其流量应使用此 AmneziaWG 配置文件的软件包名称。这是独占网络后端。</string>
     <string name="amneziawg_enabled_empty_apps_warning">配置文件已启用，但应用列表为空。请至少选择一个应用。</string>
-    <string name="amneziawg_app_conflict_error">此应用已被其他网络程序使用。请从该程序中移除，或选择其他配置文件。</string>
     <string name="amneziawg_enable_requirements_error">启用前，请添加包含 PrivateKey/PublicKey、有效 IPv4 地址、DNS、MTU 和至少一个应用的 client.conf。</string>
     <string name="amneziawg_autosave_hint">已启用自动保存。更改将在服务重启后生效。</string>
     <string name="saved_apply_after_restart">已保存。更改将在服务重启后生效。</string>
@@ -1500,7 +1490,6 @@ APatch：10700+</string>
     <string name="mihomo_apps_title">Mihomo 应用</string>
     <string name="mihomo_apps_desc">选择其流量应使用此 Mihomo 配置文件的软件包名称。UID 解析由守护进程完成。</string>
     <string name="mihomo_enabled_empty_apps_warning">配置文件已启用，但应用列表为空。</string>
-    <string name="mihomo_app_conflict_error">此应用已被其他网络程序使用。请从该程序中移除，或选择其他配置文件。</string>
     <string name="mihomo_advanced_title">高级 YAML 块</string>
     <string name="mihomo_advanced_desc">Dashboard 和 external-controller 存储在 config.yaml 中。除非您有意公开控制器，否则请将 external-controller 保持为 127.0.0.1。</string>
     <string name="mihomo_no_managed_route_hint">界面不会创建路由、iptables/netd 规则或 Mihomo tun 模式。运行时路由由 ZDT-D 守护进程完成。</string>

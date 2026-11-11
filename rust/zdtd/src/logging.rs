@@ -167,6 +167,18 @@ fn user_localize(msg: &str) -> String {
     }
 }
 
+pub(crate) fn user_app_overlap_error(details: &str) {
+    let message = match current_user_lang() {
+        LANG_RU => format!(
+            "Ошибка запуска: пересекаются списки приложений: {details} — отключите один из конфликтующих профилей или удалите дубликаты"
+        ),
+        _ => format!(
+            "Startup error: enabled app lists overlap: {details} — disable one conflicting profile or remove the duplicates"
+        ),
+    };
+    user_error(&message);
+}
+
 fn user_localize_en(msg: &str) -> String {
     match msg {
         "Запуск: инициализация" => return "Startup: initialization".to_string(),

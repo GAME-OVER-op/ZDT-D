@@ -672,8 +672,6 @@ Use outro editor para modificá-lo.</string>
     <string name="log_root_access_required">Acesso root necessário</string>
     <string name="log_api_token_missing_fmt">Token de API ausente. Verifique %1$s</string>
     <string name="log_logs_cleared">Registros limpos</string>
-    <string name="log_service_started">Serviço iniciado</string>
-    <string name="log_service_stopped">Serviço interrompido</string>
 
     <string name="mv_backup_restore_reopen_hint">Selecione o backup novamente (ou reabra esta janela) antes de restaurar outra vez.</string>
     <string name="settings_delete_module_title">Remoção do módulo</string>
@@ -935,10 +933,6 @@ A proteção não funciona no modo ponto de acesso. Se o ponto de acesso estiver
     <string name="settings_reset_identifier_done">Identificador redefinido</string>
     <string name="settings_reset_identifier_failed">Falha ao redefinir o identificador</string>
 
-    <string name="app_picker_conflict_used_in">Usado em %1$s</string>
-    <string name="app_picker_conflict_will_move">Será removido de %1$s ao salvar</string>
-    <string name="app_picker_move_conflict_title">Remover o aplicativo de outra lista?</string>
-    <string name="app_picker_move_conflict_body">Um ou mais aplicativos selecionados já estão em listas de ferramentas desativadas. Removê-los dessas listas e adicioná-los aqui?</string>
     <string name="apps_conflict_slot_common">Comum</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">Dados móveis</string>
@@ -1312,7 +1306,6 @@ A proteção não funciona no modo ponto de acesso. Se o ponto de acesso estiver
     <string name="myvpn_apps_title">Apps do myvpn</string>
     <string name="myvpn_apps_desc">Selecione os nomes de pacote cujo tráfego deve usar esta vinculação do myvpn. A análise de UID é feita pelo daemon.</string>
     <string name="myvpn_enabled_empty_apps_warning">O perfil está ativado, mas a lista de apps está vazia.</string>
-    <string name="myvpn_app_conflict_error">Este app já é usado por outro programa de rede. Remova-o de lá ou escolha outro perfil.</string>
 
 
     <!-- tun2socks profiles -->
@@ -1345,7 +1338,6 @@ A proteção não funciona no modo ponto de acesso. Se o ponto de acesso estiver
     <string name="tun2socks_apps_title">Apps do tun2socks</string>
     <string name="tun2socks_apps_desc">Selecione os nomes de pacote cujo tráfego deve usar este perfil do tun2socks. A análise de UID é feita pelo daemon.</string>
     <string name="tun2socks_enabled_empty_apps_warning">O perfil está ativado, mas a lista de apps está vazia.</string>
-    <string name="tun2socks_app_conflict_error">Este app já é usado por outro programa de rede. Remova-o de lá ou escolha outro perfil.</string>
     <string name="tun2socks_debug_hint_title">Logs de depuração</string>
     <string name="tun2socks_debug_hint_body">Se um perfil não iniciar, verifique /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log e /data/adb/modules/ZDT-D/log/zdtd.log.</string>
 
@@ -1381,7 +1373,6 @@ A proteção não funciona no modo ponto de acesso. Se o ponto de acesso estiver
     <string name="openvpn_apps_title">Apps do OpenVPN</string>
     <string name="openvpn_apps_desc">Selecione os nomes de pacote cujo tráfego deve usar este perfil do OpenVPN. A análise de UID é feita pelo daemon.</string>
     <string name="openvpn_enabled_empty_apps_warning">O perfil está ativado, mas a lista de apps está vazia.</string>
-    <string name="openvpn_app_conflict_error">Este app já é usado por outro programa de rede. Remova-o de lá ou escolha outro perfil.</string>
     <string name="openvpn_autosave_hint">O salvamento automático está ativado. As alterações são aplicadas após reiniciar o serviço.</string>
     <string name="openvpn_config_summary_desc">O client.ovpn é editado separadamente. Use o lápis para abrir o editor.</string>
     <string name="openvpn_config_summary_present_fmt">client.ovpn presente • %1$d linhas não vazias</string>
@@ -1430,7 +1421,6 @@ A proteção não funciona no modo ponto de acesso. Se o ponto de acesso estiver
     <string name="amneziawg_apps_title">Apps do AmneziaWG</string>
     <string name="amneziawg_apps_desc">Selecione os nomes dos pacotes cujo tráfego deve usar este perfil do AmneziaWG. Este é um backend de rede exclusivo.</string>
     <string name="amneziawg_enabled_empty_apps_warning">O perfil está ativado, mas a lista de apps está vazia. Selecione pelo menos um app.</string>
-    <string name="amneziawg_app_conflict_error">Este app já é usado por outro programa de rede. Remova-o de lá ou escolha outro perfil.</string>
     <string name="amneziawg_enable_requirements_error">Antes de ativar, adicione client.conf com PrivateKey/PublicKey, endereço IPv4 válido, DNS, MTU e pelo menos um app.</string>
     <string name="amneziawg_autosave_hint">O salvamento automático está ativado. As alterações são aplicadas após reiniciar o serviço.</string>
     <string name="saved_apply_after_restart">Salvo. As alterações serão aplicadas após reiniciar o serviço.</string>
@@ -1501,7 +1491,6 @@ A proteção não funciona no modo ponto de acesso. Se o ponto de acesso estiver
     <string name="mihomo_apps_title">Apps do Mihomo</string>
     <string name="mihomo_apps_desc">Selecione os nomes dos pacotes cujo tráfego deve usar este perfil do Mihomo. A análise de UID é feita pelo daemon.</string>
     <string name="mihomo_enabled_empty_apps_warning">O perfil está ativado, mas a lista de apps está vazia.</string>
-    <string name="mihomo_app_conflict_error">Este app já é usado por outro programa de rede. Remova-o de lá ou escolha outro perfil.</string>
     <string name="mihomo_advanced_title">Blocos YAML avançados</string>
     <string name="mihomo_advanced_desc">Dashboard e external-controller são armazenados em config.yaml. Mantenha external-controller em 127.0.0.1, a menos que queira expô-lo intencionalmente.</string>
     <string name="mihomo_no_managed_route_hint">A interface não cria rotas, regras iptables/netd nem o modo tun do Mihomo. O daemon do ZDT-D faz o roteamento em tempo de execução.</string>

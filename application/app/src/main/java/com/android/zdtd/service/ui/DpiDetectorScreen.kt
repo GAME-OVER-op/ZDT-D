@@ -67,6 +67,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -145,7 +146,7 @@ fun DpiDetectorScreen(
   val screenListState = rememberLazyListState()
   val stages = remember { mutableStateListOf<DpiStageUiState>().apply { addAll(defaultDpiStages()) } }
   var running by remember { mutableStateOf(false) }
-  var hasRun by remember { mutableStateOf(false) }
+  var hasRun by rememberSaveable { mutableStateOf(false) }
   var currentStageId by remember { mutableStateOf<String?>(null) }
   var currentProbe by remember { mutableStateOf("") }
   var manuallyExpandedStageIds by remember { mutableStateOf(setOf<String>()) }
@@ -321,12 +322,7 @@ fun DpiDetectorScreen(
   LazyColumn(
     state = screenListState,
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(
-      start = if (compact) 10.dp else 12.dp,
-      end = if (compact) 10.dp else 12.dp,
-      top = topContentPadding + if (shortHeight) 6.dp else 10.dp,
-      bottom = bottomContentPadding + 12.dp,
-    ),
+    contentPadding = rememberScreenContentPadding(topContentPadding, bottomContentPadding),
     verticalArrangement = Arrangement.spacedBy(if (shortHeight) 8.dp else 10.dp),
   ) {
     item { DpiDetectorHeroCard(compact = compact) }
@@ -525,47 +521,19 @@ private fun DpiDetectorExportCard(
 
 @Composable
 private fun DpiDetectorHeroCard(compact: Boolean) {
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(26.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.32f)),
-  ) {
-    Column(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(if (compact) 16.dp else 18.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-      Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-        contentColor = MaterialTheme.colorScheme.primary,
-      ) {
-        Icon(
-          imageVector = Icons.Outlined.Tune,
-          contentDescription = null,
-          modifier = Modifier.padding(13.dp).size(32.dp),
-        )
-      }
-      Text(
-        text = stringResource(R.string.dpi_detector_title),
-        style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.Bold,
-      )
-      Text(
-        text = stringResource(R.string.dpi_detector_desc),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-      )
+  ScreenIntroHeader(
+    title = stringResource(R.string.dpi_detector_title),
+    description = stringResource(R.string.dpi_detector_desc),
+    icon = Icons.Outlined.Tune,
+    compact = compact,
+    content = {
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         DpiChip(text = stringResource(R.string.dpi_detector_chip_dpi))
         DpiChip(text = stringResource(R.string.dpi_detector_chip_blocking))
         DpiChip(text = stringResource(R.string.dpi_detector_chip_analysis))
       }
-    }
-  }
+    },
+  )
 }
 
 @Composable

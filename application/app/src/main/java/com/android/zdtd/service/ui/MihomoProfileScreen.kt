@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -60,6 +61,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -2342,7 +2344,7 @@ fun MihomoProfileScreen(
   val prof = program?.profiles?.firstOrNull { it.name == profile }
   val basePath = remember(profile) { mihomoProfilePath(profile) }
 
-  var selectedTab by remember(profile) { mutableIntStateOf(0) }
+  var selectedTab by rememberSaveable(profile) { mutableIntStateOf(0) }
   var loading by remember(profile) { mutableStateOf(true) }
   var tunText by remember(profile) { mutableStateOf("tun20") }
   var mixedPortText by remember(profile) { mutableStateOf("17890") }
@@ -2361,7 +2363,7 @@ fun MihomoProfileScreen(
   var usedMihomoControllerPorts by remember(profile) { mutableStateOf(emptySet<Int>()) }
   var usedVpnIpv4Cidrs by remember(profile) { mutableStateOf(emptyList<VpnIpv4Use>()) }
   var pendingChanges by remember(profile) { mutableStateOf(emptyList<MihomoPendingChange>()) }
-  var pendingExpanded by remember(profile) { mutableStateOf(false) }
+  var pendingExpanded by rememberSaveable(profile) { mutableStateOf(false) }
   var mihomoWebPanelChecking by remember(profile) { mutableStateOf(false) }
   var selectedSubscriptionIds by remember(profile) { mutableStateOf(emptySet<String>()) }
 
@@ -2808,7 +2810,7 @@ private fun MihomoPendingChangesPanel(
 ) {
   if (pendingChanges.isEmpty()) return
   Column(
-    modifier = modifier.width(if (compact) 286.dp else 360.dp),
+    modifier = modifier.fillMaxWidth().widthIn(max = 360.dp),
     horizontalAlignment = Alignment.End,
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
@@ -5399,13 +5401,24 @@ private fun MihomoRawSectionEditorTab(
   defaultText: String,
   onSaveYaml: (String) -> Unit,
 ) {
-  var text by remember(yamlText, section) {
+  // Keep the editor's own text alive across autosaves: keying it on yamlText
+  // discarded the local state right after every save and dropped IME focus.
+  var text by remember(section) {
     val extracted = extractTopLevelYamlSection(yamlText, section).trimEnd()
     mutableStateOf(if (extracted == "$section:") "" else extracted)
   }
-  var lastSaved by remember(yamlText, section) {
+  var lastSaved by remember(section) {
     val extracted = extractTopLevelYamlSection(yamlText, section).trimEnd()
     mutableStateOf(if (extracted == "$section:") "" else extracted)
+  }
+  LaunchedEffect(yamlText, section) {
+    val extracted = extractTopLevelYamlSection(yamlText, section).trimEnd().let {
+      if (it == "$section:") "" else it
+    }
+    if (extracted != lastSaved) {
+      text = extracted
+      lastSaved = extracted
+    }
   }
   LaunchedEffect(text) {
     if (text.trimEnd() == lastSaved.trimEnd()) return@LaunchedEffect

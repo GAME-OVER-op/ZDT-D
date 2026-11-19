@@ -10,6 +10,9 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.android.zdtd.service.ui.EmptyStateCard
+import com.android.zdtd.service.ui.ScreenIntroHeader
+import com.android.zdtd.service.ui.rememberScreenContentPadding
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -95,6 +98,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -157,7 +161,7 @@ fun VpsServersScreen(
   val metrics by viewModel.metrics.collectAsState()
   val pending by viewModel.pendingProbe.collectAsState()
   val operation by viewModel.operation.collectAsState()
-  var showAdd by remember { mutableStateOf(false) }
+  var showAdd by rememberSaveable { mutableStateOf(false) }
   var deleteTarget by remember { mutableStateOf<VpsServer?>(null) }
 
   LifecycleStartEffect(Unit) {
@@ -231,7 +235,7 @@ fun VpsServersScreen(
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(top = topContentPadding + 8.dp, bottom = bottomContentPadding + 14.dp),
+    contentPadding = rememberScreenContentPadding(topContentPadding, bottomContentPadding),
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     item {
@@ -274,7 +278,7 @@ fun VpsServerDetailsScreen(
   val operation by viewModel.operation.collectAsState()
   var removeTarget by remember { mutableStateOf<VpsServiceKind?>(null) }
   var logs by remember { mutableStateOf<String?>(null) }
-  var showRebootConfirm by remember { mutableStateOf(false) }
+  var showRebootConfirm by rememberSaveable { mutableStateOf(false) }
 
   LifecycleStartEffect(serverId) {
     viewModel.startServerDetailsMonitoring(serverId)
@@ -335,7 +339,7 @@ fun VpsServerDetailsScreen(
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(top = topContentPadding + 8.dp, bottom = bottomContentPadding + 14.dp),
+    contentPadding = rememberScreenContentPadding(topContentPadding, bottomContentPadding),
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     item {
@@ -412,7 +416,7 @@ fun VpsServiceScreen(
     profileLoads[profileKey] ?: VpsLoadState()
   }
   val serverOnline = metricsMap[serverId]?.reachability == VpsReachability.ONLINE
-  var showCreate by remember { mutableStateOf(false) }
+  var showCreate by rememberSaveable { mutableStateOf(false) }
   var deleteTarget by remember { mutableStateOf<VpsServiceProfile?>(null) }
   var logs by remember { mutableStateOf<String?>(null) }
 
@@ -459,7 +463,7 @@ fun VpsServiceScreen(
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(top = topContentPadding + 8.dp, bottom = bottomContentPadding + 14.dp),
+    contentPadding = rememberScreenContentPadding(topContentPadding, bottomContentPadding),
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     item {
@@ -542,7 +546,7 @@ fun VpsProfileScreen(
   val clientLoad = clientLoads[clientKey] ?: VpsLoadState()
   val contentLoad = combineLoadStates(profileLoad, clientLoad)
   val serverOnline = metricsMap[serverId]?.reachability == VpsReachability.ONLINE
-  var showCreateClient by remember { mutableStateOf(false) }
+  var showCreateClient by rememberSaveable { mutableStateOf(false) }
   var deleteTarget by remember { mutableStateOf<VpsClientConfig?>(null) }
   var snack by remember { mutableStateOf<String?>(null) }
 
@@ -624,7 +628,7 @@ fun VpsProfileScreen(
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(top = topContentPadding + 8.dp, bottom = bottomContentPadding + 14.dp),
+    contentPadding = rememberScreenContentPadding(topContentPadding, bottomContentPadding),
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     item {
@@ -1057,22 +1061,20 @@ private fun VpsHeaderCard(
   onAction: () -> Unit,
   horizontalPadding: Dp = 12.dp,
 ) {
-  Surface(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding),
-    shape = RoundedCornerShape(22.dp),
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)),
-  ) {
-    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
-      }
+  ScreenIntroHeader(
+    title = title,
+    description = description,
+    compact = horizontalPadding <= 12.dp,
+    trailing = {
       actionText?.let {
-        FilledTonalButton(enabled = actionEnabled, onClick = onAction) { Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(it) }
+        FilledTonalButton(enabled = actionEnabled, onClick = onAction) {
+          Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(it)
+        }
       }
-    }
-  }
+    },
+  )
 }
 
 @Composable
@@ -1887,13 +1889,12 @@ private fun VpsLoadErrorCard(error: String, onRetry: () -> Unit) {
 
 @Composable
 private fun VpsEmptyState(title: String, hint: String, horizontalPadding: Dp = 12.dp) {
-  Surface(modifier = Modifier.fillMaxWidth().padding(horizontal = horizontalPadding), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.68f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))) {
-    Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-      Icon(Icons.Outlined.Cloud, contentDescription = null, modifier = Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary)
-      Text(title, fontWeight = FontWeight.Bold)
-      if (hint.isNotBlank()) Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f))
-    }
-  }
+  EmptyStateCard(
+    title = title,
+    hint = hint,
+    icon = Icons.Outlined.Cloud,
+    modifier = Modifier.padding(horizontal = horizontalPadding),
+  )
 }
 
 @Composable

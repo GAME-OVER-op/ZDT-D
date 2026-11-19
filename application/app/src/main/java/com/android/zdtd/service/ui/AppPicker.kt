@@ -51,6 +51,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
@@ -117,7 +118,7 @@ fun AppListPickerCard(
   var selected by remember(path, initialContent) { mutableStateOf(parsePkgList(initialContent)) }
   var loading by remember(path) { mutableStateOf(true) }
   var saving by remember(path) { mutableStateOf(false) }
-  var showPicker by remember { mutableStateOf(false) }
+  var showPicker by rememberSaveable { mutableStateOf(false) }
   val scope = rememberCoroutineScope()
 
   fun saveSelection(newSel: Set<String>, removalsByPath: Map<String, Set<String>> = emptyMap()) {
@@ -297,7 +298,7 @@ internal fun AppPickerSheet(
     actions.loadAppAssignments { assignments = it ?: ApiModels.AppAssignmentsState() }
   }
 
-  var query by remember { mutableStateOf("") }
+  var query by rememberSaveable { mutableStateOf("") }
   var selected by remember(initialSelected) { mutableStateOf(initialSelected) }
   val hasChanges = selected != initialSelected
 

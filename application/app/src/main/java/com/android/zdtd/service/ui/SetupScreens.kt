@@ -629,7 +629,7 @@ private fun ModernSetupHeroCard(
             when {
               fillAvailableHeight -> Modifier.fillMaxWidth(0.47f)
               narrowHero -> Modifier.fillMaxWidth(0.38f)
-              else -> Modifier.width(if (compact) 146.dp else 180.dp)
+              else -> Modifier.fillMaxWidth(0.4f)
             },
           )
           .fillMaxHeight(),
@@ -1644,7 +1644,7 @@ private fun InstallerHeroCard(
             when {
               fillAvailableHeight -> Modifier.fillMaxWidth(0.47f)
               narrowHero -> Modifier.fillMaxWidth(0.38f)
-              else -> Modifier.width(if (compact) 142.dp else 174.dp)
+              else -> Modifier.fillMaxWidth(0.4f)
             },
           )
           .fillMaxHeight(),

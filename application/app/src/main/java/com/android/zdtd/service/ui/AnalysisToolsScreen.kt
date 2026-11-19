@@ -53,12 +53,7 @@ fun AnalysisToolsScreen(
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(
-      start = if (compact) 10.dp else 12.dp,
-      end = if (compact) 10.dp else 12.dp,
-      top = topContentPadding + if (shortHeight) 6.dp else 10.dp,
-      bottom = bottomContentPadding + 12.dp,
-    ),
+    contentPadding = rememberScreenContentPadding(topContentPadding, bottomContentPadding),
     verticalArrangement = Arrangement.spacedBy(if (shortHeight) 8.dp else 10.dp),
   ) {
     item {
@@ -99,44 +94,12 @@ fun AnalysisToolsScreen(
 
 @Composable
 private fun AnalysisIntroCard(compact: Boolean) {
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(24.dp),
-    colors = CardDefaults.cardColors(
-      containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    ),
-    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)),
-  ) {
-    Column(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(if (compact) 16.dp else 18.dp),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-        contentColor = MaterialTheme.colorScheme.primary,
-      ) {
-        Icon(
-          imageVector = Icons.Outlined.Speed,
-          contentDescription = null,
-          modifier = Modifier.padding(10.dp).size(22.dp),
-        )
-      }
-      Text(
-        text = stringResource(R.string.analysis_tools_header_title),
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Bold,
-      )
-      Text(
-        text = stringResource(R.string.analysis_tools_header_desc),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-      )
-    }
-  }
+  ScreenIntroHeader(
+    title = stringResource(R.string.analysis_tools_header_title),
+    description = stringResource(R.string.analysis_tools_header_desc),
+    icon = Icons.Outlined.Speed,
+    compact = compact,
+  )
 }
 
 @Composable

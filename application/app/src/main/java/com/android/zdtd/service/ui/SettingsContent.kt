@@ -49,6 +49,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -226,12 +227,12 @@ fun AppUpdateSettings(
   landscapeColumns: Boolean = false,
 ) {
   val compactWidth = rememberIsCompactWidth()
-  var showHotspotWarning by remember { mutableStateOf(false) }
-  var showResetIdentifierConfirm by remember { mutableStateOf(false) }
-  var showProxyInfoConfigure by remember { mutableStateOf(false) }
-  var showBlockedQuicConfigure by remember { mutableStateOf(false) }
-  var showAdvancedSettings by remember { mutableStateOf(false) }
-  var showEnergySaverConfigure by remember { mutableStateOf(false) }
+  var showHotspotWarning by rememberSaveable { mutableStateOf(false) }
+  var showResetIdentifierConfirm by rememberSaveable { mutableStateOf(false) }
+  var showProxyInfoConfigure by rememberSaveable { mutableStateOf(false) }
+  var showBlockedQuicConfigure by rememberSaveable { mutableStateOf(false) }
+  var showAdvancedSettings by rememberSaveable { mutableStateOf(false) }
+  var showEnergySaverConfigure by rememberSaveable { mutableStateOf(false) }
   if (landscapeColumns) {
     Column(
       modifier = Modifier

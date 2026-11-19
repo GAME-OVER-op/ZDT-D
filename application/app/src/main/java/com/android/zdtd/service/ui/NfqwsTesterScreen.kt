@@ -39,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -68,9 +69,9 @@ fun NfqwsTesterScreen(
   val shortHeight = rememberIsShortHeight()
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
   val testerState by NfqwsTesterStore.state.collectAsStateWithLifecycle()
-  var selectedProgram by remember { mutableStateOf("nfqws") }
+  var selectedProgram by rememberSaveable { mutableStateOf("nfqws") }
   var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
-  var selectedWorking by remember { mutableStateOf<String?>(null) }
+  var selectedWorking by rememberSaveable { mutableStateOf<String?>(null) }
 
   LaunchedEffect(Unit) {
     overlayGranted = Settings.canDrawOverlays(context)
@@ -88,12 +89,7 @@ fun NfqwsTesterScreen(
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(
-      start = if (compact) 10.dp else 12.dp,
-      end = if (compact) 10.dp else 12.dp,
-      top = topContentPadding + if (shortHeight) 6.dp else 10.dp,
-      bottom = bottomContentPadding + 12.dp,
-    ),
+    contentPadding = rememberScreenContentPadding(topContentPadding, bottomContentPadding),
     verticalArrangement = Arrangement.spacedBy(if (shortHeight) 8.dp else 10.dp),
   ) {
     item {

@@ -54,6 +54,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -398,7 +399,7 @@ fun SubscriptionsScreen(
   var bulkCreatingProfile by remember { mutableStateOf(false) }
   var manualDraft by remember { mutableStateOf<ManualImportDraft?>(null) }
   var manualCreatingProfile by remember { mutableStateOf(false) }
-  var showLxInstallRequired by remember { mutableStateOf(false) }
+  var showLxInstallRequired by rememberSaveable { mutableStateOf(false) }
   var nodeExport by remember { mutableStateOf<SubscriptionNodeExportUi?>(null) }
 
   fun snack(text: String) { scope.launch { snackHost.showSnackbar(text) } }
@@ -803,12 +804,7 @@ fun SubscriptionsScreen(
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-      start = if (compact) 12.dp else 16.dp,
-      end = if (compact) 12.dp else 16.dp,
-      top = topContentPadding + 12.dp,
-      bottom = bottomContentPadding + 18.dp,
-    ),
+    contentPadding = rememberScreenContentPadding(topContentPadding, bottomContentPadding),
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     item {

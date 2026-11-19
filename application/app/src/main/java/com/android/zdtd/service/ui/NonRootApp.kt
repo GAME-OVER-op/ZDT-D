@@ -99,6 +99,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -225,6 +226,8 @@ fun NonRootApp(
   val context = LocalContext.current
   val nonRootLogsDir = remember(context) { NonRootRuntimeStore(context.applicationContext).logsDir.absolutePath }
   var tab by remember { mutableStateOf(Tab.HOME) }
+  // Each nested page keeps its saveable state while navigating inside the shell.
+  val pageStateHolder = rememberSaveableStateHolder()
   var showSettings by remember { mutableStateOf(false) }
   var programLogTarget by remember { mutableStateOf<ProgramLogTarget?>(null) }
   var cascadeProfileId by remember { mutableStateOf<String?>(null) }
@@ -357,6 +360,7 @@ fun NonRootApp(
       },
       label = "nonRootPageTransition",
     ) { page ->
+      pageStateHolder.SaveableStateProvider(key = page) {
       when {
         page.startsWith("profile:") -> {
           val id = page.substringAfter("profile:")
@@ -549,6 +553,7 @@ fun NonRootApp(
           showToolsWarning = showProfileFailureAttention && tab != Tab.APPS,
           onTabChange = { tab = it },
         )
+      }
       }
     }
   }

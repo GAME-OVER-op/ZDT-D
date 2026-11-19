@@ -19,6 +19,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -105,6 +106,10 @@ fun AppsHost(
 
   val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
+  // Keep each nested screen's saveable state alive while the user moves through
+  // the Apps section, so returning to a program/profile restores what was open.
+  val stateHolder = rememberSaveableStateHolder()
+
   LaunchedEffect(Unit) {
     actions.refreshOptionalTools()
   }
@@ -181,6 +186,7 @@ fun AppsHost(
     },
     label = "appsRouteTransition",
   ) { r ->
+    stateHolder.SaveableStateProvider(key = r) {
     when (r) {
       AppsRoute.List -> AppsListScreen(
         programs = programs,
@@ -468,6 +474,7 @@ fun AppsHost(
         )
       }
       else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.apps_host_unknown_route)) }
+    }
     }
   }
 }

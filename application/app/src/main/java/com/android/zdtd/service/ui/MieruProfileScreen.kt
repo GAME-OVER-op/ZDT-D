@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -167,7 +168,7 @@ fun MieruProfileScreen(
   var configSaving by remember(profile) { mutableStateOf(false) }
   var settingSaving by remember(profile) { mutableStateOf(false) }
   var syncedConfig by remember(profile) { mutableStateOf(MieruConfigUi(profileName = profile)) }
-  var tab by remember(profile) { mutableStateOf(0) }
+  var tab by rememberSaveable(profile) { mutableStateOf(0) }
   var tunText by remember(profile) { mutableStateOf("mrtun0") }
   var socksText by remember(profile) { mutableStateOf("2085") }
   var rpcText by remember(profile) { mutableStateOf("8964") }

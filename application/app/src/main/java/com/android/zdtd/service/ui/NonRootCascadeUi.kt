@@ -41,6 +41,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -1074,7 +1075,12 @@ private fun NonRootT2sNumberField(
   decimal: Boolean = false,
   onValue: (String) -> Unit,
 ) {
-  var text by remember(value) { mutableStateOf(value) }
+  // Do not key the draft on `value`: writing through onValue changes it and
+  // recreates this state on each keystroke, which drops IME focus.
+  var text by remember { mutableStateOf(value) }
+  LaunchedEffect(value) {
+    if (value != text) text = value
+  }
   OutlinedTextField(
     value = text,
     onValueChange = { raw ->

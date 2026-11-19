@@ -95,7 +95,9 @@ internal fun NonRootMultiServerProfileEditorScreen(
   onServerAuxPortChange: (String, String, Int) -> Boolean,
 ) {
   val screenPadding = rememberAdaptiveScreenPadding()
-  var nameText by remember(profile.id, profile.name) { mutableStateOf(profile.name) }
+  // Only the id identifies this editor; keying on the name resets the draft
+  // whenever autosave writes the name back and closes the keyboard.
+  var nameText by remember(profile.id) { mutableStateOf(profile.name) }
   var addDialog by remember { mutableStateOf(false) }
   var editServer by remember { mutableStateOf<NonRootBackendServer?>(null) }
   var deleteServer by remember { mutableStateOf<NonRootBackendServer?>(null) }

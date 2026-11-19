@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.*
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -95,10 +96,10 @@ fun ProgramScreen(
   val scope = rememberCoroutineScope()
 
   val hasStrategicFiles = program.id == "nfqws" || program.id == "nfqws2"
-  var programTab by remember(program.id) { mutableStateOf(0) }
-  var dnscryptTab by remember(program.id) { mutableStateOf(0) }
+  var programTab by rememberSaveable(program.id) { mutableStateOf(0) }
+  var dnscryptTab by rememberSaveable(program.id) { mutableStateOf(0) }
 
-  var showCreateProfile by remember { mutableStateOf(false) }
+  var showCreateProfile by rememberSaveable { mutableStateOf(false) }
   var operaWebPanelChecking by remember(program.id) { mutableStateOf(false) }
   var operaAppSelections by remember(program.id) { mutableStateOf<Map<String, Set<String>>>(emptyMap()) }
 
@@ -652,7 +653,7 @@ private fun NotImplementedProgramCard() {
         contentAlignment = Alignment.Center,
       ) {
         Row(
-          modifier = Modifier.width(180.dp),
+          modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -2110,7 +2111,7 @@ private fun OperaProxySection(
   snackHost: SnackbarHostState,
   onAppsSelectionSaved: ((String, Set<String>) -> Unit)? = null,
 ) {
-  var tab by remember { mutableStateOf(0) }
+  var tab by rememberSaveable { mutableStateOf(0) }
 
   val scope = rememberCoroutineScope()
   fun snack(msg: String) { scope.launch { snackHost.showSnackbar(msg) } }

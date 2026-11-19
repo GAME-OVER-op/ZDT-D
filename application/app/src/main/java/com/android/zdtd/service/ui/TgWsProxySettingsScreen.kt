@@ -45,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -121,7 +122,7 @@ fun TgWsProxySettingsScreen(
   var loading by remember { mutableStateOf(true) }
   var saving by remember { mutableStateOf(false) }
   var preview by remember { mutableStateOf(TgWsPreviewUi()) }
-  var advancedExpanded by remember { mutableStateOf(false) }
+  var advancedExpanded by rememberSaveable { mutableStateOf(false) }
 
   fun showSnack(text: String) {
     scope.launch { snackHost.showSnackbar(text) }
@@ -186,7 +187,7 @@ fun TgWsProxySettingsScreen(
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(top = topContentPadding + 8.dp, bottom = bottomContentPadding + 16.dp),
+    contentPadding = rememberScreenContentPadding(topContentPadding, bottomContentPadding),
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     item {
@@ -392,23 +393,20 @@ fun TgWsProxySettingsScreen(
 
 @Composable
 private fun TgWsHeaderCard(enabled: Boolean) {
-  Surface(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-    shape = RoundedCornerShape(22.dp),
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
-  ) {
-    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      Surface(modifier = Modifier.size(50.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f)) {
-        Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Send, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
-      }
-      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(stringResource(R.string.tg_ws_proxy_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text(stringResource(R.string.tgws_screen_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
-      }
-      Text(stringResource(if (enabled) R.string.enabled else R.string.tgws_disabled), style = MaterialTheme.typography.labelMedium, color = if (enabled) Color(0xFF22C55E) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-  }
+  ScreenIntroHeader(
+    title = stringResource(R.string.tg_ws_proxy_title),
+    description = stringResource(R.string.tgws_screen_desc),
+    icon = Icons.Outlined.Send,
+    trailing = {
+      Text(
+        stringResource(if (enabled) R.string.enabled else R.string.tgws_disabled),
+        style = MaterialTheme.typography.labelMedium,
+        color = if (enabled) Color(0xFF22C55E) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    },
+  )
 }
 
 @Composable

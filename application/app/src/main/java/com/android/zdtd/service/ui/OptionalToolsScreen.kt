@@ -71,7 +71,7 @@ fun OptionalToolsScreen(
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(top = topContentPadding + 8.dp, bottom = bottomContentPadding + 12.dp),
+    contentPadding = rememberScreenContentPadding(topContentPadding, bottomContentPadding),
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     item {
@@ -111,30 +111,11 @@ fun OptionalToolsScreen(
 
 @Composable
 private fun OptionalToolsHeader() {
-  Surface(
-    modifier = Modifier
-      .fillMaxWidth()
-      .padding(horizontal = 12.dp),
-    shape = RoundedCornerShape(22.dp),
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
-  ) {
-    Column(
-      modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-      verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-      Text(
-        text = stringResource(R.string.optional_tools_title),
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-      )
-      Text(
-        text = stringResource(R.string.optional_tools_screen_desc),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
-      )
-    }
-  }
+  ScreenIntroHeader(
+    title = stringResource(R.string.optional_tools_title),
+    description = stringResource(R.string.optional_tools_screen_desc),
+    compact = rememberIsCompactWidth(),
+  )
 }
 
 @Composable

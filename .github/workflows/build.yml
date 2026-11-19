@@ -26,7 +26,7 @@ env:
   ANDROID_BUILD_TOOLS_VERSION: "37.0.0"
   GRADLE_VERSION: "9.6.0"
   NATIVE_NDK_VERSION: "30.0.16248370"
-  GO_VERSION: "1.26.11"
+  GO_VERSION: "1.26.8"
   CARGO_PROFILE: release
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}

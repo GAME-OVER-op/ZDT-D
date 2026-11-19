@@ -26,7 +26,7 @@ env:
   ANDROID_BUILD_TOOLS_VERSION: "37.0.0"
   GRADLE_VERSION: "9.6.0"
   NATIVE_NDK_VERSION: "30.0.16248370"
-  GO_VERSION: "1.26.8"
+  GO_VERSION: "1.26.11"
   CARGO_PROFILE: release
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
@@ -3418,6 +3418,8 @@ jobs:
             no-shared \
             no-tests \
             no-apps \
+            no-jitter \
+            no-zstd \
             --prefix="$DEPS_DIR" \
             --openssldir="$DEPS_DIR/ssl" \
             -D__ANDROID_API__=$DPITUNNEL_ANDROID_API_LEVEL
@@ -4493,6 +4495,9 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Build lyrebird from official source
+        env:
+          # lyrebird tracks upstream main; allow its go.mod to request a newer toolchain
+          GOTOOLCHAIN: auto
         run: |
           set -euo pipefail
 

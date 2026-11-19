@@ -1585,15 +1585,27 @@ jobs:
 
           echo "=== Build wireproxy (${WIREPROXY_REF}) ==="
           pushd "$SRC/wireproxy" > /dev/null
-          GOOS=android \
-          GOARCH=${{ matrix.goarch }} \
-          GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=${{ matrix.cgo_enabled }} \
-            go build \
-              -trimpath \
-              -ldflags="-s -w -buildid=" \
-              -o "$ARTIFACT_DIR/wireproxy" \
-              ./cmd/wireproxy
+          build_ok=0
+          for attempt in 1 2 3; do
+            if GOOS=android \
+            GOARCH=${{ matrix.goarch }} \
+            GOARM=${{ matrix.goarm }} \
+            CGO_ENABLED=${{ matrix.cgo_enabled }} \
+              go build \
+                -trimpath \
+                -ldflags="-s -w -buildid=" \
+                -o "$ARTIFACT_DIR/wireproxy" \
+                ./cmd/wireproxy; then
+              build_ok=1
+              break
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "::error::wireproxy build failed after 3 attempts"
+              exit 1
+            fi
+            echo "::warning::wireproxy build failed (attempt $attempt), retrying"
+            sleep $((attempt * 10))
+          done
           popd > /dev/null
 
           chmod 755 "$ARTIFACT_DIR/wireproxy"
@@ -2261,6 +2273,9 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Build sing-box-lx for Android
+        env:
+          # Follow the toolchain required by upstream go.mod/go.version automatically.
+          GOTOOLCHAIN: auto
         run: |
           set -euo pipefail
 
@@ -2289,10 +2304,9 @@ jobs:
           CURRENT_GO="$(go env GOVERSION | tr -d '[:space:]')"
           CURRENT_GO="${CURRENT_GO#go}"
           echo "sing-box-lx required Go: $EXPECTED_GO"
-          echo "Workflow installed Go: $CURRENT_GO"
+          echo "Effective Go: $CURRENT_GO (GOTOOLCHAIN=auto)"
           if [[ "$CURRENT_GO" != "$EXPECTED_GO" ]]; then
-            echo "::error::sing-box-lx $SING_BOX_LX_REF requires Go $EXPECTED_GO, workflow provides $CURRENT_GO"
-            exit 1
+            echo "::warning::sing-box-lx $SING_BOX_LX_REF lists Go $EXPECTED_GO; building with $CURRENT_GO because GOTOOLCHAIN=auto resolved the toolchain from go.mod"
           fi
 
           LX_TAGS="$(make -s -f Makefile.lx lx-print-tags)"
@@ -3427,6 +3441,13 @@ jobs:
           make install_sw
           popd > /dev/null
 
+          # FindOpenSSL asks pkg-config for OpenSSL's private static deps. Without
+          # this, the host openssl.pc leaks -l:libjitterentropy.a / -lzstd into the
+          # Android cross link even though Configure disabled both features above.
+          export PKG_CONFIG_LIBDIR="$DEPS_DIR/lib/pkgconfig:$DEPS_DIR/lib64/pkgconfig"
+          export PKG_CONFIG_PATH=""
+          export PKG_CONFIG_SYSROOT_DIR="/"
+
           echo "=== Fetch official DPITunnel-cli source ==="
           git clone --depth 1 --branch "$DPITUNNEL_REF" https://github.com/nomoresat/DPITunnel-cli "$SRC/DPITunnel-cli"
           DPITUNNEL_COMMIT="$(git -C "$SRC/DPITunnel-cli" rev-parse HEAD)"
@@ -4328,6 +4349,7 @@ jobs:
             --disable-module-dirauth \
             --disable-seccomp \
             --disable-systemd \
+            --disable-lzma \
             --enable-static-openssl \
             --with-openssl-dir="$PREFIX" \
             --with-libevent-dir="$PREFIX" \
@@ -4509,7 +4531,21 @@ jobs:
           mkdir -p "$SRC" "$ARTIFACT_DIR"
 
           echo "=== Fetch official lyrebird source ==="
-          git clone --depth 1 --branch "$LYREBIRD_REF" https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird "$SRC/lyrebird"
+          for attempt in 1 2 3 4 5; do
+            rm -rf "$SRC/lyrebird"
+            if git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 \
+                 clone --depth 1 --branch "$LYREBIRD_REF" \
+                 https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird \
+                 "$SRC/lyrebird"; then
+              break
+            fi
+            if [[ "$attempt" -eq 5 ]]; then
+              echo "::error::Unable to clone lyrebird after 5 attempts"
+              exit 1
+            fi
+            echo "::warning::lyrebird clone failed (attempt $attempt), retrying"
+            sleep $((attempt * 5))
+          done
           LYREBIRD_COMMIT="$(git -C "$SRC/lyrebird" rev-parse HEAD)"
           printf '%s\n' "$LYREBIRD_COMMIT" | tee "$ARTIFACT_DIR/lyrebird.commit"
 

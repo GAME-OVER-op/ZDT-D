@@ -1218,22 +1218,28 @@ private fun setMihomoProviderHeader(raw: String, userAgent: String, authorizatio
 }
 
 private fun setMihomoProviderOverride(raw: String, draft: MihomoProviderDraft): String {
-  val lines = mutableListOf<String>()
-  if (draft.overridePrefix.isNotBlank()) lines += "additional-prefix: ${yamlQuote(draft.overridePrefix.trim())}"
-  if (draft.overrideSuffix.isNotBlank()) lines += "additional-suffix: ${yamlQuote(draft.overrideSuffix.trim())}"
-  if (draft.overrideTfo) lines += "tfo: true"
-  if (draft.overrideMptcp) lines += "mptcp: true"
-  if (draft.overrideUdp) lines += "udp: true"
-  if (draft.overrideUdpOverTcp) lines += "udp-over-tcp: true"
-  if (draft.overrideDown.isNotBlank()) lines += "down: ${yamlQuote(draft.overrideDown.trim())}"
-  if (draft.overrideUp.isNotBlank()) lines += "up: ${yamlQuote(draft.overrideUp.trim())}"
-  if (draft.overrideSkipCertVerify) lines += "skip-cert-verify: true"
-  if (draft.overrideDialerProxy.isNotBlank()) lines += "dialer-proxy: ${draft.overrideDialerProxy.trim()}"
-  if (draft.overrideInterfaceName.isNotBlank()) lines += "interface-name: ${draft.overrideInterfaceName.trim()}"
-  if (draft.overrideRoutingMark.isNotBlank()) lines += "routing-mark: ${draft.overrideRoutingMark.filter(Char::isDigit)}"
-  if (draft.overrideIpVersion.isNotBlank()) lines += "ip-version: ${draft.overrideIpVersion.trim()}"
-  if (draft.overrideProxyName.isNotBlank()) lines += "proxy-name: ${yamlQuote(draft.overrideProxyName.trim())}"
-  return appendMihomoProviderNestedBlock(raw, "override", lines)
+  // Update known override keys in place instead of rewriting the whole block:
+  // users may keep custom Mihomo fields here (client-fingerprint, reality-opts,
+  // support-x25519mlkem768, ...), and those must survive provider edits.
+  var out = raw
+  fun put(key: String, value: String, quote: Boolean = false) {
+    out = upsertMihomoNestedScalar(out, "override", key, value, quote = quote)
+  }
+  put("additional-prefix", draft.overridePrefix.trim(), quote = true)
+  put("additional-suffix", draft.overrideSuffix.trim(), quote = true)
+  put("tfo", if (draft.overrideTfo) "true" else "")
+  put("mptcp", if (draft.overrideMptcp) "true" else "")
+  put("udp", if (draft.overrideUdp) "true" else "")
+  put("udp-over-tcp", if (draft.overrideUdpOverTcp) "true" else "")
+  put("down", draft.overrideDown.trim(), quote = true)
+  put("up", draft.overrideUp.trim(), quote = true)
+  put("skip-cert-verify", if (draft.overrideSkipCertVerify) "true" else "")
+  put("dialer-proxy", draft.overrideDialerProxy.trim())
+  put("interface-name", draft.overrideInterfaceName.trim())
+  put("routing-mark", draft.overrideRoutingMark.filter(Char::isDigit))
+  put("ip-version", draft.overrideIpVersion.trim())
+  put("proxy-name", draft.overrideProxyName.trim(), quote = true)
+  return out
 }
 
 private fun setMihomoProviderHealthCheck(raw: String, draft: MihomoProviderDraft): String {

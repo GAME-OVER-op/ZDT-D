@@ -186,7 +186,7 @@ fun AppsHost(
     },
     label = "appsRouteTransition",
   ) { r ->
-    stateHolder.SaveableStateProvider(key = r) {
+    stateHolder.SaveableStateProvider(key = r.stateKey()) {
     when (r) {
       AppsRoute.List -> AppsListScreen(
         programs = programs,

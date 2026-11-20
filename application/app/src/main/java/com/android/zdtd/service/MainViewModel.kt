@@ -7941,6 +7941,7 @@ private fun shQuote(s: String): String {
     viewModelScope.launch {
       val found = LinkedHashMap<String, ToolReleaseUi>()
       var error: String? = null
+      withContext(Dispatchers.IO) {
       for (page in 1..5) {
         val req = okhttp3.Request.Builder()
           .url("https://api.github.com/repos/${spec.repo}/releases?per_page=100&page=$page")
@@ -7991,6 +7992,7 @@ private fun shQuote(s: String): String {
             break
           }
         }
+      }
       }
       withContext(Dispatchers.Main.immediate) {
         onDone(found.values.toList(), if (found.isEmpty()) error ?: str(R.string.program_updates_err_load_releases) else null)

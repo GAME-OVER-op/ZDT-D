@@ -195,6 +195,7 @@ private data class MihomoSubscriptionDraft(
   val osVersion: String = Build.VERSION.RELEASE.orEmpty(),
   val deviceModel: String = Build.MODEL.orEmpty(),
   val customHeadersText: String = "",
+  val content: String = "",
   val useRemoteInterval: Boolean = true,
   val updateIntervalMinutes: String = "60",
 )
@@ -759,6 +760,7 @@ fun SubscriptionsScreen(
 
   if (editor != null) {
     MihomoSubscriptionEditorDialog(
+      actions = actions,
       draft = editor!!,
       saving = editorLoading,
       onDismiss = { if (!editorLoading) editor = null },
@@ -1568,6 +1570,7 @@ private fun SubscriptionBulkImportDialog(
 
 @Composable
 private fun MihomoSubscriptionEditorDialog(
+  actions: ZdtdActions,
   draft: MihomoSubscriptionDraft,
   saving: Boolean,
   onDismiss: () -> Unit,
@@ -1575,6 +1578,9 @@ private fun MihomoSubscriptionEditorDialog(
 ) {
   val context = LocalContext.current
   var state by remember(draft) { mutableStateOf(draft) }
+  var preview by remember { mutableStateOf<List<SubscriptionNodeUi>>(emptyList()) }
+  var previewing by remember { mutableStateOf(false) }
+  var previewError by remember { mutableStateOf("") }
   val valid = state.name.trim().isNotBlank() &&
     (state.url.startsWith("http://") || state.url.startsWith("https://")) &&
     (!state.hwidEnabled || state.hwid.trim().isNotBlank()) &&
@@ -1594,6 +1600,61 @@ private fun MihomoSubscriptionEditorDialog(
         }
         item {
           OutlinedTextField(state.url, { state = state.copy(url = it.trim().take(2048)) }, label = { Text(stringResource(R.string.mihomo_sub_url)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        }
+        item {
+          OutlinedTextField(
+            value = state.content,
+            onValueChange = { state = state.copy(content = it.take(4 * 1024 * 1024)) },
+            label = { Text(stringResource(R.string.mihomo_sub_content_label)) },
+            supportingText = { Text(stringResource(R.string.mihomo_sub_content_hint)) },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3,
+            maxLines = 8,
+          )
+          Button(
+            enabled = !previewing && state.content.isNotBlank(),
+            onClick = {
+              previewing = true
+              previewError = ""
+              actions.postJsonResult(
+                "/api/subscriptions/preview",
+                JSONObject().put("content", state.content),
+              ) { obj ->
+                previewing = false
+                val nodes = obj?.optJSONArray("nodes")
+                if (nodes == null) {
+                  preview = emptyList()
+                  previewError = obj?.optString("error", "").orEmpty()
+                    .ifBlank { context.getString(R.string.mihomo_sub_preview_failed) }
+                } else {
+                  preview = (0 until nodes.length()).mapNotNull { index ->
+                    nodes.optJSONObject(index)?.let(::parseSubscriptionNode)
+                  }
+                }
+              }
+            },
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Text(stringResource(if (previewing) R.string.mihomo_sub_previewing else R.string.mihomo_sub_preview))
+          }
+          if (previewError.isNotBlank()) {
+            Text(previewError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          }
+          if (preview.isNotEmpty()) {
+            Text(
+              stringResource(R.string.mihomo_sub_preview_count, preview.size),
+              style = MaterialTheme.typography.labelMedium,
+              color = MaterialTheme.colorScheme.primary,
+            )
+            preview.forEach { node ->
+              Text(
+                "${node.name} — ${node.protocol}${if (node.transport.isNotBlank()) "/${node.transport}" else ""} (${node.server}:${node.port})",
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
         }
         item {
           SubscriptionToggleRow(stringResource(R.string.mihomo_sub_basic_auth), stringResource(R.string.mihomo_sub_basic_auth_desc), state.basicEnabled) { state = state.copy(basicEnabled = it) }

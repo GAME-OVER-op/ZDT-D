@@ -313,6 +313,148 @@ pub(super) fn definition_from_uri(line: &str) -> Option<JsonValue> {
     Some(JsonValue::Object(obj))
 }
 
+/// Convert one Xray outbound into the Clash-style definition that the rest of
+/// this module already understands. Happ subscriptions commonly deliver whole
+/// Xray JSON configs instead of Clash YAML or bare share links.
+fn xray_outbound_to_definition(outbound: &JsonValue) -> Option<JsonValue> {
+    let protocol = normalized_protocol(&json_string_any(outbound, &["protocol", "type"]));
+    if !matches!(protocol.as_str(), "vless" | "vmess" | "trojan" | "shadowsocks" | "socks" | "hysteria2" | "tuic") {
+        return None;
+    }
+    let settings = outbound.get("settings");
+    let stream = outbound.get("streamSettings");
+    let first_setting = |keys: &[&str]| -> Option<&JsonValue> {
+        settings.and_then(|s| s.get(keys[0])).and_then(JsonValue::as_array)
+            .and_then(|arr| arr.first())
+    };
+    let (server, port, user) = match protocol.as_str() {
+        "vless" | "vmess" => {
+            let vnext = first_setting(&["vnext"])?;
+            let user = vnext.get("users").and_then(JsonValue::as_array).and_then(|arr| arr.first()).cloned().unwrap_or_else(|| json!({}));
+            (json_string_any(vnext, &["address"]), json_u16_any(vnext, &["port"]), user)
+        }
+        "trojan" | "shadowsocks" | "socks" | "hysteria2" | "tuic" => {
+            let entry = first_setting(&["servers"])?;
+            (json_string_any(entry, &["address"]), json_u16_any(entry, &["port"]), entry.clone())
+        }
+        _ => return None,
+    };
+    if server.is_empty() || port == 0 { return None; }
+
+    let name = json_string_any(outbound, &["tag", "name", "remarks"]);
+    let mut definition = json!({
+        "type": protocol,
+        "name": name,
+        "server": server,
+        "port": port,
+    });
+    let obj = definition.as_object_mut()?;
+
+    // Credentials.
+    let uuid = json_string_any(&user, &["id", "uuid"]);
+    if !uuid.is_empty() { obj.insert("uuid".into(), json!(uuid)); }
+    let password = json_string_any(&user, &["password", "pass"]);
+    if !password.is_empty() { obj.insert("password".into(), json!(password)); }
+    let method = json_string_any(&user, &["method", "cipher"]);
+    if !method.is_empty() { obj.insert("cipher".into(), json!(method)); }
+    let alter_id = json_u16_any(&user, &["alterId", "alterid"]);
+    if alter_id > 0 { obj.insert("alterId".into(), json!(alter_id)); }
+    let flow = json_string_any(&user, &["flow"]);
+    if !flow.is_empty() { obj.insert("flow".into(), json!(flow)); }
+    let encryption = json_string_any(&user, &["encryption"]);
+    if !encryption.is_empty() && !encryption.eq_ignore_ascii_case("none") {
+        obj.insert("encryption".into(), json!(encryption));
+    }
+    let username = json_string_any(&user, &["user", "username"]);
+    if !username.is_empty() { obj.insert("username".into(), json!(username)); }
+
+    // Transport and security from streamSettings.
+    let network = stream.map(|v| json_string_any(v, &["network"])).unwrap_or_default();
+    if !network.is_empty() { obj.insert("network".into(), json!(network)); }
+    let security = stream.map(|v| json_string_any(v, &["security"])).unwrap_or_default();
+    if !security.is_empty() && !security.eq_ignore_ascii_case("none") {
+        obj.insert("security".into(), json!(security));
+    }
+
+    let tls = stream.and_then(|v| v.get("tlsSettings"));
+    let reality = stream.and_then(|v| v.get("realitySettings"));
+    let mut sni = json_string_any(tls.unwrap_or(&json!({})), &["serverName"]);
+    if sni.is_empty() {
+        sni = json_string_any(reality.unwrap_or(&json!({})), &["serverName"]);
+    }
+    if !sni.is_empty() { obj.insert("servername".into(), json!(sni)); }
+    if let Some(public_key) = reality.map(|v| json_string_any(v, &["publicKey"])).filter(|s| !s.is_empty()) {
+        obj.insert("pbk".into(), json!(public_key));
+        obj.insert("security".into(), json!("reality"));
+    }
+    if let Some(short_id) = reality.map(|v| json_string_any(v, &["shortId"])).filter(|s| !s.is_empty()) {
+        obj.insert("sid".into(), json!(short_id));
+    }
+    let insecure = tls.map(|v| v.get("allowInsecure").and_then(JsonValue::as_bool) == Some(true)).unwrap_or(false);
+    if insecure { obj.insert("skip-cert-verify".into(), json!(true)); }
+    if tls.is_some() && security.is_empty() && reality.is_none() {
+        obj.insert("tls".into(), json!(true));
+    }
+
+    // Per-transport settings.
+    for (transport_key, _path_key, _host_key) in [
+        ("wsSettings", "path", "host"),
+        ("httpupgradeSettings", "path", "host"),
+        ("splithttpSettings", "path", "host"),
+        ("xhttpSettings", "path", "host"),
+    ] {
+        if let Some(section) = stream.and_then(|v| v.get(transport_key)) {
+            let path = json_string_any(section, &["path"]);
+            if !path.is_empty() { obj.insert("path".into(), json!(path)); }
+            let mut host = json_string_any(section, &["host"]);
+            if host.is_empty() {
+                host = section.get("headers").map(|h| json_string_any(h, &["Host", "host"])).unwrap_or_default();
+            }
+            if !host.is_empty() { obj.insert("host".into(), json!(host)); }
+            let mode = json_string_any(section, &["mode"]);
+            if !mode.is_empty() { obj.insert("mode".into(), json!(mode)); }
+            break;
+        }
+    }
+    if let Some(grpc) = stream.and_then(|v| v.get("grpcSettings")) {
+        let service = json_string_any(grpc, &["serviceName"]);
+        if !service.is_empty() { obj.insert("path".into(), json!(service)); }
+    }
+
+    Some(definition)
+}
+
+/// Detect Xray-style JSON (a config with `outbounds`, an array of configs, or
+/// a bare outbound) and return definitions for all proxy outbounds.
+pub(super) fn xray_outbound_definitions(text: &str) -> Option<Vec<JsonValue>> {
+    let trimmed = text.trim();
+    if !(trimmed.starts_with('{') || trimmed.starts_with('[')) { return None; }
+    let value: JsonValue = serde_json::from_str(trimmed).ok()?;
+    let mut outbounds = Vec::<JsonValue>::new();
+    match &value {
+        JsonValue::Array(items) => {
+            for item in items {
+                if let Some(list) = item.get("outbounds").and_then(JsonValue::as_array) {
+                    outbounds.extend(list.iter().cloned());
+                } else if item.get("protocol").is_some() || item.get("type").is_some() {
+                    outbounds.push(item.clone());
+                }
+            }
+        }
+        JsonValue::Object(_) => {
+            if let Some(list) = value.get("outbounds").and_then(JsonValue::as_array) {
+                outbounds.extend(list.iter().cloned());
+            } else if value.get("protocol").is_some() || value.get("type").is_some() {
+                outbounds.push(value.clone());
+            }
+        }
+        _ => return None,
+    }
+    if outbounds.is_empty() { return None; }
+    let definitions: Vec<JsonValue> = outbounds.iter().filter_map(xray_outbound_to_definition).collect();
+    if definitions.is_empty() { None } else { Some(definitions) }
+}
+
 pub(super) fn parse_subscription_nodes(item: &Subscription, text: &str) -> Result<Vec<SubscriptionNode>> {
     let mut definitions = Vec::<JsonValue>::new();
     let mut candidates = vec![text.to_string()];
@@ -328,6 +470,10 @@ pub(super) fn parse_subscription_nodes(item: &Subscription, text: &str) -> Resul
                 }
                 if !definitions.is_empty() { break; }
             }
+        }
+        if let Some(mut xray) = xray_outbound_definitions(candidate) {
+            definitions.append(&mut xray);
+            break;
         }
         for line in candidate.lines().map(str::trim).filter(|line| is_supported_uri_line(line)) {
             if let Some(value) = definition_from_uri(line) { definitions.push(value); }

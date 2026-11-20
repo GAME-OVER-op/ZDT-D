@@ -2372,6 +2372,12 @@ APatch: 10700+</string>
     <string name="mihomo_sub_edit_title">Изменить подписку</string>
     <string name="mihomo_sub_name">Название</string>
     <string name="mihomo_sub_url">URL подписки</string>
+    <string name="mihomo_sub_content_label">Содержимое подписки (необязательно)</string>
+    <string name="mihomo_sub_content_hint">Вставьте Clash YAML, Xray JSON или список ссылок, чтобы увидеть, что ZDT-D прочитает до сохранения.</string>
+    <string name="mihomo_sub_preview">Распознать</string>
+    <string name="mihomo_sub_previewing">Распознаём…</string>
+    <string name="mihomo_sub_preview_failed">Не найдено читаемых узлов</string>
+    <string name="mihomo_sub_preview_count">Распознано узлов: %1$d</string>
     <string name="mihomo_sub_basic_auth">Basic-аутентификация</string>
     <string name="mihomo_sub_basic_auth_desc">Отправлять HTTP Basic логин и пароль при запросе подписки.</string>
     <string name="mihomo_sub_username">Логин</string>

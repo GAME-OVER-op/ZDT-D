@@ -11,6 +11,40 @@ use super::import::*;
 use super::provider::*;
 use super::worker::*;
 
+/// Parse a pasted subscription body with the exact production parser, without
+/// creating or fetching anything. Used by the Add dialog preview so the preview
+/// cannot diverge from what the background refresh will actually store.
+pub fn preview_subscription_content(content: &str) -> Result<JsonValue> {
+    let text = content.trim();
+    if text.is_empty() { bail!("content is empty"); }
+    if text.len() > 4 * 1024 * 1024 { bail!("content is too large"); }
+    let item = Subscription {
+        id: "preview".to_string(),
+        name: "preview".to_string(),
+        url: "http://localhost/".to_string(),
+        enabled: true,
+        basic_enabled: false,
+        basic_username: String::new(),
+        basic_password: String::new(),
+        hwid_enabled: false,
+        hwid: String::new(),
+        hwid_mode: "header".to_string(),
+        user_agent: String::new(),
+        send_device_headers: false,
+        device_locale: String::new(),
+        device_os: "Android".to_string(),
+        os_version: String::new(),
+        device_model: String::new(),
+        custom_headers: Default::default(),
+        use_remote_interval: false,
+        update_interval_minutes: 0,
+        created_at: 0,
+        modified_at: 0,
+    };
+    let nodes = super::parse::parse_subscription_nodes(&item, text)?;
+    Ok(json!({"ok": true, "nodes": nodes}))
+}
+
 pub(super) fn normalize_input(input: SubscriptionInput) -> Result<SubscriptionInput> {
     let mut i = input;
     i.name = i.name.trim().to_string();
@@ -277,3 +311,45 @@ pub(super) fn ensure_id(id: &str) -> Result<()> {
     Ok(())
 }
 
+
+#[cfg(test)]
+mod tests {
+  use super::preview_subscription_content;
+
+  #[test]
+  fn previews_xray_json_outbounds() {
+    let raw = r#"{
+      "outbounds": [
+        {
+          "protocol": "vless",
+          "tag": "hk-01",
+          "settings": {
+            "vnext": [{
+              "address": "example.com",
+              "port": 443,
+              "users": [{"id": "uuid-1", "encryption": "none", "flow": "xtls-rprx-vision"}]
+            }]
+          },
+          "streamSettings": {
+            "network": "ws",
+            "security": "tls",
+            "tlsSettings": {"serverName": "example.com"},
+            "wsSettings": {"path": "/ws", "headers": {"Host": "example.com"}}
+          }
+        }
+      ]
+    }"#;
+    let result = preview_subscription_content(raw).expect("xray json should parse");
+    let nodes = result.get("nodes").and_then(|v| v.as_array()).expect("nodes array");
+    assert_eq!(nodes.len(), 1);
+    let node = &nodes[0];
+    assert_eq!(node.get("protocol").and_then(|v| v.as_str()), Some("vless"));
+    assert_eq!(node.get("name").and_then(|v| v.as_str()), Some("hk-01"));
+    assert_eq!(node.get("server").and_then(|v| v.as_str()), Some("example.com"));
+    assert_eq!(node.get("port").and_then(|v| v.as_u64()), Some(443));
+    let targets = node.get("targets").and_then(|v| v.as_array()).expect("targets");
+    let names: Vec<&str> = targets.iter().filter_map(|v| v.as_str()).collect();
+    assert!(names.contains(&"sing-box"));
+    assert!(names.contains(&"sing-box-lx"));
+  }
+}

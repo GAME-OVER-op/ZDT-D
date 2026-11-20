@@ -2372,6 +2372,12 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="mihomo_sub_edit_title">Edit subscription</string>
     <string name="mihomo_sub_name">Name</string>
     <string name="mihomo_sub_url">Subscription URL</string>
+    <string name="mihomo_sub_content_label">Subscription content (optional)</string>
+    <string name="mihomo_sub_content_hint">Paste a Clash YAML, Xray JSON or link list to preview what ZDT-D can read before saving.</string>
+    <string name="mihomo_sub_preview">Recognize</string>
+    <string name="mihomo_sub_previewing">Recognizing…</string>
+    <string name="mihomo_sub_preview_failed">No readable nodes found</string>
+    <string name="mihomo_sub_preview_count">Recognized nodes: %1$d</string>
     <string name="mihomo_sub_basic_auth">Basic authentication</string>
     <string name="mihomo_sub_basic_auth_desc">Send HTTP Basic username and password with subscription requests.</string>
     <string name="mihomo_sub_username">Username</string>

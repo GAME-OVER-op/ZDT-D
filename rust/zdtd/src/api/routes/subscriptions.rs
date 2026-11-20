@@ -106,6 +106,15 @@ pub(in crate::api) fn handle_subscriptions_subroutes(stream: TcpStream, method: 
                 Err(e) => write_err(stream, e),
             }
         }
+        ("POST", ["api", "subscriptions", "preview"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let content = req.get("content").and_then(serde_json::Value::as_str).unwrap_or_default();
+                crate::features::subscriptions::preview_subscription_content(content)
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
         ("POST", ["api", "subscription-import", "preview"]) => {
             let res = (|| -> Result<serde_json::Value> {
                 let req: crate::features::subscriptions::ManualImportPreviewRequest = serde_json::from_slice(body)

@@ -2378,6 +2378,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="mihomo_sub_previewing">Recognizing…</string>
     <string name="mihomo_sub_preview_failed">No readable nodes found</string>
     <string name="mihomo_sub_preview_count">Recognized nodes: %1$d</string>
+    <string name="mihomo_sub_happ_encrypted">This subscription is encrypted by Happ and cannot be read by ZDT-D. Export plain proxy links from Happ and add them here.</string>
     <string name="mihomo_sub_basic_auth">Basic authentication</string>
     <string name="mihomo_sub_basic_auth_desc">Send HTTP Basic username and password with subscription requests.</string>
     <string name="mihomo_sub_username">Username</string>

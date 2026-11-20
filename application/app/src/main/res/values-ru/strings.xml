@@ -2378,6 +2378,7 @@ APatch: 10700+</string>
     <string name="mihomo_sub_previewing">Распознаём…</string>
     <string name="mihomo_sub_preview_failed">Не найдено читаемых узлов</string>
     <string name="mihomo_sub_preview_count">Распознано узлов: %1$d</string>
+    <string name="mihomo_sub_happ_encrypted">Эта подписка зашифрована Happ и не читается ZDT-D. Экспортируйте обычные ссылки на прокси из Happ и добавьте их здесь.</string>
     <string name="mihomo_sub_basic_auth">Basic-аутентификация</string>
     <string name="mihomo_sub_basic_auth_desc">Отправлять HTTP Basic логин и пароль при запросе подписки.</string>
     <string name="mihomo_sub_username">Логин</string>

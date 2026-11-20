@@ -250,6 +250,10 @@ private fun parseSubscriptionNode(node: JSONObject): SubscriptionNodeUi = Subscr
   targets = parseStringArray(node.optJSONArray("targets")),
 )
 
+@Composable
+private fun subscriptionErrorText(raw: String): String =
+  if (raw.startsWith("HAPP_ENCRYPTED")) stringResource(R.string.mihomo_sub_happ_encrypted) else raw
+
 private suspend fun loadSubscriptionNodes(actions: ZdtdActions, id: String): SubscriptionNodesUi? =
   suspendCancellableCoroutine { cont ->
     actions.loadJsonData("/api/subscriptions/${URLEncoder.encode(id, "UTF-8")}/nodes") { obj ->
@@ -998,7 +1002,7 @@ private fun MihomoSubscriptionCard(
           shape = MaterialTheme.shapes.medium,
           border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.20f)),
         ) {
-          Text(status.lastError, Modifier.fillMaxWidth().padding(10.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 4, overflow = TextOverflow.Ellipsis)
+          Text(subscriptionErrorText(status.lastError), Modifier.fillMaxWidth().padding(10.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 4, overflow = TextOverflow.Ellipsis)
         }
       } else if (status.lastUpdatedAt > 0) {
         Text(stringResource(R.string.mihomo_sub_updated_value, formatEpoch(status.lastUpdatedAt)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
@@ -1862,7 +1866,7 @@ internal fun MihomoProfileSubscriptionsTab(
               Text(stringResource(R.string.mihomo_profile_subscription_disabled_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.52f))
             }
             if (item.status.lastError.isNotBlank()) {
-              Text(item.status.lastError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2, overflow = TextOverflow.Ellipsis)
+              Text(subscriptionErrorText(item.status.lastError), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
           }
         }

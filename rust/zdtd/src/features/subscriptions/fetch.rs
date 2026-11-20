@@ -219,7 +219,18 @@ pub(super) fn refresh_inner(item: &Subscription) -> Result<(String, Subscription
     if text.starts_with('\u{feff}') { text.remove(0); }
     text = text.replace("\r\n", "\n").replace('\r', "\n");
     if text.contains('\0') { bail!("subscription response contains NUL bytes"); }
-    let nodes = parse_subscription_nodes(item, &text)?;
+    // A Happ-encrypted subscription body is unreadable without Happ's private
+    // keys. Detect it from the URL key parameter or the Encrypt-Tag header and
+    // report a dedicated status instead of a generic parser error.
+    let encrypted_hint = header_string(&headers, "encrypt-tag").is_some()
+        || Url::parse(&item.url).ok().and_then(|url| {
+            url.query_pairs().find(|(key, _)| key.eq_ignore_ascii_case("key")).map(|_| ())
+        }).is_some();
+    let nodes = match parse_subscription_nodes(item, &text) {
+        Ok(nodes) => nodes,
+        Err(error) if encrypted_hint => bail!("HAPP_ENCRYPTED: {error:#}"),
+        Err(error) => return Err(error),
+    };
     let (provider_text, count) = normalize_provider_body(&text)?;
 
     let remote_interval = header_string(&headers, "profile-update-interval")

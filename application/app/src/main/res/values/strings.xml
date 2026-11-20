@@ -2150,6 +2150,11 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="vps_service_wireproxy">WireProxy</string>
     <string name="vps_service_wireproxy_desc">WireGuard server profiles that generate client configurations compatible with WireProxy.</string>
     <string name="vps_install">Install</string>
+    <string name="vps_openvpn_variant_title">OpenVPN version</string>
+    <string name="vps_openvpn_variant_desc">Strong builds OpenVPN 2.5.11 from source with UDP handshake obfuscation. The source and build files are deleted after installation.</string>
+    <string name="vps_variant_normal">Normal (system package)</string>
+    <string name="vps_variant_strong">Strong (obfuscated handshake)</string>
+    <string name="vps_switch_variant">Change version</string>
     <string name="vps_open">Open</string>
     <string name="vps_restart">Restart</string>
     <string name="vps_logs_title">Logs</string>

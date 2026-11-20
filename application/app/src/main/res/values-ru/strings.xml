@@ -2150,6 +2150,11 @@ APatch: 10700+</string>
     <string name="vps_service_wireproxy">WireProxy</string>
     <string name="vps_service_wireproxy_desc">Серверные профили WireGuard, создающие клиентские конфигурации для WireProxy.</string>
     <string name="vps_install">Установить</string>
+    <string name="vps_openvpn_variant_title">Версия OpenVPN</string>
+    <string name="vps_openvpn_variant_desc">«Strong» собирает OpenVPN 2.5.11 из исходников с маскировкой UDP-хендшейка. Исходники и файлы сборки удаляются после установки.</string>
+    <string name="vps_variant_normal">Обычная (системный пакет)</string>
+    <string name="vps_variant_strong">Strong (маскировка хендшейка)</string>
+    <string name="vps_switch_variant">Сменить версию</string>
     <string name="vps_open">Открыть</string>
     <string name="vps_restart">Перезапустить</string>
     <string name="vps_logs_title">Журналы</string>

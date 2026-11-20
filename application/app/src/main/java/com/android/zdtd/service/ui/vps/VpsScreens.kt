@@ -277,6 +277,7 @@ fun VpsServerDetailsScreen(
   val serviceLoads by viewModel.serviceLoads.collectAsState()
   val operation by viewModel.operation.collectAsState()
   var removeTarget by remember { mutableStateOf<VpsServiceKind?>(null) }
+  var variantTarget by remember { mutableStateOf<VpsServiceKind?>(null) }
   var logs by remember { mutableStateOf<String?>(null) }
   var showRebootConfirm by rememberSaveable { mutableStateOf(false) }
 
@@ -316,6 +317,28 @@ fun VpsServerDetailsScreen(
       },
     )
   }
+  variantTarget?.let { kind ->
+    AlertDialog(
+      onDismissRequest = { variantTarget = null },
+      title = { Text(stringResource(R.string.vps_openvpn_variant_title)) },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text(stringResource(R.string.vps_openvpn_variant_desc))
+          OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { viewModel.installService(serverId, kind, "normal"); variantTarget = null },
+          ) { Text(stringResource(R.string.vps_variant_normal)) }
+          Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { viewModel.installService(serverId, kind, "strong"); variantTarget = null },
+          ) { Text(stringResource(R.string.vps_variant_strong)) }
+        }
+      },
+      confirmButton = {},
+      dismissButton = { OutlinedButton(onClick = { variantTarget = null }) { Text(stringResource(R.string.action_cancel)) } },
+    )
+  }
+
   removeTarget?.let { kind ->
     AlertDialog(
       onDismissRequest = { removeTarget = null },
@@ -375,7 +398,11 @@ fun VpsServerDetailsScreen(
               state = state,
               enabled = currentMetrics.reachability == VpsReachability.ONLINE && currentMetrics.supportedPlatform,
               onOpen = { if (state.installed) onOpenService(kind) },
-              onInstall = { viewModel.installService(serverId, kind) },
+              onInstall = {
+                if (kind == VpsServiceKind.OPENVPN) variantTarget = kind
+                else viewModel.installService(serverId, kind)
+              },
+              onSwitchVariant = { variantTarget = kind },
               onRestart = { viewModel.restartService(serverId, kind) },
               onLogs = { viewModel.loadLogs(serverId, kind, null) { logs = it } },
               onRemove = { removeTarget = kind },
@@ -1233,7 +1260,7 @@ private fun VpsServerSummaryCard(
 }
 
 @Composable
-private fun VpsServiceCard(kind: VpsServiceKind, state: VpsServiceState, enabled: Boolean, onOpen: () -> Unit, onInstall: () -> Unit, onRestart: () -> Unit, onLogs: () -> Unit, onRemove: () -> Unit) {
+private fun VpsServiceCard(kind: VpsServiceKind, state: VpsServiceState, enabled: Boolean, onOpen: () -> Unit, onInstall: () -> Unit, onSwitchVariant: () -> Unit, onRestart: () -> Unit, onLogs: () -> Unit, onRemove: () -> Unit) {
   val accent = if (state.installed && state.active) Color(0xFF22C55E) else if (state.installed) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary
   var menu by remember { mutableStateOf(false) }
   Card(
@@ -1259,6 +1286,9 @@ private fun VpsServiceCard(kind: VpsServiceKind, state: VpsServiceState, enabled
             DropdownMenuItem(enabled = enabled, text = { Text(stringResource(R.string.vps_open)) }, onClick = { menu = false; onOpen() })
             DropdownMenuItem(enabled = enabled, text = { Text(stringResource(R.string.vps_restart)) }, onClick = { menu = false; onRestart() })
             DropdownMenuItem(enabled = enabled, text = { Text(stringResource(R.string.vps_logs_title)) }, onClick = { menu = false; onLogs() })
+            if (kind == VpsServiceKind.OPENVPN) {
+              DropdownMenuItem(enabled = enabled, text = { Text(stringResource(R.string.vps_switch_variant)) }, onClick = { menu = false; onSwitchVariant() })
+            }
             DropdownMenuItem(enabled = enabled, text = { Text(stringResource(R.string.action_delete)) }, onClick = { menu = false; onRemove() })
           }
         }

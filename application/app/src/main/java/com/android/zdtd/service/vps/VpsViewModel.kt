@@ -252,11 +252,11 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
-  fun installService(serverId: String, kind: VpsServiceKind) {
+  fun installService(serverId: String, kind: VpsServiceKind, variant: String = "normal") {
     val server = server(serverId) ?: return
     runRemoteOperation(
       title = "Installing ${kind.wireId}",
-      block = { onLine -> controller.install(server, kind, onLine) },
+      block = { onLine -> controller.install(server, kind, variant, onLine) },
       onSuccess = { loadServices(serverId) },
     )
   }

@@ -29,8 +29,15 @@ class VpsRemoteController(
     }.toList()
   }
 
-  suspend fun install(server: VpsServer, kind: VpsServiceKind, onLine: (String) -> Unit): VpsCommandResult =
-    run(server, listOf("install", kind.wireId), onLine = onLine, timeoutMs = 12 * 60_000L)
+  suspend fun install(
+    server: VpsServer,
+    kind: VpsServiceKind,
+    variant: String = "normal",
+    onLine: (String) -> Unit,
+  ): VpsCommandResult {
+    val timeout = if (kind == VpsServiceKind.OPENVPN && variant == "strong") 30 * 60_000L else 12 * 60_000L
+    return run(server, listOf("install", kind.wireId, variant), onLine = onLine, timeoutMs = timeout)
+  }
 
   suspend fun remove(server: VpsServer, kind: VpsServiceKind, onLine: (String) -> Unit): VpsCommandResult =
     run(server, listOf("remove", kind.wireId), onLine = onLine, timeoutMs = 5 * 60_000L)

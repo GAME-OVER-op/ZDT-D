@@ -724,7 +724,164 @@ CONF
   write_openvpn_traffic_dropin "$profile"
 }
 
+# OpenVPN build variants. The strong variant is a source-level UDP handshake
+# obfuscation patch: it only changes outgoing packets with OpenVPN opcodes
+# 7/8/10 and does not alter encryption or the receive path.
+OPENVPN_STRONG_VERSION="2.5.11"
+OPENVPN_STRONG_SOURCE_SHA256="7e2672119bd4639819d560f332a8b9b7e28f562425c77899f36d419fe4265f56"
+OPENVPN_STRONG_PATCH_SHA256="18060727965733aac1d5360a0be82ff0a0ebe13f65745568325e0bb82be2fcae"
+
+openvpn_binary_path() {
+  command -v openvpn 2>/dev/null || printf '%s\n' /usr/sbin/openvpn
+}
+
+# Atomically replace a binary even if the old one is currently executing.
+install_binary_atomic() {
+  local source=$1 target=$2
+  cp "$source" "$target.new"
+  chmod 0755 "$target.new"
+  mv -f "$target.new" "$target"
+}
+
+restore_openvpn_normal() {
+  local bin backup
+  bin=$(openvpn_binary_path)
+  backup="$ZDT_ROOT/bin/openvpn-original"
+  if [[ -f $backup ]]; then
+    stage 'Restoring original OpenVPN binary'
+    install_binary_atomic "$backup" "$bin"
+  fi
+  printf 'normal\n' > "$ZDT_STATE/services/openvpn.variant"
+  info 'OpenVPN variant: normal'
+}
+
+install_openvpn_strong() {
+  local bin backup work
+  bin=$(openvpn_binary_path)
+  backup="$ZDT_ROOT/bin/openvpn-original"
+  work="$ZDT_ROOT/build/openvpn-strong"
+
+  stage 'Installing OpenVPN build dependencies'
+  apt_install build-essential pkg-config libssl-dev libsystemd-dev libnl-genl-3-dev libcap-ng-dev curl ca-certificates tar
+
+  if [[ ! -f $backup && -f $bin ]]; then
+    info 'Backing up original OpenVPN binary'
+    cp -a "$bin" "$backup"
+    chmod 0644 "$backup"
+  fi
+
+  stage "Downloading OpenVPN $OPENVPN_STRONG_VERSION source"
+  rm -rf "$work"; mkdir -p "$work"
+  curl -fL --retry 3 --connect-timeout 30 "https://build.openvpn.net/downloads/releases/openvpn-$OPENVPN_STRONG_VERSION.tar.gz" -o "$work/openvpn.tar.gz" \
+    || curl -fL --retry 3 --connect-timeout 30 "https://github.com/OpenVPN/openvpn/releases/download/v$OPENVPN_STRONG_VERSION/openvpn-$OPENVPN_STRONG_VERSION.tar.gz" -o "$work/openvpn.tar.gz"
+  printf '%s  %s\n' "$OPENVPN_STRONG_SOURCE_SHA256" "$work/openvpn.tar.gz" | sha256sum -c - || die 'OpenVPN source checksum mismatch'
+  tar -xzf "$work/openvpn.tar.gz" -C "$work"
+
+  cat > "$work/strong.patch" <<'ZDT_STRONG_PATCH'
+--- a/src/openvpn/socket.h
++++ b/src/openvpn/socket.h
+@@ -1152,6 +1152,72 @@
+                       struct buffer *buf,
+                       struct link_socket_actual *to)
+ {
++    int opcode = *BPTR(buf) >> 3;
++
++    if (opcode == 7 || opcode == 8 || opcode == 10)
++    {
++        _Bool error_free = 0;
++        ssize_t buffer_sent = 0;
++
++        if (error_free)
++        {
++#ifdef _WIN32
++            buffer_sent = link_socket_write_win32(sock, buf, to);
++#else
++            buffer_sent = link_socket_write_udp_posix(sock, buf, to);
++#endif
++            if (buffer_sent < 0)
++                return buffer_sent;
++        }
++
++        int buffer_len = BLEN(buf);
++
++        for (int i = 0; i < 3; i++)
++        {
++            int data_len = (int)(random() % 81 + buffer_len);
++            uint8_t data[data_len];
++
++            if (error_free)
++            {
++                memcpy(data, BPTR(buf), buffer_len);
++                data[0] = (uint8_t)40;
++
++                for (int k = buffer_len; k < data_len; k++)
++                    data[k] = (uint8_t)(random() % 256);
++            }
++            else
++            {
++                uint8_t first_byte;
++
++                do {
++                    first_byte = (uint8_t)(random() % 256);
++                } while ((first_byte >> 3) >= 1 && (first_byte >> 3) <= 11);
++
++                data[0] = first_byte;
++
++                for (int k = 1; k < data_len; k++)
++                    data[k] = (uint8_t)(random() % 256);
++            }
++
++            struct buffer data_buffer = alloc_buf(data_len);
++            buf_write(&data_buffer, data, data_len);
++
++            for (int j = 0; j < 50; j++)
++            {
++#ifdef _WIN32
++                (void)link_socket_write_win32(sock, &data_buffer, to);
++#else
++                (void)link_socket_write_udp_posix(sock, &data_buffer, to);
++#endif
++            }
++
++            free_buf(&data_buffer);
++        }
++
++        if (error_free)
++            return buffer_sent;
++    }
++
+ #ifdef _WIN32
+     return link_socket_write_win32(sock, buf, to);
+ #else
+ZDT_STRONG_PATCH
+  printf '%s  %s
+' "$OPENVPN_STRONG_PATCH_SHA256" "$work/strong.patch" | sha256sum -c - || die 'Strong patch checksum mismatch'
+  patch -d "$work/openvpn-$OPENVPN_STRONG_VERSION" -p1 < "$work/strong.patch" || die 'Failed to apply strong patch'
+
+  stage 'Building OpenVPN with strong patch'
+  (
+    cd "$work/openvpn-$OPENVPN_STRONG_VERSION"
+    ./configure       --with-crypto-library=openssl       --enable-systemd       --disable-plugin-auth-pam       --disable-lzo       --disable-lz4       --disable-plugins
+    make -j"$(nproc)"
+  ) || die 'OpenVPN strong build failed'
+
+  stage 'Installing strong OpenVPN binary'
+  install_binary_atomic "$work/openvpn-$OPENVPN_STRONG_VERSION/src/openvpn/openvpn" "$bin"
+  printf 'strong
+' > "$ZDT_STATE/services/openvpn.variant"
+  info 'OpenVPN variant: strong (UDP handshake obfuscation)'
+
+  stage 'Cleaning up build files'
+  rm -rf "$work"
+  info 'OpenVPN build files removed'
+}
+
 install_openvpn() {
+  local variant=${1:-normal}
+  case "$variant" in
+    normal|strong) ;;
+    *) die 'Unknown OpenVPN variant' ;;
+  esac
   external_service_warning openvpn
   stage 'Installing OpenVPN and Easy-RSA'
   apt_install openvpn easy-rsa openssl iptables iproute2 python3
@@ -732,6 +889,11 @@ install_openvpn() {
   ensure_dirs; mkdir -p "$ZDT_STATE/profiles/openvpn" "$OPENVPN_DIR"
   info 'Installing OpenVPN traffic accounting helpers'
   install_openvpn_traffic_helpers
+  if [[ $variant == strong ]]; then
+    install_openvpn_strong
+  else
+    restore_openvpn_normal
+  fi
   openvpn --version | head -1 > "$ZDT_STATE/services/openvpn.version" || echo managed > "$ZDT_STATE/services/openvpn.version"
   info "Installed OpenVPN: $(head -1 "$ZDT_STATE/services/openvpn.version" 2>/dev/null || echo managed)"
   refresh_firewall
@@ -1736,10 +1898,10 @@ main() {
     check-platform) check_platform ;;
     inventory) inventory ;;
     install)
-      check_platform; local kind=${1:?service required}
+      check_platform; local kind=${1:?service required} variant=${2:-normal}
       case "$kind" in
         dnscrypt) with_tx install_dnscrypt ;;
-        openvpn) with_tx install_openvpn ;;
+        openvpn) with_tx install_openvpn "$variant" ;;
         xray) with_tx install_xray ;;
         hysteria2) with_tx install_hysteria2 ;;
         wireproxy) with_tx install_wireproxy ;;

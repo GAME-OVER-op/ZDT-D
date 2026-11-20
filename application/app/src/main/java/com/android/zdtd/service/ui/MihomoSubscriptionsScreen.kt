@@ -98,6 +98,8 @@ internal data class MihomoSubscriptionItemUi(
   val id: String,
   val name: String,
   val url: String,
+  val kind: String,
+  val targetPath: String,
   val enabled: Boolean,
   val basicEnabled: Boolean,
   val hwidEnabled: Boolean,
@@ -181,6 +183,8 @@ private data class MihomoSubscriptionDraft(
   val id: String? = null,
   val name: String = "",
   val url: String = "",
+  val kind: String = "proxy",
+  val targetPath: String = "",
   val enabled: Boolean = true,
   val basicEnabled: Boolean = false,
   val basicUsername: String = "",
@@ -223,6 +227,8 @@ private fun parseSubscriptionItem(obj: JSONObject): MihomoSubscriptionItemUi {
     id = obj.optString("id"),
     name = obj.optString("name"),
     url = obj.optString("url"),
+    kind = obj.optString("kind", "proxy"),
+    targetPath = obj.optString("target_path", ""),
     enabled = obj.optBoolean("enabled", true),
     basicEnabled = obj.optBoolean("basic_enabled", false),
     hwidEnabled = obj.optBoolean("hwid_enabled", false),
@@ -307,6 +313,8 @@ private suspend fun loadMihomoSubscriptionDraft(actions: ZdtdActions, id: String
           id = it.optString("id"),
           name = it.optString("name"),
           url = it.optString("url"),
+          kind = it.optString("kind", "proxy"),
+          targetPath = it.optString("target_path", ""),
           enabled = it.optBoolean("enabled", true),
           basicEnabled = it.optBoolean("basic_enabled", false),
           basicUsername = it.optString("basic_username", ""),
@@ -346,6 +354,8 @@ private fun customHeadersJson(text: String): JSONObject {
 private fun draftToJson(draft: MihomoSubscriptionDraft): JSONObject = JSONObject()
   .put("name", draft.name.trim())
   .put("url", draft.url.trim())
+  .put("kind", draft.kind)
+  .put("target_path", draft.targetPath.trim())
   .put("enabled", draft.enabled)
   .put("basic_enabled", draft.basicEnabled)
   .put("basic_username", draft.basicUsername.trim())
@@ -1587,6 +1597,7 @@ private fun MihomoSubscriptionEditorDialog(
   var previewError by remember { mutableStateOf("") }
   val valid = state.name.trim().isNotBlank() &&
     (state.url.startsWith("http://") || state.url.startsWith("https://")) &&
+    (state.kind != "file" || state.targetPath.isNotBlank()) &&
     (!state.hwidEnabled || state.hwid.trim().isNotBlank()) &&
     (!state.basicEnabled || state.basicUsername.trim().isNotBlank()) &&
     (state.updateIntervalMinutes.toLongOrNull() ?: 0L) in 15L..10080L
@@ -1606,6 +1617,31 @@ private fun MihomoSubscriptionEditorDialog(
           OutlinedTextField(state.url, { state = state.copy(url = it.trim().take(2048)) }, label = { Text(stringResource(R.string.mihomo_sub_url)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
         }
         item {
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+              selected = state.kind != "file",
+              onClick = { state = state.copy(kind = "proxy") },
+              label = { Text(stringResource(R.string.subscription_kind_proxy)) },
+            )
+            FilterChip(
+              selected = state.kind == "file",
+              onClick = { state = state.copy(kind = "file") },
+              label = { Text(stringResource(R.string.subscription_kind_file)) },
+            )
+          }
+          if (state.kind == "file") {
+            OutlinedTextField(
+              value = state.targetPath,
+              onValueChange = { state = state.copy(targetPath = it.trim().take(512)) },
+              label = { Text(stringResource(R.string.subscription_target_path)) },
+              supportingText = { Text(stringResource(R.string.subscription_target_path_hint)) },
+              modifier = Modifier.fillMaxWidth(),
+              singleLine = true,
+            )
+          }
+        }
+        item {
+          if (state.kind == "proxy") {
           OutlinedTextField(
             value = state.content,
             onValueChange = { state = state.copy(content = it.take(4 * 1024 * 1024)) },
@@ -1658,6 +1694,7 @@ private fun MihomoSubscriptionEditorDialog(
                 overflow = TextOverflow.Ellipsis,
               )
             }
+          }
           }
         }
         item {

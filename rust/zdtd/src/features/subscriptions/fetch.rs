@@ -6,7 +6,7 @@ use reqwest::{
     redirect::Policy,
     Url,
 };
-use std::{io::Read, time::{Duration}};
+use std::{fs, io::Read, time::{Duration}};
 
 use super::model::*;
 use super::storage::*;
@@ -153,6 +153,9 @@ pub fn refresh(id: &str) -> Result<SubscriptionStatus> {
     if !item.enabled { bail!("subscription is disabled"); }
     let now = now_unix();
     let old = read_status(id);
+    if item.kind == "file" {
+        return refresh_file(id, &item, now, old);
+    }
     let result = refresh_inner(&item);
     match result {
         Ok((provider_text, mut status, mut nodes)) => {
@@ -204,21 +207,93 @@ pub fn refresh(id: &str) -> Result<SubscriptionStatus> {
     }
 }
 
-pub(super) fn refresh_inner(item: &Subscription) -> Result<(String, SubscriptionStatus, Vec<SubscriptionNode>)> {
+/// Synchronize a remote text file to the configured target path. The file is
+/// written atomically; a failure keeps the previous file untouched.
+fn refresh_file(id: &str, item: &Subscription, now: u64, old: SubscriptionStatus) -> Result<SubscriptionStatus> {
+    let result = refresh_file_inner(item);
+    match result {
+        Ok((text, mut status)) => {
+            let current = match get(id) {
+                Ok(current) => current,
+                Err(_) => return Ok(old),
+            };
+            if !current.enabled || current.modified_at != item.modified_at {
+                return Ok(old);
+            }
+            let target = validate_file_target_path(&current.target_path)?;
+            let backup = target.with_extension(format!("bak.{}", now));
+            if target.exists() {
+                let _ = fs::copy(&target, &backup);
+            }
+            if let Err(error) = write_text_atomic(&target, &text) {
+                if backup.exists() {
+                    let _ = fs::copy(&backup, &target);
+                    let _ = fs::remove_file(&backup);
+                }
+                return Err(error);
+            }
+            let _ = fs::remove_file(&backup);
+            let _ = std::process::Command::new("chmod").arg("0644").arg(&target).status();
+            let interval = if current.use_remote_interval {
+                status.remote_interval_minutes.unwrap_or(current.update_interval_minutes)
+            } else { current.update_interval_minutes };
+            let interval = interval.clamp(MIN_INTERVAL_MINUTES, MAX_INTERVAL_MINUTES);
+            status.last_error.clear();
+            status.last_updated_at = now;
+            status.next_update_at = now.saturating_add(interval.saturating_mul(60));
+            write_status(id, &status)?;
+            Ok(status)
+        }
+        Err(e) => {
+            let unchanged = get(id)
+                .map(|current| current.enabled && current.modified_at == item.modified_at)
+                .unwrap_or(false);
+            if unchanged {
+                let mut status = old;
+                status.last_error = format!("{e:#}");
+                status.next_update_at = now.saturating_add(RETRY_AFTER_ERROR_MINUTES * 60);
+                let _ = write_status(id, &status);
+            }
+            Err(e)
+        }
+    }
+}
+
+/// Fetch and normalize the response body. Shared by proxy and file subscriptions.
+fn fetch_text_body(item: &Subscription, max_bytes: u64) -> Result<(String, HeaderMap)> {
     let (mut response, _) = fetch_response(item)?;
     if !response.status().is_success() { bail!("subscription HTTP status {}", response.status().as_u16()); }
     if let Some(len) = response.content_length() {
-        if len > MAX_RESPONSE_BYTES { bail!("subscription response is too large"); }
+        if len > max_bytes { bail!("subscription response is too large"); }
     }
     let headers = response.headers().clone();
     let mut data = Vec::new();
-    response.by_ref().take(MAX_RESPONSE_BYTES + 1).read_to_end(&mut data)?;
-    if data.len() as u64 > MAX_RESPONSE_BYTES { bail!("subscription response is too large"); }
+    response.by_ref().take(max_bytes + 1).read_to_end(&mut data)?;
+    if data.len() as u64 > max_bytes { bail!("subscription response is too large"); }
     if data.is_empty() { bail!("subscription returned an empty response"); }
     let mut text = String::from_utf8(data).context("subscription response is not UTF-8 text")?;
     if text.starts_with('\u{feff}') { text.remove(0); }
     text = text.replace("\r\n", "\n").replace('\r', "\n");
     if text.contains('\0') { bail!("subscription response contains NUL bytes"); }
+    Ok((text, headers))
+}
+
+fn refresh_file_inner(item: &Subscription) -> Result<(String, SubscriptionStatus)> {
+    let (text, headers) = fetch_text_body(item, MAX_FILE_BYTES)?;
+    let text = crate::common::fs::external_text::normalize_text(&text)?;
+    if text.trim().is_empty() { bail!("subscription file is empty"); }
+    let path = validate_file_target_path(&item.target_path)?;
+    let status = SubscriptionStatus {
+        content_bytes: text.len(),
+        server_count: text.lines().filter(|line| !line.trim().is_empty()).count(),
+        remote_title: header_string(&headers, "profile-title").map(decode_profile_title).unwrap_or_default(),
+        ..SubscriptionStatus::default()
+    };
+    Ok((text, status))
+}
+
+pub(super) fn refresh_inner(item: &Subscription) -> Result<(String, SubscriptionStatus, Vec<SubscriptionNode>)> {
+    let (text, headers) = fetch_text_body(item, MAX_RESPONSE_BYTES)?;
     // A Happ-encrypted subscription body is unreadable without Happ's private
     // keys. Detect it from the URL key parameter or the Encrypt-Tag header and
     // report a dedicated status instead of a generic parser error.

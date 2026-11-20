@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use reqwest::{header::{HeaderName, HeaderValue}, Url};
 use serde_json::{json, Value as JsonValue};
 use sha2::{Digest, Sha256};
-use std::{fs};
+use std::{fs, path::{Component, Path, PathBuf}};
 
 use super::model::*;
 use super::storage::*;
@@ -22,6 +22,8 @@ pub fn preview_subscription_content(content: &str) -> Result<JsonValue> {
         id: "preview".to_string(),
         name: "preview".to_string(),
         url: "http://localhost/".to_string(),
+        kind: default_kind(),
+        target_path: String::new(),
         enabled: true,
         basic_enabled: false,
         basic_username: String::new(),
@@ -43,6 +45,35 @@ pub fn preview_subscription_content(content: &str) -> Result<JsonValue> {
     };
     let nodes = super::parse::parse_subscription_nodes(&item, text)?;
     Ok(json!({"ok": true, "nodes": nodes}))
+}
+
+/// Validate a file-subscription destination. Only regular text files under
+/// the module's strategic directory are accepted; traversal and symlinks are
+/// rejected so a subscription can never write outside that tree.
+pub(super) fn validate_file_target_path(raw: &str) -> Result<PathBuf> {
+    let raw = raw.trim();
+    if raw.is_empty() { bail!("target path is empty"); }
+    let path = Path::new(raw);
+    let ext = path.extension().and_then(|v| v.to_str()).unwrap_or("").to_ascii_lowercase();
+    if !matches!(ext.as_str(), "txt" | "json" | "toml" | "yaml" | "yml" | "conf" | "list" | "lst") {
+        bail!("target must be a text file (.txt, .json, .toml, .yaml, .yml, .conf, .list, .lst)");
+    }
+    let root = Path::new(FILE_TARGET_ROOT);
+    let candidate = if path.is_absolute() { path.to_path_buf() } else { root.join(path) };
+    let rel = candidate.strip_prefix(root)
+        .map_err(|_| anyhow::anyhow!("target must be inside {FILE_TARGET_ROOT}"))?;
+    if rel.as_os_str().is_empty() { bail!("target must be a file"); }
+    let mut current = root.to_path_buf();
+    for component in rel.components() {
+        match component {
+            Component::Normal(part) => current.push(part),
+            _ => bail!("invalid target path"),
+        }
+        if let Ok(meta) = fs::symlink_metadata(&current) {
+            if meta.file_type().is_symlink() { bail!("symlink in target path is not allowed"); }
+        }
+    }
+    Ok(candidate)
 }
 
 pub(super) fn normalize_input(input: SubscriptionInput) -> Result<SubscriptionInput> {
@@ -86,6 +117,17 @@ pub(super) fn normalize_input(input: SubscriptionInput) -> Result<SubscriptionIn
         let value = i.custom_headers.get(key).map(String::as_str).unwrap_or("");
         HeaderValue::from_str(value).with_context(|| format!("invalid HTTP header value for {key}"))?;
     }
+    i.kind = i.kind.trim().to_ascii_lowercase();
+    if i.kind.is_empty() { i.kind = default_kind(); }
+    if !matches!(i.kind.as_str(), "proxy" | "file") {
+        bail!("unsupported subscription kind");
+    }
+    i.target_path = i.target_path.trim().to_string();
+    if i.kind == "file" {
+        let _ = validate_file_target_path(&i.target_path)?;
+    } else {
+        i.target_path.clear();
+    }
     Ok(i)
 }
 
@@ -113,7 +155,7 @@ pub fn create(input: SubscriptionInput) -> Result<Subscription> {
     }
     let now = now_unix();
     let item = Subscription {
-        id: id.clone(), name: input.name, url: input.url, enabled: input.enabled,
+        id: id.clone(), name: input.name, url: input.url, kind: input.kind, target_path: input.target_path, enabled: input.enabled,
         basic_enabled: input.basic_enabled, basic_username: input.basic_username, basic_password: input.basic_password,
         hwid_enabled: input.hwid_enabled, hwid: input.hwid, hwid_mode: input.hwid_mode,
         user_agent: input.user_agent, send_device_headers: input.send_device_headers,
@@ -135,7 +177,7 @@ pub fn update(id: &str, input: SubscriptionInput) -> Result<Subscription> {
     let mut store = read_store()?;
     let old = store.subscriptions.get(id).cloned().ok_or_else(|| anyhow::anyhow!("subscription not found"))?;
     let item = Subscription {
-        id: id.to_string(), name: input.name, url: input.url, enabled: input.enabled,
+        id: id.to_string(), name: input.name, url: input.url, kind: input.kind, target_path: input.target_path, enabled: input.enabled,
         basic_enabled: input.basic_enabled, basic_username: input.basic_username, basic_password: input.basic_password,
         hwid_enabled: input.hwid_enabled, hwid: input.hwid, hwid_mode: input.hwid_mode,
         user_agent: input.user_agent, send_device_headers: input.send_device_headers,
@@ -203,6 +245,8 @@ pub fn list_view() -> Result<JsonValue> {
             "id": item.id,
             "name": item.name,
             "url": item.url,
+            "kind": item.kind,
+            "target_path": item.target_path,
             "enabled": item.enabled,
             "basic_enabled": item.basic_enabled,
             "hwid_enabled": item.hwid_enabled,

@@ -2380,6 +2380,10 @@ APatch: 10700+</string>
     <string name="mihomo_sub_refresh">Обновить</string>
     <string name="mihomo_sub_add_title">Новая подписка</string>
     <string name="mihomo_sub_edit_title">Изменить подписку</string>
+    <string name="subscription_kind_proxy">Подписка на прокси</string>
+    <string name="subscription_kind_file">Текстовый файл</string>
+    <string name="subscription_target_path">Путь к файлу</string>
+    <string name="subscription_target_path_hint">Внутри /data/adb/modules/ZDT-D/strategic/, например list/my-list.txt</string>
     <string name="mihomo_sub_name">Название</string>
     <string name="mihomo_sub_url">URL подписки</string>
     <string name="mihomo_sub_content_label">Содержимое подписки (необязательно)</string>

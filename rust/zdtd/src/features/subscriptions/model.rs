@@ -15,6 +15,8 @@ pub(super) const MAX_INTERVAL_MINUTES: u64 = 7 * 24 * 60;
 pub(super) const MAX_RESPONSE_BYTES: u64 = 24 * 1024 * 1024;
 pub(super) const PROVIDER_RELOAD_INTERVAL_SECS: i64 = 60;
 pub(super) const RETRY_AFTER_ERROR_MINUTES: u64 = 15;
+pub(super) const FILE_TARGET_ROOT: &str = "/data/adb/modules/ZDT-D/strategic";
+pub(super) const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 pub(super) static WORKER_STARTED: AtomicBool = AtomicBool::new(false);
 pub(super) static REFRESHING: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
 pub(super) static STORE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -31,6 +33,11 @@ pub struct Subscription {
     pub id: String,
     pub name: String,
     pub url: String,
+    /// "proxy" (default) or "file": a plain text file synchronized from the URL.
+    #[serde(default = "default_kind")]
+    pub kind: String,
+    #[serde(default)]
+    pub target_path: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
 
@@ -77,6 +84,10 @@ pub struct Subscription {
 pub struct SubscriptionInput {
     pub name: String,
     pub url: String,
+    #[serde(default = "default_kind")]
+    pub kind: String,
+    #[serde(default)]
+    pub target_path: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default)]
@@ -231,6 +242,7 @@ pub struct ManualImportRequest {
 }
 
 pub(super) fn default_true() -> bool { true }
+pub(super) fn default_kind() -> String { "proxy".to_string() }
 pub(super) fn default_interval() -> u64 { DEFAULT_INTERVAL_MINUTES }
 pub(super) fn default_hwid_mode() -> String { "header".to_string() }
 pub(super) fn default_device_os() -> String { "Android".to_string() }

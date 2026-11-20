@@ -2171,6 +2171,7 @@ APatch: 10700+</string>
     <string name="vps_domain">Домен</string>
     <string name="vps_letsencrypt_email">Email для Let’s Encrypt</string>
     <string name="vps_automatic_tls_hint">Домен должен указывать на этот VPS. ZDT-D автоматически запросит и будет обновлять TLS-сертификат.</string>
+    <string name="vps_xray_xhttp_hint">XHTTP использует нативный транспорт sing-box-lx. Профили клиентов Xray требуют компонент sing-box-lx на устройстве.</string>
     <string name="vps_shared_port_hint">Xray уже использует TCP %1$d. Hysteria2 может одновременно использовать UDP %1$d.</string>
     <string name="vps_no_profiles">Профили не созданы</string>
     <string name="vps_no_profiles_hint">Создайте серверный профиль, затем добавьте отдельные клиентские конфигурации.</string>

@@ -124,7 +124,9 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.LifecycleStartEffect
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.singbox.importer.SingBoxImportTarget
 import com.android.zdtd.service.singbox.importer.SingBoxOneLineImporter
+import com.android.zdtd.service.ui.SingBoxLxInstallRequiredDialog
 import com.android.zdtd.service.vps.VpsAuthType
 import com.android.zdtd.service.vps.VpsClientConfig
 import com.android.zdtd.service.vps.VpsConsoleEntry
@@ -553,6 +555,9 @@ fun VpsProfileScreen(
   viewModel: VpsViewModel,
   actions: ZdtdActions? = null,
   onNonRootImport: ((VpsServer?, VpsServiceProfile?, VpsConfigResult) -> Unit)? = null,
+  singBoxLxInstalled: Boolean = false,
+  singBoxLxStatusResolved: Boolean = false,
+  onOpenOptionalTools: (() -> Unit)? = null,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
@@ -576,6 +581,7 @@ fun VpsProfileScreen(
   var showCreateClient by rememberSaveable { mutableStateOf(false) }
   var deleteTarget by remember { mutableStateOf<VpsClientConfig?>(null) }
   var snack by remember { mutableStateOf<String?>(null) }
+  var showLxRequired by remember { mutableStateOf(false) }
 
   LaunchedEffect(serverId, kind, profileId) { viewModel.clearConfigResult() }
   LifecycleStartEffect("$serverId:${kind.wireId}:$profileId") {
@@ -638,7 +644,12 @@ fun VpsProfileScreen(
       onImport = {
         when {
           onNonRootImport != null -> onNonRootImport(server, profile, result)
-          actions != null -> importConfigIntoZdtd(context, actions, server, profile, result) { message -> snack = message }
+          actions != null -> importConfigIntoZdtd(
+            context, actions, server, profile, result,
+            singBoxLxInstalled = singBoxLxInstalled,
+            singBoxLxStatusResolved = singBoxLxStatusResolved,
+            onLxImportRequired = { showLxRequired = true },
+          ) { message -> snack = message }
         }
       },
     )
@@ -650,6 +661,16 @@ fun VpsProfileScreen(
       title = { Text(stringResource(R.string.vps_result_title)) },
       text = { Text(message) },
       confirmButton = { TextButton(onClick = { snack = null }) { Text(stringResource(R.string.action_ok)) } },
+    )
+  }
+
+  if (showLxRequired && onOpenOptionalTools != null) {
+    SingBoxLxInstallRequiredDialog(
+      onDismiss = { showLxRequired = false },
+      onOpenOptionalTools = {
+        showLxRequired = false
+        onOpenOptionalTools()
+      },
     )
   }
 
@@ -950,7 +971,7 @@ private fun CreateVpsProfileDialog(
   var xraySnis by remember(kind) { mutableStateOf(listOf("www.microsoft.com")) }
   var menu by remember { mutableStateOf(false) }
   val configuration = LocalConfiguration.current
-  val requiresPublicTls = kind == VpsServiceKind.XRAY && mode == "ws"
+  val requiresPublicTls = kind == VpsServiceKind.XRAY && (mode == "ws" || mode == "xhttp")
   val normalizedXraySnis = xraySnis.map(String::trim).filter(String::isNotBlank).distinct()
   val requiresSni = (kind == VpsServiceKind.XRAY && mode == "reality") || kind == VpsServiceKind.HYSTERIA2
   val hasRequiredSni = when {
@@ -961,7 +982,7 @@ private fun CreateVpsProfileDialog(
   val valid = name.isNotBlank() && port.toIntOrNull() in 1..65535 && (!requiresPublicTls || domain.isNotBlank()) && (!requiresSni || hasRequiredSni)
   val modes = when (kind) {
     VpsServiceKind.OPENVPN -> listOf("udp", "tcp")
-    VpsServiceKind.XRAY -> listOf("reality", "ws")
+    VpsServiceKind.XRAY -> listOf("reality", "ws", "xhttp")
     else -> listOf(mode)
   }
 
@@ -1037,6 +1058,9 @@ private fun CreateVpsProfileDialog(
           OutlinedTextField(domain, { domain = it.trim() }, label = { Text(stringResource(R.string.vps_domain)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
           OutlinedTextField(email, { email = it.trim() }, label = { Text(stringResource(R.string.vps_letsencrypt_email_optional)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
           Text(stringResource(R.string.vps_automatic_tls_hint), style = MaterialTheme.typography.bodySmall)
+          if (mode == "xhttp") {
+            Text(stringResource(R.string.vps_xray_xhttp_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+          }
         }
         if (kind == VpsServiceKind.HYSTERIA2 && suggestedHysteriaPort != null) {
           Text(stringResource(R.string.vps_shared_port_hint, suggestedHysteriaPort), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
@@ -2048,6 +2072,9 @@ private fun importConfigIntoZdtd(
   server: VpsServer?,
   profile: VpsServiceProfile?,
   result: VpsConfigResult,
+  singBoxLxInstalled: Boolean,
+  singBoxLxStatusResolved: Boolean,
+  onLxImportRequired: () -> Unit,
   onDone: (String) -> Unit,
 ) {
   val base = listOfNotNull(server?.name, profile?.name, result.clientName).joinToString("-")
@@ -2072,13 +2099,22 @@ private fun importConfigIntoZdtd(
       }
     }
     VpsServiceKind.XRAY -> {
+      // Xray profiles (reality, ws and XHTTP) are imported into sing-box-lx:
+      // XHTTP is a native LX-only transport, and keeping a single target avoids
+      // creating profiles the standard core cannot run.
+      if (singBoxLxStatusResolved && !singBoxLxInstalled) {
+        onLxImportRequired()
+        return@importConfigIntoZdtd
+      }
       val link = result.shareLink ?: return onDone(context.getString(R.string.vps_import_failed))
-      val imported = runCatching { SingBoxOneLineImporter.import(link, 12345) }.getOrElse { return onDone(it.message ?: context.getString(R.string.vps_import_failed)) }
-      actions.createNamedProfile("sing-box", profileName) { created ->
+      val imported = runCatching {
+        SingBoxOneLineImporter.import(link, 12345, SingBoxImportTarget.LX)
+      }.getOrElse { return onDone(it.message ?: context.getString(R.string.vps_import_failed)) }
+      actions.createNamedProfile("sing-box-lx", profileName) { created ->
         if (created == null) return@createNamedProfile onDone(context.getString(R.string.create_failed))
-        actions.createSingBoxServer(created, "server") { serverName ->
+        actions.createSingBoxServer("sing-box-lx", created, "server") { serverName ->
           if (serverName == null) return@createSingBoxServer onDone(context.getString(R.string.vps_import_failed))
-          val serverBase = "/api/programs/sing-box/profiles/${url(created)}/servers/${url(serverName)}"
+          val serverBase = "/api/programs/sing-box-lx/profiles/${url(created)}/servers/${url(serverName)}"
           actions.saveText("$serverBase/config", imported.configJson) { configOk ->
             if (!configOk || result.sniOptions.isEmpty()) {
               onDone(context.getString(if (configOk) R.string.vps_import_success else R.string.vps_import_failed))

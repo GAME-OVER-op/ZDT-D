@@ -228,7 +228,7 @@ certificate_in_use() {
     [[ -f $p/meta.env ]] || continue
     unset DOMAIN MODE
     source "$p/meta.env"
-    [[ ${MODE:-} == ws && ${DOMAIN:-} == "$domain" ]] && return 0
+    [[ ( ${MODE:-} == ws || ${MODE:-} == xhttp ) && ${DOMAIN:-} == "$domain" ]] && return 0
   done
   return 1
 }
@@ -1269,6 +1269,19 @@ if mode=='reality':
         for line in h:
             k,v=line.rstrip().split('=',1); meta[k]=v
     stream={'network':'tcp','security':'reality','realitySettings':{'show':False,'target':snis[0]+':443','xver':0,'serverNames':snis,'privateKey':meta['PRIVATE'],'shortIds':[meta['SHORT']]}}
+elif mode=='xhttp':
+    # XHTTP (formerly splithttp) is a built-in Xray transport. The TLS
+    # certificate is managed exactly like the WebSocket mode.
+    stream={
+        'network':'splithttp',
+        'security':'tls',
+        'tlsSettings':{'certificates':[{'certificateFile':'/etc/letsencrypt/live/'+domain+'/fullchain.pem','keyFile':'/etc/letsencrypt/live/'+domain+'/privkey.pem'}]},
+        'splithttpSettings':{
+            'host':domain,
+            'path':'/zdt-'+os.path.basename(root),
+            'mode':'auto',
+        },
+    }
 else:
     stream={'network':'ws','security':'tls','tlsSettings':{'certificates':[{'certificateFile':'/etc/letsencrypt/live/'+domain+'/fullchain.pem','keyFile':'/etc/letsencrypt/live/'+domain+'/privkey.pem'}]},'wsSettings':{'path':'/zdt-'+os.path.basename(root)}}
 config={
@@ -1307,7 +1320,7 @@ create_xray_profile() {
   service_installed xray || die 'Xray is not installed'
   valid_id "$id" || die 'Invalid profile identifier'
   [[ ! -e $(profile_dir xray "$id") ]] || die 'A profile with this identifier already exists'
-  [[ $mode == reality || $mode == ws ]] || die 'Unsupported Xray mode'
+  [[ $mode == reality || $mode == ws || $mode == xhttp ]] || die 'Unsupported Xray mode'
   require_free_port tcp "$port"
   local dir endpoint=$host sni='' snis='' stats_port
   dir=$(profile_dir xray "$id"); mkdir -p "$dir/clients"
@@ -1336,7 +1349,7 @@ create_xray_profile() {
     [[ -n $private && -n $public ]] || die 'Unable to generate Reality keys'
     printf 'PRIVATE=%s\nPUBLIC=%s\nSHORT=%s\n' "$private" "$public" "$short" > "$dir/reality.env"
     info 'Reality key pair and short ID generated'
-  else
+  else  # ws | xhttp: both use a public domain with a Let's Encrypt certificate
     ensure_certificate "$domain" "$email"
     endpoint=$domain
   fi
@@ -1752,6 +1765,14 @@ q=urllib.parse.urlencode({'encryption':'none','security':'reality','sni':sni,'fp
 print('vless://'+uuid+'@'+host+':'+port+'?'+q+'#'+urllib.parse.quote(name,safe=''))
 PY
 )
+      elif [[ $MODE == xhttp ]]; then
+        link=$(python3 - "$uuid" "$HOST" "$PORT" "$DOMAIN" "$profile" "$name" <<'PY'
+import sys,urllib.parse
+uuid,host,port,domain,profile,name=sys.argv[1:]
+q=urllib.parse.urlencode({'encryption':'none','security':'tls','sni':domain,'type':'xhttp','host':domain,'path':'/zdt-'+profile,'mode':'auto'})
+print('vless://'+uuid+'@'+host+':'+port+'?'+q+'#'+urllib.parse.quote(name,safe=''))
+PY
+)
       else
         link=$(python3 - "$uuid" "$HOST" "$PORT" "$DOMAIN" "$profile" "$name" <<'PY'
 import sys,urllib.parse
@@ -1800,7 +1821,7 @@ delete_profile() {
   dir=$(profile_dir "$kind" "$profile"); [[ -d $dir && -f $dir/meta.env ]] || die 'Profile not found'
   info 'Stopping profile service and removing managed configuration'
   source "$dir/meta.env"
-  [[ $kind == xray && ${MODE:-} == ws ]] && certificate_domain=${DOMAIN:-}
+  [[ $kind == xray && ( ${MODE:-} == ws || ${MODE:-} == xhttp ) ]] && certificate_domain=${DOMAIN:-}
   case "$kind" in
     openvpn)
       run_visible systemctl disable --now "zdt-openvpn-net-$profile.service" "openvpn-server@zdt-$profile.service" || true

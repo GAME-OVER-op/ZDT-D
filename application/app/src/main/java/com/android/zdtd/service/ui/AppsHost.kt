@@ -250,6 +250,9 @@ fun AppsHost(
             profileId = r.profileId,
             viewModel = vpsViewModel,
             actions = actions,
+            singBoxLxInstalled = singBoxLx.installed,
+            singBoxLxStatusResolved = singBoxLx.statusResolved,
+            onOpenOptionalTools = onOpenOptionalTools,
             topContentPadding = topContentPadding,
             bottomContentPadding = bottomContentPadding,
           )

@@ -1,8 +1,6 @@
 package com.android.zdtd.service.ui
 
 import android.content.Context
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -54,6 +52,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -95,6 +94,10 @@ fun D2sSettingsSection(
   var saving by remember { mutableStateOf(false) }
   var connecting by remember { mutableStateOf(false) }
   var loadFailed by remember { mutableStateOf(false) }
+  // Guard against out-of-order load callbacks: a slow initial GET must not
+  // overwrite the state produced by the GET that follows a successful connect.
+  var loadSeq by remember { mutableStateOf(0) }
+  var initialLoadDone by remember { mutableStateOf(false) }
   var validationError by remember { mutableStateOf<String?>(null) }
 
   fun update(next: D2sSettingsUi) {
@@ -105,32 +108,52 @@ fun D2sSettingsSection(
   fun load(showLoading: Boolean = true, announceConnection: Boolean = false) {
     if (showLoading) loading = true
     loadFailed = false
+    val seq = ++loadSeq
     actions.loadJsonData(D2S_CONFIG_API) { obj ->
-      if (obj == null) {
+      if (seq != loadSeq) return@loadJsonData
+      // ApiClient.getJsonData returns an empty JSONObject on transport errors,
+      // so a missing "listener" key means the response was not a real config.
+      if (obj == null || !obj.has("listener")) {
         loadFailed = true
         loading = false
         connecting = false
+        return@loadJsonData
+      }
+      initialLoadDone = true
+      val parsed = parseD2sSettings(obj)
+      val normalized = if (parsed.backendPorts.isEmpty() && !parsed.directFallback) {
+        parsed.copy(directFallback = true)
       } else {
-        val parsed = parseD2sSettings(obj)
-        val normalized = if (parsed.backendPorts.isEmpty() && !parsed.directFallback) {
-          parsed.copy(directFallback = true)
+        parsed
+      }
+      settings = normalized
+      savedSettings = parsed
+      loading = false
+      connecting = false
+      if (announceConnection) {
+        val message = if (parsed.listener.isNotBlank()) {
+          context.getString(R.string.d2s_connected_fmt, parsed.listener)
         } else {
-          parsed
+          // PUT succeeded but the config still has no listener — never silent.
+          context.getString(R.string.d2s_connect_failed)
         }
-        settings = normalized
-        savedSettings = parsed
-        loading = false
-        connecting = false
-        if (announceConnection && parsed.listener.isNotBlank()) {
-          scope.launch {
-            snackHost.showSnackbar(context.getString(R.string.d2s_connected_fmt, parsed.listener))
-          }
-        }
+        scope.launch { snackHost.showSnackbar(message) }
       }
     }
   }
 
   LaunchedEffect(Unit) { load() }
+
+  // A callback can be lost if the composable leaves the composition or the
+  // ViewModel job is cancelled; never leave the button permanently disabled.
+  LaunchedEffect(connecting) {
+    if (!connecting) return@LaunchedEffect
+    delay(10_000)
+    if (connecting) {
+      connecting = false
+      snackHost.showSnackbar(context.getString(R.string.d2s_connect_failed))
+    }
+  }
 
   val viewState = when {
     loading -> "loading"
@@ -139,12 +162,10 @@ fun D2sSettingsSection(
     else -> "settings"
   }
 
-  Crossfade(
-    targetState = viewState,
-    animationSpec = tween(durationMillis = 320),
-    label = "d2s_connection_state",
-  ) { state ->
-    when (state) {
+  // Plain `when` instead of Crossfade: the button reads `connecting` directly
+  // in the parent recomposition, so the spinner/enabled/guard are never stale
+  // on devices where the animated subcomposition does not recompose.
+  when (viewState) {
       "loading" -> {
         D2sSectionCard(
           title = stringResource(R.string.d2s_loading_title),
@@ -175,9 +196,9 @@ fun D2sSettingsSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Button(
-            enabled = !connecting,
+            enabled = initialLoadDone && !connecting,
             onClick = {
-              if (connecting) return@Button
+              if (!initialLoadDone || connecting) return@Button
               connecting = true
               actions.saveJsonData(D2S_CONNECT_API, JSONObject()) { ok ->
                 if (ok) {
@@ -386,7 +407,6 @@ fun D2sSettingsSection(
         }
       }
     }
-  }
 }
 
 @Composable

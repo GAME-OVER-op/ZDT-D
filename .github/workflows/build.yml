@@ -4601,7 +4601,7 @@ jobs:
           retention-days: 1
 
   module_binaries_ready:
-    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + hysteria2 + byedpi + dnscrypt + mieru + opera-proxy + DPITunnel + Tor + lyrebird + nfqws + nfqws2)
+    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + sing-box-lx + tg-ws-proxy + hysteria2 + byedpi + dnscrypt + mieru + opera-proxy + DPITunnel + Tor + lyrebird + nfqws + nfqws2)
     runs-on: ubuntu-latest
     needs:
       - build_openvpn
@@ -4610,6 +4610,8 @@ jobs:
       - build_tun2socks
       - build_mihomo
       - build_singbox
+      - build_singbox_lx_optional
+      - build_tg_ws_proxy
       - build_hysteria2
       - build_byedpi
       - build_dnscrypt
@@ -4627,6 +4629,8 @@ jobs:
       needs.build_tun2socks.result == 'success' &&
       needs.build_mihomo.result == 'success' &&
       needs.build_singbox.result == 'success' &&
+      needs.build_singbox_lx_optional.result == 'success' &&
+      needs.build_tg_ws_proxy.result == 'success' &&
       needs.build_hysteria2.result == 'success' &&
       needs.build_byedpi.result == 'success' &&
       needs.build_dnscrypt.result == 'success' &&
@@ -4898,6 +4902,16 @@ jobs:
         with:
           name: sing-box-arm64
           path: out/artifacts/sing-box/arm64
+      - name: Download sing-box-lx arm64
+        uses: actions/download-artifact@v8
+        with:
+          name: sing-box-lx-arm64
+          path: out/artifacts/sing-box-lx/arm64
+      - name: Download tg-ws-proxy arm64
+        uses: actions/download-artifact@v8
+        with:
+          name: tg-ws-proxy-arm64
+          path: out/artifacts/tg-ws-proxy/arm64
       - name: Download hysteria2 arm64
         uses: actions/download-artifact@v8
         with:
@@ -4998,6 +5012,16 @@ jobs:
         with:
           name: sing-box-arm32
           path: out/artifacts/sing-box/arm32
+      - name: Download sing-box-lx arm32
+        uses: actions/download-artifact@v8
+        with:
+          name: sing-box-lx-arm32
+          path: out/artifacts/sing-box-lx/arm32
+      - name: Download tg-ws-proxy arm32
+        uses: actions/download-artifact@v8
+        with:
+          name: tg-ws-proxy-arm32
+          path: out/artifacts/tg-ws-proxy/arm32
       - name: Download hysteria2 arm32
         uses: actions/download-artifact@v8
         with:
@@ -5054,7 +5078,7 @@ jobs:
 
           MODULE_BUILD_DIR="out/module_build/module_root"
           MODULE_ZIP="out/module/zdt_module.zip"
-          BINARIES="zdtd t2s d2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box hysteria2 byedpi dnscrypt mieru opera-proxy dpitunnel-cli torproxy lyrebird nfqws nfqws2"
+          BINARIES="zdtd t2s d2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box sing-box-lx tg-ws-proxy hysteria2 byedpi dnscrypt mieru opera-proxy dpitunnel-cli torproxy lyrebird nfqws nfqws2"
 
           require_file() {
             local path="$1"
@@ -5075,6 +5099,8 @@ jobs:
               tun2socks) echo "out/artifacts/tun2socks/$arch/tun2socks" ;;
               mihomo) echo "out/artifacts/mihomo/$arch/mihomo" ;;
               sing-box) echo "out/artifacts/sing-box/$arch/sing-box" ;;
+              sing-box-lx) echo "out/artifacts/sing-box-lx/$arch/sing-box-lx" ;;
+              tg-ws-proxy) echo "out/artifacts/tg-ws-proxy/$arch/tg-ws-proxy" ;;
               hysteria2) echo "out/artifacts/hysteria2/$arch/hysteria2" ;;
               byedpi) echo "out/artifacts/byedpi/$arch/byedpi" ;;
               dnscrypt) echo "out/artifacts/dnscrypt/$arch/dnscrypt" ;;
@@ -5175,6 +5201,8 @@ jobs:
 
           ZIP_ENTRIES="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || { echo "::error::Unable to read raw module zip"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'prebuilt/bin/arm64-v8a/zdtd' >/dev/null || { echo "::error::arm64 module binaries missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'prebuilt/bin/arm64-v8a/sing-box-lx' >/dev/null || { echo "::error::arm64 sing-box-lx missing from module"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'prebuilt/bin/arm-v7a/tg-ws-proxy' >/dev/null || { echo "::error::arm32 tg-ws-proxy missing from module"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'prebuilt/bin/arm-v7a/zdtd' >/dev/null || { echo "::error::arm32 module binaries missing"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null || { echo "::error::arm64 Zygisk binary missing"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/armeabi-v7a.so' >/dev/null || { echo "::error::arm32 Zygisk binary missing"; exit 1; }

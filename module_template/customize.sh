@@ -287,6 +287,8 @@ zdt_binary_selected() {
     amneziawg-go|awg) zdt_component_selected "amneziawg" ;;
     mihomo) zdt_component_selected "mihomo" ;;
     mieru) zdt_component_selected "mieru" ;;
+    sing-box-lx) zdt_component_selected "sing-box-lx" ;;
+    tg-ws-proxy) zdt_component_selected "tgwsproxy" ;;
     torproxy|lyrebird) zdt_component_selected "tor" ;;
     *)
       # Unknown future bundled binaries stay installed when no whitelist exists,

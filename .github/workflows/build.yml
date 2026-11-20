@@ -3551,6 +3551,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+    env:
+      GH_TOKEN: ${{ github.token }}
 
     strategy:
       fail-fast: false
@@ -3717,8 +3719,7 @@ jobs:
           download "https://www.netfilter.org/pub/libmnl/libmnl-1.0.5.tar.bz2" "$SRC/libmnl.tar.bz2"
           download "https://www.netfilter.org/pub/libnetfilter_queue/libnetfilter_queue-1.0.5.tar.bz2" "$SRC/libnetfilter_queue.tar.bz2"
 
-          ZLIB_REF="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/madler/zlib/releases/latest \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          ZLIB_REF="$(bash scripts/ci/resolve-release-tag.sh madler/zlib v1.4)"
           test -n "$ZLIB_REF" || { echo "::error::Unable to resolve zlib latest tag"; exit 1; }
           download "https://github.com/madler/zlib/archive/refs/tags/${ZLIB_REF}.tar.gz" "$SRC/zlib.tar.gz"
 
@@ -3767,8 +3768,7 @@ jobs:
           chmod 755 "$ARTIFACT_DIR/nfqws"
 
           echo "=== Clean and verify nfqws ELF ==="
-          CLEANER_TAG="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/termux/termux-elf-cleaner/releases/latest \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          CLEANER_TAG="$(bash scripts/ci/resolve-release-tag.sh termux/termux-elf-cleaner v3.0.1)"
           if [[ -n "$CLEANER_TAG" ]]; then
             download "https://github.com/termux/termux-elf-cleaner/releases/download/${CLEANER_TAG}/termux-elf-cleaner" "$WORK/termux-elf-cleaner"
             chmod +x "$WORK/termux-elf-cleaner"
@@ -3813,6 +3813,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+    env:
+      GH_TOKEN: ${{ github.token }}
 
     strategy:
       fail-fast: false
@@ -4024,8 +4026,7 @@ jobs:
           download "https://www.netfilter.org/pub/libmnl/libmnl-1.0.5.tar.bz2" "$SRC/libmnl.tar.bz2"
           download "https://www.netfilter.org/pub/libnetfilter_queue/libnetfilter_queue-1.0.5.tar.bz2" "$SRC/libnetfilter_queue.tar.bz2"
 
-          ZLIB_REF="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/madler/zlib/releases/latest \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          ZLIB_REF="$(bash scripts/ci/resolve-release-tag.sh madler/zlib v1.4)"
           test -n "$ZLIB_REF" || { echo "::error::Unable to resolve zlib latest tag"; exit 1; }
           download "https://github.com/madler/zlib/archive/refs/tags/${ZLIB_REF}.tar.gz" "$SRC/zlib.tar.gz"
 
@@ -4080,8 +4081,7 @@ jobs:
           chmod 755 "$ARTIFACT_DIR/nfqws2"
 
           echo "=== Clean and verify nfqws2 ELF ==="
-          CLEANER_TAG="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/termux/termux-elf-cleaner/releases/latest \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          CLEANER_TAG="$(bash scripts/ci/resolve-release-tag.sh termux/termux-elf-cleaner v3.0.1)"
           if [[ -n "$CLEANER_TAG" ]]; then
             download "https://github.com/termux/termux-elf-cleaner/releases/download/${CLEANER_TAG}/termux-elf-cleaner" "$WORK/termux-elf-cleaner"
             chmod +x "$WORK/termux-elf-cleaner"

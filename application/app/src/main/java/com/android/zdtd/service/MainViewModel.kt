@@ -2320,7 +2320,7 @@ private fun clearDownloadedUpdateApk() {
       _setup.update {
         it.copy(
           installComponentsResolved = true,
-          installSelectedComponents = RootBinaryComponentCatalog.moduleIds,
+          installSelectedComponents = ComponentSelectionStore.allowedStateIds,
         )
       }
       return
@@ -2329,7 +2329,7 @@ private fun clearDownloadedUpdateApk() {
     launchIO {
       val saved = runCatching { componentSelectionStore.read() }.getOrNull()
       val selected = (saved ?: inferInstalledModuleComponents())
-        .intersect(RootBinaryComponentCatalog.moduleIds)
+        .intersect(ComponentSelectionStore.allowedStateIds)
       _setup.update {
         it.copy(
           installComponentsResolved = true,
@@ -2341,7 +2341,7 @@ private fun clearDownloadedUpdateApk() {
 
   override fun setInstallComponentSelected(componentId: String, selected: Boolean) {
     if (!isOnlineModuleDistribution() || _rootState.value != RootState.GRANTED || _setup.value.installing) return
-    if (componentId !in RootBinaryComponentCatalog.moduleIds) return
+    if (componentId !in ComponentSelectionStore.allowedStateIds) return
     val previous = if (_setup.value.installComponentsResolved) {
       _setup.value.installSelectedComponents
     } else {
@@ -2364,7 +2364,7 @@ private fun clearDownloadedUpdateApk() {
     _setup.update { it.copy(installComponentsResolved = true, installSelectedComponents = next) }
     launchIO {
       componentSelectionMutex.withLock {
-        val latest = _setup.value.installSelectedComponents.intersect(RootBinaryComponentCatalog.moduleIds)
+        val latest = _setup.value.installSelectedComponents.intersect(ComponentSelectionStore.allowedStateIds)
         val ok = runCatching { componentSelectionStore.writeModuleSelection(latest) }.getOrDefault(false)
         if (!ok) log("ERR", "failed to save online component selection")
       }
@@ -2385,9 +2385,9 @@ private fun clearDownloadedUpdateApk() {
     launchIO {
       if (isOnlineModuleDistribution()) {
         val selected = if (_setup.value.installComponentsResolved) {
-          _setup.value.installSelectedComponents.intersect(RootBinaryComponentCatalog.moduleIds)
+          _setup.value.installSelectedComponents.intersect(ComponentSelectionStore.allowedStateIds)
         } else {
-          componentSelectionStore.read()?.intersect(RootBinaryComponentCatalog.moduleIds)
+          componentSelectionStore.read()?.intersect(ComponentSelectionStore.allowedStateIds)
             ?: inferInstalledModuleComponents()
         }
         val selectionSaved = componentSelectionMutex.withLock { componentSelectionStore.writeModuleSelection(selected) }
@@ -2401,7 +2401,7 @@ private fun clearDownloadedUpdateApk() {
         // downloaded components (sing-box-lx/TGWS) in the persistent state so customize.sh can
         // carry them across the module replacement instead of deleting them with the old bin/.
         val selectionSaved = componentSelectionMutex.withLock {
-          componentSelectionStore.writeModuleSelection(RootBinaryComponentCatalog.moduleIds)
+          componentSelectionStore.writeModuleSelection(ComponentSelectionStore.allowedStateIds)
         }
         if (!selectionSaved) {
           _setup.update { it.copy(installError = str(R.string.component_selection_save_failed)) }

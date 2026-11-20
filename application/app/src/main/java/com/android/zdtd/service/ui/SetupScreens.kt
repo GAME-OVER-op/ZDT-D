@@ -2381,7 +2381,15 @@ private fun OnlineComponentSelectionCard(
 ) {
   var showDialog by rememberSaveable { mutableStateOf(false) }
   val all = RootBinaryComponentCatalog.moduleComponents
-  val selectedCount = selected.intersect(RootBinaryComponentCatalog.moduleIds).size
+  // sing-box-lx and tg-ws-proxy are optional too. They have dedicated installers,
+  // so they are not in the generic catalog, but they still must be selectable
+  // when the module is installed (customize.sh honours their component ids).
+  val extras = listOf(
+    "sing-box-lx" to stringResource(R.string.sing_box_lx_title),
+    "tgwsproxy" to stringResource(R.string.tg_ws_proxy_title),
+  )
+  val selectable = all.map { it.id to it.displayName } + extras
+  val selectedCount = selected.intersect(selectable.map { it.first }.toSet()).size
   val accent = MaterialTheme.colorScheme.secondary
 
   Surface(
@@ -2419,7 +2427,7 @@ private fun OnlineComponentSelectionCard(
         )
         Text(
           text = if (resolved) {
-            stringResource(R.string.setup_components_selected_fmt, selectedCount, all.size)
+            stringResource(R.string.setup_components_selected_fmt, selectedCount, selectable.size)
           } else {
             stringResource(R.string.common_loading)
           },
@@ -2456,8 +2464,8 @@ private fun OnlineComponentSelectionCard(
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
             modifier = Modifier.padding(bottom = 6.dp),
           )
-          all.forEach { spec ->
-            val checked = spec.id in selected
+          selectable.forEach { (componentId, label) ->
+            val checked = componentId in selected
             Surface(
               modifier = Modifier.fillMaxWidth(),
               shape = RoundedCornerShape(14.dp),
@@ -2473,10 +2481,10 @@ private fun OnlineComponentSelectionCard(
               ) {
                 Checkbox(
                   checked = checked,
-                  onCheckedChange = { value -> onToggle(spec.id, value) },
+                  onCheckedChange = { value -> onToggle(componentId, value) },
                 )
                 Text(
-                  text = spec.displayName,
+                  text = label,
                   modifier = Modifier.weight(1f),
                   style = MaterialTheme.typography.bodyMedium,
                   fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal,

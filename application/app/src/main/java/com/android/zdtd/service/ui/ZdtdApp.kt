@@ -135,10 +135,6 @@ private const val REMOTE_CONTROL_FEATURE_ENABLED = false
 // Remote control is intentionally hidden/disabled for now: the feature is not stable yet.
 // Keep the implementation in the tree so it can be restored and continued later.
 
-private fun supportsArm64ToolUpdates(): Boolean {
-  return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
-}
-
 @Composable
 fun ZdtdApp(
   rootState: RootState,
@@ -1114,7 +1110,6 @@ private fun MainShell(
   var appsRoute by remember { mutableStateOf<AppsRoute>(AppsRoute.List) }
   var showLogs by remember { mutableStateOf(false) }
   var showBackup by remember { mutableStateOf(false) }
-  var showProgramUpdates by remember { mutableStateOf(false) }
   var showDeleteModule by remember { mutableStateOf(false) }
   var showDeleteModuleNext by remember { mutableStateOf(false) }
   var showSettings by remember { mutableStateOf(false) }
@@ -1130,8 +1125,8 @@ private fun MainShell(
   // - If logs sheet is open -> close it
   val ctx = LocalContext.current
   val activity = ctx as? Activity
-  val handleBack = remember(tab, appsRoute, showLogs, showBackup, showProgramUpdates, showSettings, showDeleteModule, showDeleteModuleNext, showWorldMapPrompt, programLogsTarget) {
-    tab != Tab.HOME || showLogs || showBackup || showProgramUpdates || showSettings || showDeleteModule || showDeleteModuleNext || showWorldMapPrompt || programLogsTarget != null || (tab == Tab.APPS && appsRoute != AppsRoute.List)
+  val handleBack = remember(tab, appsRoute, showLogs, showBackup, showSettings, showDeleteModule, showDeleteModuleNext, showWorldMapPrompt, programLogsTarget) {
+    tab != Tab.HOME || showLogs || showBackup || showSettings || showDeleteModule || showDeleteModuleNext || showWorldMapPrompt || programLogsTarget != null || (tab == Tab.APPS && appsRoute != AppsRoute.List)
   }
   BackHandler(enabled = handleBack) {
     if (showDeleteModuleNext) {
@@ -1152,10 +1147,6 @@ private fun MainShell(
     }
     if (showSettings) {
       settingsCloseRequested = true
-      return@BackHandler
-    }
-    if (showProgramUpdates) {
-      showProgramUpdates = false
       return@BackHandler
     }
     if (showBackup) {
@@ -1201,7 +1192,6 @@ private fun MainShell(
   val christmasScreenVisible = christmasBaseScreen &&
     !showLogs &&
     !showBackup &&
-    !showProgramUpdates &&
     !showSettings &&
     !showDeleteModule &&
     !showDeleteModuleNext &&
@@ -1321,20 +1311,6 @@ private fun MainShell(
     BackupDialog(
       state = backup,
       onDismiss = { showBackup = false },
-      actions = actions,
-    )
-  }
-
-  if (showProgramUpdates) {
-    val pu by programUpdatesFlow.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) {
-      actions.refreshOptionalTools()
-    }
-    ProgramUpdatesDialog(
-      state = pu,
-      installedComponentIds = uiState.components.asSequence().filter { it.installed }.map { it.id }.toSet(),
-      componentsResolved = uiState.componentsResolved,
-      onDismiss = { showProgramUpdates = false },
       actions = actions,
     )
   }
@@ -1623,10 +1599,6 @@ private fun MainShell(
             if (target == null) showLogs = true else programLogsTarget = target
           },
           onOpenBackup = { showBackup = true },
-          onOpenProgramUpdates = {
-            showProgramUpdates = true
-            actions.resetProgramUpdatesUi()
-          },
           onOpenSettings = {
             settingsCloseRequested = false
             showSettings = true
@@ -1726,10 +1698,6 @@ private fun MainShell(
             if (target == null) showLogs = true else programLogsTarget = target
           },
           onOpenBackup = { showBackup = true },
-          onOpenProgramUpdates = {
-            showProgramUpdates = true
-            actions.resetProgramUpdatesUi()
-          },
           onOpenSettings = {
             settingsCloseRequested = false
             showSettings = true
@@ -1832,7 +1800,6 @@ private fun LandscapeShellContent(
   programLogTarget: ProgramLogTarget?,
   onOpenLogs: (ProgramLogTarget?) -> Unit,
   onOpenBackup: () -> Unit,
-  onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenRemoteSetup: () -> Unit,
   remoteTargetName: String,
@@ -1921,7 +1888,6 @@ private fun LandscapeShellContent(
       programLogTarget = programLogTarget,
       onOpenLogs = onOpenLogs,
       onOpenBackup = onOpenBackup,
-      onOpenProgramUpdates = onOpenProgramUpdates,
       onOpenSettings = onOpenSettings,
       onOpenRemoteSetup = onOpenRemoteSetup,
       remoteTargetName = remoteTargetName,
@@ -2223,7 +2189,6 @@ private fun FloatingTopBarCard(
   programLogTarget: ProgramLogTarget?,
   onOpenLogs: (ProgramLogTarget?) -> Unit,
   onOpenBackup: () -> Unit,
-  onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenRemoteSetup: () -> Unit,
   remoteTargetName: String,
@@ -2279,7 +2244,6 @@ private fun FloatingTopBarCard(
             programLogTarget = programLogTarget,
             onOpenLogs = onOpenLogs,
             onOpenBackup = onOpenBackup,
-            onOpenProgramUpdates = onOpenProgramUpdates,
             onOpenSettings = onOpenSettings,
             onOpenRemoteSetup = onOpenRemoteSetup,
           )
@@ -2435,7 +2399,6 @@ private fun LandscapeQuickActions(
   programLogTarget: ProgramLogTarget?,
   onOpenLogs: (ProgramLogTarget?) -> Unit,
   onOpenBackup: () -> Unit,
-  onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenRemoteSetup: () -> Unit,
   remoteTargetName: String,
@@ -2461,15 +2424,6 @@ private fun LandscapeQuickActions(
         }
         IconButton(onClick = { onOpenSettings() }, modifier = Modifier.size(44.dp)) {
           Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings), modifier = Modifier.size(26.dp))
-        }
-        if (supportsArm64ToolUpdates()) {
-          IconButton(onClick = { onOpenProgramUpdates() }, modifier = Modifier.size(44.dp)) {
-            Icon(
-              painter = painterResource(R.drawable.ic_program_updates_custom),
-              contentDescription = stringResource(R.string.cd_program_updates),
-              modifier = Modifier.size(26.dp),
-            )
-          }
         }
         IconButton(onClick = { onOpenBackup() }, modifier = Modifier.size(44.dp)) {
           Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup), modifier = Modifier.size(26.dp))
@@ -2808,7 +2762,6 @@ private fun TopBarActionCluster(
   programLogTarget: ProgramLogTarget?,
   onOpenLogs: (ProgramLogTarget?) -> Unit,
   onOpenBackup: () -> Unit,
-  onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenRemoteSetup: () -> Unit,
 ) {
@@ -2882,16 +2835,6 @@ private fun TopBarActionCluster(
       CollapsingTopBarAction(visible = showFullActions) {
         IconButton(onClick = onOpenBackup) {
           Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup))
-        }
-      }
-      if (supportsArm64ToolUpdates()) {
-        CollapsingTopBarAction(visible = showFullActions) {
-          IconButton(onClick = onOpenProgramUpdates) {
-            Icon(
-              painter = painterResource(R.drawable.ic_program_updates_custom),
-              contentDescription = stringResource(R.string.cd_program_updates),
-            )
-          }
         }
       }
       CollapsingTopBarAction(visible = showFullActions) {

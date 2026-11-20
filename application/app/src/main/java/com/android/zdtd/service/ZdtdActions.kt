@@ -1,6 +1,7 @@
 package com.android.zdtd.service
 
 import com.android.zdtd.service.api.ApiModels
+import com.android.zdtd.service.components.ToolReleaseUi
 import org.json.JSONObject
 
 /**
@@ -265,6 +266,18 @@ interface ZdtdActions {
   fun postJsonData(path: String, obj: JSONObject = JSONObject(), onDone: (Boolean) -> Unit = {})
   fun postJsonResult(path: String, obj: JSONObject = JSONObject(), onDone: (JSONObject?) -> Unit)
   fun deleteJsonPath(path: String, onDone: (Boolean) -> Unit = {})
+
+  /** Load upstream GitHub releases for a tool, filtered for this device ABI. */
+  fun loadToolReleases(componentId: String, onDone: (List<ToolReleaseUi>, String?) -> Unit)
+
+  /** Download, verify, extract and install a selected upstream release. */
+  fun installToolRelease(
+    componentId: String,
+    release: ToolReleaseUi,
+    onProgress: (Int, String) -> Unit,
+    onDone: (Boolean, String?) -> Unit,
+  )
+
   fun loadTrafficRules(onDone: (ApiModels.TrafficReport?) -> Unit)
 
   fun loadConstructionProxyEndpoints(onDone: (List<ApiModels.ConstructionProxyEndpointCandidate>?) -> Unit)

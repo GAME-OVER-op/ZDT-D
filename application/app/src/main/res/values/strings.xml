@@ -2172,6 +2172,16 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="vps_letsencrypt_email">Let’s Encrypt email</string>
     <string name="vps_automatic_tls_hint">The domain must point to this VPS. ZDT-D will request and renew the TLS certificate automatically.</string>
     <string name="vps_xray_xhttp_hint">XHTTP uses a native sing-box-lx transport. Profiles created from Xray clients require the sing-box-lx component on the device.</string>
+    <string name="tool_releases_unsupported">No official Android builds are available for this tool and device architecture.</string>
+    <string name="tool_releases_checksum_failed">Downloaded file failed the SHA-256 check from GitHub.</string>
+    <string name="tool_releases_abi_mismatch">Downloaded binary does not match this device architecture.</string>
+    <string name="tool_releases_title">Available versions</string>
+    <string name="tool_releases_empty">No compatible releases found</string>
+    <string name="tool_releases_notes">Release notes</string>
+    <string name="tool_releases_install">Install</string>
+    <string name="tool_releases_installed">Installed</string>
+    <string name="tool_releases_refresh">Refresh</string>
+    <string name="tool_releases_open_page">Open release page</string>
     <string name="vps_shared_port_hint">Xray already uses TCP %1$d. Hysteria2 may safely use UDP %1$d at the same time.</string>
     <string name="vps_no_profiles">No profiles created</string>
     <string name="vps_no_profiles_hint">Create a server profile, then add separate client configurations.</string>

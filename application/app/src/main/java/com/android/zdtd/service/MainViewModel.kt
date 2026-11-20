@@ -20,6 +20,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
 import com.android.zdtd.service.api.ApiClient
 import com.android.zdtd.service.api.ApiModels
+import com.android.zdtd.service.components.ToolArchiveKind
+import com.android.zdtd.service.components.ToolReleaseCatalog
+import com.android.zdtd.service.components.ToolReleaseSpec
+import com.android.zdtd.service.components.ToolReleaseUi
 import com.android.zdtd.service.api.DeviceInfo
 import com.android.zdtd.service.components.ComponentSelectionStore
 import com.android.zdtd.service.components.RootBinaryComponentCatalog
@@ -7911,6 +7915,174 @@ private fun shQuote(s: String): String {
         log("ERR", if (detail.isBlank()) "$path: load failed" else "$path: load failed — $detail")
       }
       withContext(Dispatchers.Main.immediate) { onDone(obj) }
+    }
+  }
+
+
+  // ----- Generic upstream tool releases (safe, ABI-aware) -----
+
+  private fun toolReleaseSpec(componentId: String): ToolReleaseSpec? {
+    val abi = ToolReleaseCatalog.currentAbi() ?: return null
+    return ToolReleaseCatalog.forComponent(componentId, abi)
+  }
+
+  override fun loadToolReleases(componentId: String, onDone: (List<ToolReleaseUi>, String?) -> Unit) {
+    val spec = toolReleaseSpec(componentId)
+    if (spec == null) {
+      onDone(emptyList(), str(R.string.tool_releases_unsupported))
+      return
+    }
+    val abi = ToolReleaseCatalog.currentAbi() ?: return onDone(emptyList(), str(R.string.tool_releases_unsupported))
+    val assetPattern = runCatching { Regex(spec.assetRegex(abi)) }.getOrNull()
+    if (assetPattern == null) {
+      onDone(emptyList(), str(R.string.tool_releases_unsupported))
+      return
+    }
+    viewModelScope.launch {
+      val found = LinkedHashMap<String, ToolReleaseUi>()
+      var error: String? = null
+      for (page in 1..5) {
+        val req = okhttp3.Request.Builder()
+          .url("https://api.github.com/repos/${spec.repo}/releases?per_page=100&page=$page")
+          .header("User-Agent", "ZDT-D-Android")
+          .build()
+        val resp = executeGithubRequest(req)
+        if (resp == null) {
+          error = str(R.string.program_updates_err_check_latest)
+          break
+        }
+        val body = resp.use { response ->
+          if (response.code != 200) {
+            error = str(R.string.program_updates_err_load_releases)
+            null
+          } else {
+            response.body?.string()
+          }
+        }
+        if (body.isNullOrBlank()) break
+        val arr = runCatching { org.json.JSONArray(body) }.getOrNull() ?: break
+        if (arr.length() == 0) break
+        for (i in 0 until arr.length()) {
+          val rel = arr.optJSONObject(i) ?: continue
+          val tag = rel.optString("tag_name")
+          val assets = rel.optJSONArray("assets") ?: continue
+          for (j in 0 until assets.length()) {
+            val asset = assets.optJSONObject(j) ?: continue
+            val match = assetPattern.matchEntire(asset.optString("name")) ?: continue
+            val url = asset.optString("browser_download_url").takeIf { it.isNotBlank() } ?: continue
+            val version = if (spec.versionFromTag) {
+              val stripped = tag.removePrefix(spec.versionTagStrip)
+              if (stripped.firstOrNull()?.isDigit() == true && !stripped.startsWith("v", true)) "v$stripped" else stripped
+            } else {
+              "v" + (match.groupValues.getOrNull(1) ?: continue)
+            }
+            if (version.isBlank()) continue
+            found.putIfAbsent(
+              version,
+              ToolReleaseUi(
+                version = version,
+                downloadUrl = url,
+                sha256 = asset.optString("digest").removePrefix("sha256:"),
+                publishedAt = rel.optString("published_at"),
+                releaseNotes = rel.optString("body"),
+                htmlUrl = rel.optString("html_url"),
+              )
+            )
+            break
+          }
+        }
+      }
+      withContext(Dispatchers.Main.immediate) {
+        onDone(found.values.toList(), if (found.isEmpty()) error ?: str(R.string.program_updates_err_load_releases) else null)
+      }
+    }
+  }
+
+  private fun looksLikeElfForAbi(file: File, abi: String): Boolean {
+    val header = ByteArray(20)
+    file.inputStream().use { input -> if (input.read(header) < header.size) return false }
+    if (header[0] != 0x7f.toByte() || header[1] != 'E'.code.toByte() ||
+      header[2] != 'L'.code.toByte() || header[3] != 'F'.code.toByte()) return false
+    val elfClass = header[4].toInt() and 0xff
+    val machine = (header[18].toInt() and 0xff) or ((header[19].toInt() and 0xff) shl 8)
+    return if (abi == "arm64") elfClass == 2 && machine == 183 else elfClass == 1 && machine == 40
+  }
+
+  override fun installToolRelease(
+    componentId: String,
+    release: ToolReleaseUi,
+    onProgress: (Int, String) -> Unit,
+    onDone: (Boolean, String?) -> Unit,
+  ) {
+    val spec = toolReleaseSpec(componentId)
+    if (spec == null) {
+      onDone(false, str(R.string.tool_releases_unsupported))
+      return
+    }
+    val abi = ToolReleaseCatalog.currentAbi() ?: return onDone(false, str(R.string.tool_releases_unsupported))
+    viewModelScope.launch {
+      val workDir = File(ctx.cacheDir, "tool-release-$componentId").also { it.mkdirs() }
+      val suffix = release.version.filter { it.isLetterOrDigit() }.take(32).ifBlank { "release" }
+      val archive = File(workDir, "asset-$suffix-${System.currentTimeMillis()}")
+      val binary = File(workDir, "binary-$suffix-${System.currentTimeMillis()}")
+      suspend fun report(pct: Int, text: String) {
+        withContext(Dispatchers.Main.immediate) { onProgress(pct, text) }
+      }
+      suspend fun finish(ok: Boolean, message: String?) {
+        withContext(Dispatchers.Main.immediate) { onDone(ok, message) }
+      }
+      try {
+        report(2, str(R.string.mv_auto_056))
+        val okDownload = withContext(Dispatchers.IO) {
+          downloadToFileWithProgress(release.downloadUrl, archive) { pct ->
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+              onProgress(2 + pct * 58 / 100, str(R.string.prog_update_status_downloading_pct_fmt, pct))
+            }
+          }
+        }
+        if (!okDownload) {
+          finish(false, str(R.string.prog_update_error_download_failed))
+          return@launch
+        }
+        report(64, str(R.string.mv_auto_057))
+        if (release.sha256.isNotBlank()) {
+          val actual = withContext(Dispatchers.IO) { sha256Hex(archive) }
+          if (!actual.equals(release.sha256, ignoreCase = true)) {
+            finish(false, str(R.string.tool_releases_checksum_failed))
+            return@launch
+          }
+        }
+        val wanted = spec.binaryPath(abi, release.version)
+        val okExtract = withContext(Dispatchers.IO) {
+          when (spec.archiveKind) {
+            ToolArchiveKind.RAW -> runCatching { archive.copyTo(binary, overwrite = true); binary.length() > 0L }.getOrDefault(false)
+            ToolArchiveKind.GZ -> runCatching { extractGzipSingle(archive, binary) }.getOrDefault(false)
+            ToolArchiveKind.ZIP -> runCatching {
+              extractZipSingle(archive, { name -> name == wanted || name.endsWith("/$wanted") }, binary)
+            }.getOrDefault(false)
+            ToolArchiveKind.TARGZ -> runCatching {
+              extractTarGzSingle(archive, { name -> name == wanted || name.endsWith("/$wanted") }, binary)
+            }.getOrDefault(false)
+          }
+        }
+        if (!okExtract) {
+          finish(false, str(R.string.prog_update_error_archive_changed))
+          return@launch
+        }
+        if (!withContext(Dispatchers.IO) { looksLikeElfForAbi(binary, abi) }) {
+          finish(false, str(R.string.tool_releases_abi_mismatch))
+          return@launch
+        }
+        report(90, str(R.string.mv_auto_058))
+        val okInstall = installBinaryAtomically(binary, "/data/adb/modules/ZDT-D/bin/${spec.installName}")
+        report(100, "")
+        finish(okInstall, if (okInstall) null else str(R.string.prog_update_error_install_failed))
+      } catch (e: Exception) {
+        finish(false, e.message ?: str(R.string.prog_update_error_install_failed))
+      } finally {
+        runCatching { archive.delete() }
+        runCatching { binary.delete() }
+      }
     }
   }
 

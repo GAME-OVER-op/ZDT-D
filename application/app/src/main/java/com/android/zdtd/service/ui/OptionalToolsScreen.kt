@@ -1,5 +1,6 @@
 package com.android.zdtd.service.ui
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.DownloadDone
@@ -28,16 +30,22 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,6 +53,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.components.ToolReleaseCatalog
 import com.android.zdtd.service.api.ApiModels
 import com.android.zdtd.service.components.RootBinaryComponentCatalog
 import com.android.zdtd.service.components.RootBinaryComponentStage
@@ -65,6 +74,9 @@ fun OptionalToolsScreen(
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
+  var releasesTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+  val eligibleReleases = remember { ToolReleaseCatalog.eligibleIds(ToolReleaseCatalog.currentAbi()) }
+
   LaunchedEffect(Unit) {
     actions.refreshOptionalTools()
   }
@@ -98,14 +110,27 @@ fun OptionalToolsScreen(
         val installed = if (localState.isWorking) localState.installed else daemonState?.installed ?: localState.installed
         GenericRootComponentCard(
           title = spec.displayName,
+          iconRes = programIconRes(spec.id),
           state = localState,
           installed = installed,
           onInstall = { actions.installRootComponent(spec.id) },
           onRemove = { actions.removeRootComponent(spec.id) },
+          onShowReleases = if (spec.id in eligibleReleases) {
+            { releasesTarget = spec.id to spec.displayName }
+          } else null,
         )
       }
     }
     item { Spacer(Modifier.height(4.dp)) }
+  }
+
+  releasesTarget?.let { target ->
+    ToolReleasesDialog(
+      componentId = target.first,
+      title = target.second,
+      actions = actions,
+      onDismiss = { releasesTarget = null },
+    )
   }
 }
 
@@ -152,6 +177,7 @@ private fun SingBoxLxUtilityCard(
   OptionalBinaryUtilityCard(
     title = stringResource(R.string.sing_box_lx_title),
     description = stringResource(R.string.sing_box_lx_desc),
+    iconRes = programIconRes("sing-box-lx"),
     icon = Icons.Outlined.Dns,
     installed = state.installed,
     isWorking = state.isWorking,
@@ -171,10 +197,12 @@ private fun SingBoxLxUtilityCard(
 @Composable
 private fun GenericRootComponentCard(
   title: String,
+  @DrawableRes iconRes: Int? = null,
   state: RootBinaryComponentState,
   installed: Boolean,
   onInstall: () -> Unit,
   onRemove: () -> Unit,
+  onShowReleases: (() -> Unit)? = null,
 ) {
   val statusText = when {
     installed && state.stage != RootBinaryComponentStage.FAILED -> stringResource(R.string.optional_tools_status_installed)
@@ -188,6 +216,7 @@ private fun GenericRootComponentCard(
   OptionalBinaryUtilityCard(
     title = title,
     description = stringResource(R.string.optional_component_generic_desc),
+    iconRes = iconRes,
     icon = Icons.Outlined.Extension,
     installed = installed,
     isWorking = state.isWorking,
@@ -201,6 +230,7 @@ private fun GenericRootComponentCard(
     errorText = state.errorMessage,
     onInstall = onInstall,
     onRemove = onRemove,
+    onShowReleases = onShowReleases,
   )
 }
 
@@ -208,6 +238,7 @@ private fun GenericRootComponentCard(
 private fun OptionalBinaryUtilityCard(
   title: String,
   description: String,
+  @DrawableRes iconRes: Int? = null,
   icon: ImageVector,
   installed: Boolean,
   isWorking: Boolean,
@@ -221,6 +252,7 @@ private fun OptionalBinaryUtilityCard(
   errorText: String?,
   onInstall: () -> Unit,
   onRemove: () -> Unit,
+  onShowReleases: (() -> Unit)? = null,
 ) {
   val accentColor = if (installed) Color(0xFF22C55E) else MaterialTheme.colorScheme.primary
   Card(
@@ -251,7 +283,11 @@ private fun OptionalBinaryUtilityCard(
           border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
         ) {
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(29.dp))
+            if (iconRes != null) {
+              Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(29.dp))
+            } else {
+              Icon(icon, contentDescription = null, modifier = Modifier.size(29.dp))
+            }
           }
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -299,7 +335,13 @@ private fun OptionalBinaryUtilityCard(
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
       ) {
+        if (onShowReleases != null) {
+          IconButton(onClick = onShowReleases) {
+            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.tool_releases_title))
+          }
+        }
         if (installed) {
           Button(
             onClick = onInstall,

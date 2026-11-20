@@ -2172,6 +2172,16 @@ APatch: 10700+</string>
     <string name="vps_letsencrypt_email">Email для Let’s Encrypt</string>
     <string name="vps_automatic_tls_hint">Домен должен указывать на этот VPS. ZDT-D автоматически запросит и будет обновлять TLS-сертификат.</string>
     <string name="vps_xray_xhttp_hint">XHTTP использует нативный транспорт sing-box-lx. Профили клиентов Xray требуют компонент sing-box-lx на устройстве.</string>
+    <string name="tool_releases_unsupported">Для этого инструмента и архитектуры устройства нет официальных Android-сборок.</string>
+    <string name="tool_releases_checksum_failed">Скачанный файл не прошёл проверку SHA-256 от GitHub.</string>
+    <string name="tool_releases_abi_mismatch">Скачанный бинарник не соответствует архитектуре устройства.</string>
+    <string name="tool_releases_title">Доступные версии</string>
+    <string name="tool_releases_empty">Совместимые релизы не найдены</string>
+    <string name="tool_releases_notes">Описание релиза</string>
+    <string name="tool_releases_install">Установить</string>
+    <string name="tool_releases_installed">Установлено</string>
+    <string name="tool_releases_refresh">Обновить</string>
+    <string name="tool_releases_open_page">Открыть страницу релиза</string>
     <string name="vps_shared_port_hint">Xray уже использует TCP %1$d. Hysteria2 может одновременно использовать UDP %1$d.</string>
     <string name="vps_no_profiles">Профили не созданы</string>
     <string name="vps_no_profiles_hint">Создайте серверный профиль, затем добавьте отдельные клиентские конфигурации.</string>

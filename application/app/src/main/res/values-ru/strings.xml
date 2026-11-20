@@ -502,6 +502,11 @@
     <string name="app_update_stage_release">Подготовка релиза</string>
     <string name="app_update_stage_ready">Обновление готово</string>
     <string name="app_update_check_again">Проверить снова</string>
+    <string name="settings_category_general">Общее</string>
+    <string name="settings_category_network">Сеть</string>
+    <string name="settings_category_security">Безопасность</string>
+    <string name="settings_category_performance">Производительность</string>
+    <string name="settings_category_maintenance">Обслуживание</string>
     <string name="settings_title">Настройки</string>
     <string name="settings_subtitle">Обновления, уведомления, язык, точка доступа и обслуживание модуля.</string>
     <string name="app_update_check_title">Проверять обновления</string>

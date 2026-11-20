@@ -224,7 +224,6 @@ fun AppUpdateSettings(
   resettingModuleIdentifier: Boolean,
   onResetModuleIdentifier: () -> Unit,
   onDeleteModule: () -> Unit,
-  landscapeColumns: Boolean = false,
 ) {
   val compactWidth = rememberIsCompactWidth()
   var showHotspotWarning by rememberSaveable { mutableStateOf(false) }
@@ -233,224 +232,34 @@ fun AppUpdateSettings(
   var showBlockedQuicConfigure by rememberSaveable { mutableStateOf(false) }
   var showAdvancedSettings by rememberSaveable { mutableStateOf(false) }
   var showEnergySaverConfigure by rememberSaveable { mutableStateOf(false) }
-  if (landscapeColumns) {
-    Column(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(16.dp),
-    ) {
-      Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-      Spacer(Modifier.height(12.dp))
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .weight(1f),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-      ) {
-        LazyColumn(
-          modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight(),
-          verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-          item(key = "update_toggle") {
-            SettingsSwitchSection(
-              title = stringResource(R.string.app_update_check_title),
-              body = stringResource(R.string.app_update_check_body),
-              checked = enabled,
-              onCheckedChange = onToggle,
-            )
-          }
-          item(key = "update_now") {
-            OutlinedButton(onClick = onCheckNow, modifier = Modifier.fillMaxWidth()) {
-              Text(stringResource(R.string.app_update_check_now))
-            }
-          }
-          item(key = "notifications") {
-            SettingsSwitchSection(
-              title = stringResource(R.string.settings_notifications_title),
-              body = stringResource(R.string.settings_notifications_body),
-              checked = daemonNotificationEnabled,
-              onCheckedChange = onToggleDaemonNotification,
-            )
-          }
-          item(key = "protector") {
-            ProtectorModeSection(
-              selectedMode = protectorMode,
-              onModeSelected = onProtectorModeChange,
-            )
-          }
-          item(key = "energy") {
-            SettingsActionCard(
-              title = stringResource(R.string.settings_energy_saver_title),
-              body = stringResource(R.string.settings_energy_saver_body),
-              actionText = stringResource(R.string.settings_energy_saver_open),
-              onClick = {
-                onRefreshEnergySaver()
-                showEnergySaverConfigure = true
-              },
-            )
-          }
-          item(key = "advanced") {
-            OutlinedButton(onClick = { showAdvancedSettings = true }, modifier = Modifier.fillMaxWidth()) {
-              Text(stringResource(R.string.settings_advanced_title))
-            }
-          }
-          item(key = "hotspot") {
-            HotspotT2sSection(
-              enabled = hotspotT2sEnabled,
-              mode = hotspotMode,
-              program = hotspotProgram,
-              profile = hotspotProfile,
-              target = hotspotT2sTarget,
-              singboxProfile = hotspotT2sSingboxProfile,
-              wireproxyProfile = hotspotT2sWireproxyProfile,
-              captureAll = hotspotT2sCaptureAll,
-              singboxProfiles = hotspotSingboxProfiles,
-              wireproxyProfiles = hotspotWireproxyProfiles,
-              proxyPrograms = hotspotProxyPrograms,
-              vpnPrograms = hotspotVpnPrograms,
-              compactWidth = false,
-              onEnabledChange = { checked ->
-                if (checked && !hotspotT2sEnabled) {
-                  showHotspotWarning = true
-                } else {
-                  onHotspotT2sEnabledChange(checked)
-                }
-              },
-              onModeChange = onHotspotModeChange,
-              onSelectionChange = onHotspotSelectionChange,
-              onTargetChange = onHotspotT2sTargetChange,
-              onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
-              onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
-              onCaptureAllChange = onHotspotT2sCaptureAllChange,
-              captivePortalEnabled = captivePortalEnabled,
-              onCaptivePortalEnabledChange = onCaptivePortalEnabledChange,
-            )
-          }
-        }
-
-        LazyColumn(
-          modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight(),
-          verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-          item(key = "proxy_info") {
-            ProxyInfoSectionCard(
-              enabled = proxyInfoEnabled,
-              busy = proxyInfoBusy,
-              hidingStatus = hidingStatus,
-              onEnabledChange = onProxyInfoEnabledChange,
-              onConfigure = { showProxyInfoConfigure = true },
-            )
-          }
-          item(key = "blocked_quic") {
-            BlockedQuicSectionCard(
-              enabled = blockedQuicEnabled,
-              busy = blockedQuicBusy,
-              onEnabledChange = onBlockedQuicEnabledChange,
-              onConfigure = { showBlockedQuicConfigure = true },
-            )
-          }
-          item(key = "language") {
-            SettingsLanguageSection(
-              languageMode = languageMode,
-              compactWidth = false,
-              onLanguageModeChange = onLanguageModeChange,
-            )
-          }
-          item(key = "theme") {
-            SettingsThemeSection(
-              themeMode = themeMode,
-              compactWidth = false,
-              onThemeModeChange = onThemeModeChange,
-            )
-          }
-          item(key = "reset_identifier") {
-            Column(Modifier.fillMaxWidth()) {
-              Text(stringResource(R.string.settings_reset_identifier_title), style = MaterialTheme.typography.bodyLarge)
-              Text(
-                stringResource(R.string.settings_reset_identifier_body),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-              )
-              Spacer(Modifier.height(10.dp))
-              OutlinedButton(
-                onClick = { showResetIdentifierConfirm = true },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !resettingModuleIdentifier,
-              ) {
-                Text(stringResource(R.string.settings_reset_identifier_action))
-              }
-            }
-          }
-          item(key = "delete_module") {
-            Column(Modifier.fillMaxWidth()) {
-              Text(stringResource(R.string.settings_delete_module_title), style = MaterialTheme.typography.bodyLarge)
-              Text(
-                stringResource(R.string.settings_delete_module_body),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-              )
-              Spacer(Modifier.height(10.dp))
-              OutlinedButton(onClick = onDeleteModule, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.settings_delete_module_action))
-              }
-            }
-          }
-        }
-      }
-    }
-
-    SettingsDialogsHost(
-      showHotspotWarning = showHotspotWarning,
-      onDismissHotspotWarning = { showHotspotWarning = false },
-      onAcceptHotspotWarning = {
-        showHotspotWarning = false
-        onHotspotT2sEnabledChange(true)
-      },
-      showResetIdentifierConfirm = showResetIdentifierConfirm,
-      onDismissResetIdentifierConfirm = { showResetIdentifierConfirm = false },
-      onConfirmResetIdentifier = {
-        showResetIdentifierConfirm = false
-        onResetModuleIdentifier()
-      },
-      resettingModuleIdentifier = resettingModuleIdentifier,
-      showProxyInfoConfigure = showProxyInfoConfigure,
-      proxyInfoAppsContent = proxyInfoAppsContent,
-      proxyInfoBusy = proxyInfoBusy,
-      onDismissProxyInfoConfigure = { if (!proxyInfoBusy) showProxyInfoConfigure = false },
-      onLoadAppAssignments = onLoadAppAssignments,
-      onProxyInfoAppsSave = onProxyInfoAppsSave,
-      onProxyInfoAppsSaveRemovingConflicts = onProxyInfoAppsSaveRemovingConflicts,
-      showBlockedQuicConfigure = showBlockedQuicConfigure,
-      blockedQuicAppsContent = blockedQuicAppsContent,
-      blockedQuicBusy = blockedQuicBusy,
-      onDismissBlockedQuicConfigure = { if (!blockedQuicBusy) showBlockedQuicConfigure = false },
-      onBlockedQuicAppsSave = onBlockedQuicAppsSave,
-      showEnergySaverConfigure = showEnergySaverConfigure,
-      energySaver = energySaver,
-      energySaverBusy = energySaverBusy,
-      onDismissEnergySaverConfigure = { if (!energySaverBusy) showEnergySaverConfigure = false },
-      onSaveEnergySaver = onSaveEnergySaver,
-      showAdvancedSettings = showAdvancedSettings,
-      selinuxPermissiveEnabled = selinuxPermissiveEnabled,
-      ipForwardEnabled = ipForwardEnabled,
-      tproxyEnabled = tproxyEnabled,
-      onDismissAdvancedSettings = { showAdvancedSettings = false },
-      onAdvancedSettingChange = onAdvancedSettingChange,
-    )
-    return
-  }
-
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 22.dp),
-    verticalArrangement = Arrangement.spacedBy(14.dp),
+    contentPadding = rememberScreenContentPadding(0.dp, 0.dp),
+    verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    item(key = "header") { SettingsHeaderCard() }
+    item(key = "header") {
+      ScreenIntroHeader(
+        title = stringResource(R.string.settings_title),
+        description = stringResource(R.string.settings_subtitle),
+        compact = compactWidth,
+      )
+    }
 
+    item(key = "cat_general") { SettingsCategoryHeader(stringResource(R.string.settings_category_general)) }
+    item(key = "language") {
+      SettingsLanguageSection(
+        languageMode = languageMode,
+        compactWidth = compactWidth,
+        onLanguageModeChange = onLanguageModeChange,
+      )
+    }
+    item(key = "theme") {
+      SettingsThemeSection(
+        themeMode = themeMode,
+        compactWidth = compactWidth,
+        onThemeModeChange = onThemeModeChange,
+      )
+    }
     item(key = "update_toggle") {
       SettingsSwitchSection(
         title = stringResource(R.string.app_update_check_title),
@@ -459,7 +268,6 @@ fun AppUpdateSettings(
         onCheckedChange = onToggle,
       )
     }
-
     item(key = "update_now") {
       SettingsActionCard(
         title = stringResource(R.string.app_update_check_now),
@@ -469,7 +277,6 @@ fun AppUpdateSettings(
         onClick = onCheckNow,
       )
     }
-
     item(key = "notifications") {
       SettingsSwitchSection(
         title = stringResource(R.string.settings_notifications_title),
@@ -479,36 +286,7 @@ fun AppUpdateSettings(
       )
     }
 
-    item(key = "protector") {
-      SettingsSectionCard {
-        ProtectorModeSection(
-          selectedMode = protectorMode,
-          onModeSelected = onProtectorModeChange,
-        )
-      }
-    }
-
-    item(key = "energy_saver") {
-      SettingsActionCard(
-        title = stringResource(R.string.settings_energy_saver_title),
-        body = stringResource(R.string.settings_energy_saver_body),
-        actionText = stringResource(R.string.settings_energy_saver_open),
-        onClick = {
-          onRefreshEnergySaver()
-          showEnergySaverConfigure = true
-        },
-      )
-    }
-
-    item(key = "advanced") {
-      SettingsActionCard(
-        title = stringResource(R.string.settings_advanced_title),
-        body = stringResource(R.string.settings_advanced_body),
-        actionText = stringResource(R.string.settings_advanced_open),
-        onClick = { showAdvancedSettings = true },
-      )
-    }
-
+    item(key = "cat_network") { SettingsCategoryHeader(stringResource(R.string.settings_category_network)) }
     item(key = "hotspot") {
       SettingsSectionCard {
         HotspotT2sSection(
@@ -526,11 +304,8 @@ fun AppUpdateSettings(
           vpnPrograms = hotspotVpnPrograms,
           compactWidth = compactWidth,
           onEnabledChange = { checked ->
-            if (checked && !hotspotT2sEnabled) {
-              showHotspotWarning = true
-            } else {
-              onHotspotT2sEnabledChange(checked)
-            }
+            if (checked && !hotspotT2sEnabled) showHotspotWarning = true
+            else onHotspotT2sEnabledChange(checked)
           },
           onModeChange = onHotspotModeChange,
           onSelectionChange = onHotspotSelectionChange,
@@ -544,6 +319,15 @@ fun AppUpdateSettings(
       }
     }
 
+    item(key = "cat_security") { SettingsCategoryHeader(stringResource(R.string.settings_category_security)) }
+    item(key = "protector") {
+      SettingsSectionCard {
+        ProtectorModeSection(
+          selectedMode = protectorMode,
+          onModeSelected = onProtectorModeChange,
+        )
+      }
+    }
     item(key = "proxy_info") {
       ProxyInfoSectionCard(
         enabled = proxyInfoEnabled,
@@ -553,7 +337,6 @@ fun AppUpdateSettings(
         onConfigure = { showProxyInfoConfigure = true },
       )
     }
-
     item(key = "blocked_quic") {
       BlockedQuicSectionCard(
         enabled = blockedQuicEnabled,
@@ -563,22 +346,28 @@ fun AppUpdateSettings(
       )
     }
 
-    item(key = "language") {
-      SettingsLanguageSection(
-        languageMode = languageMode,
-        compactWidth = compactWidth,
-        onLanguageModeChange = onLanguageModeChange,
+    item(key = "cat_performance") { SettingsCategoryHeader(stringResource(R.string.settings_category_performance)) }
+    item(key = "energy_saver") {
+      SettingsActionCard(
+        title = stringResource(R.string.settings_energy_saver_title),
+        body = stringResource(R.string.settings_energy_saver_body),
+        actionText = stringResource(R.string.settings_energy_saver_open),
+        onClick = {
+          onRefreshEnergySaver()
+          showEnergySaverConfigure = true
+        },
+      )
+    }
+    item(key = "advanced") {
+      SettingsActionCard(
+        title = stringResource(R.string.settings_advanced_title),
+        body = stringResource(R.string.settings_advanced_body),
+        actionText = stringResource(R.string.settings_advanced_open),
+        onClick = { showAdvancedSettings = true },
       )
     }
 
-    item(key = "theme") {
-      SettingsThemeSection(
-        themeMode = themeMode,
-        compactWidth = compactWidth,
-        onThemeModeChange = onThemeModeChange,
-      )
-    }
-
+    item(key = "cat_maintenance") { SettingsCategoryHeader(stringResource(R.string.settings_category_maintenance)) }
     item(key = "reset_identifier") {
       SettingsActionCard(
         title = stringResource(R.string.settings_reset_identifier_title),
@@ -589,7 +378,6 @@ fun AppUpdateSettings(
         onClick = { showResetIdentifierConfirm = true },
       )
     }
-
     item(key = "delete_module") {
       SettingsActionCard(
         title = stringResource(R.string.settings_delete_module_title),
@@ -696,24 +484,7 @@ private fun SettingsSwitchSection(
   checked: Boolean,
   onCheckedChange: (Boolean) -> Unit,
 ) {
-  SettingsSectionCard {
-    Row(
-      Modifier.fillMaxWidth(),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-      Column(Modifier.weight(1f).padding(end = 12.dp)) {
-        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(4.dp))
-        Text(
-          body,
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
-        )
-      }
-      Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-  }
+  SettingsSwitchCard(title = title, body = body, checked = checked, onCheckedChange = onCheckedChange)
 }
 
 @Composable
@@ -726,54 +497,33 @@ private fun SettingsActionCard(
   danger: Boolean = false,
   showActionChip: Boolean = true,
 ) {
-  val shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp)
-  val accent = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-  val clickModifier = if (enabled) Modifier.clickable(onClick = onClick) else Modifier
-  Surface(
-    modifier = Modifier
-      .fillMaxWidth()
-      .clip(shape)
-      .then(clickModifier),
-    shape = shape,
-    color = if (danger) MaterialTheme.colorScheme.error.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-    tonalElevation = 0.dp,
-    shadowElevation = 0.dp,
-  ) {
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 14.dp, vertical = 13.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Column(Modifier.weight(1f)) {
-        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(3.dp))
-        Text(
-          body,
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-        )
-      }
-      if (showActionChip) {
+  SettingsCard(
+    title = title,
+    body = body,
+    accent = MaterialTheme.colorScheme.primary,
+    danger = danger,
+    enabled = enabled,
+    onClick = onClick,
+    trailing = if (showActionChip) {
+      {
         Surface(
           shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
-          color = accent.copy(alpha = if (enabled) 0.18f else 0.08f),
+          color = if (danger) MaterialTheme.colorScheme.error.copy(alpha = 0.16f)
+                  else MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 0.16f else 0.08f),
         ) {
           Text(
             text = actionText,
             modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
-            color = accent.copy(alpha = if (enabled) 1f else 0.45f),
-            textAlign = TextAlign.Center,
+            color = if (danger) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.45f),
           )
         }
       }
-    }
-  }
+    } else null,
+  )
 }
-
 @Composable
 private fun SettingsThemeSection(
   themeMode: String,
@@ -1301,15 +1051,19 @@ private fun SettingsSectionCard(
 ) {
   Surface(
     modifier = modifier.fillMaxWidth(),
-    shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
-    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
+    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
     tonalElevation = 0.dp,
     shadowElevation = 0.dp,
+    border = androidx.compose.foundation.BorderStroke(
+      1.dp,
+      MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+    ),
   ) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 14.dp, vertical = 14.dp),
+        .padding(16.dp),
       verticalArrangement = Arrangement.spacedBy(10.dp),
       content = content,
     )

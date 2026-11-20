@@ -187,6 +187,11 @@ Update the module to the build bundled with this app?</string>
     <string name="app_update_stage_release">Preparing release</string>
     <string name="app_update_stage_ready">Update ready</string>
     <string name="app_update_check_again">Check again</string>
+    <string name="settings_category_general">General</string>
+    <string name="settings_category_network">Network</string>
+    <string name="settings_category_security">Security</string>
+    <string name="settings_category_performance">Performance</string>
+    <string name="settings_category_maintenance">Maintenance</string>
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">Controls for updates, notifications, language, hotspot routing and module maintenance.</string>
     <string name="app_update_check_title">Check for updates</string>

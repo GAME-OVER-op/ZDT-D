@@ -1760,7 +1760,6 @@ private fun MainShell(
         RootSettingsScreen(
           appUpdate = appUpdate,
           actions = actions,
-          landscapeControl = landscapeControl,
           loading = !settingsContentReady,
           onDismiss = { dismissSettings() },
           onDeleteModule = { dismissSettings { showDeleteModule = true } },
@@ -2542,7 +2541,6 @@ private fun LandscapeNavIcon(
 private fun RootSettingsScreen(
   appUpdate: AppUpdateUiState,
   actions: ZdtdActions,
-  landscapeControl: Boolean,
   loading: Boolean,
   onDismiss: () -> Unit,
   onDeleteModule: () -> Unit,
@@ -2605,40 +2603,9 @@ private fun RootSettingsScreen(
       resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
       onResetModuleIdentifier = actions::resetModuleIdentifier,
       onDeleteModule = onDeleteModule,
-      landscapeColumns = landscapeControl,
     )
   }
 
-  if (landscapeControl) {
-    LandscapeSettingsShelf(onDismiss = onDismiss, loading = loading, content = content)
-  } else {
-    PortraitSettingsShelf(onDismiss = onDismiss, loading = loading, content = content)
-  }
-}
-
-
-@Composable
-private fun PortraitSettingsShelf(
-  onDismiss: () -> Unit,
-  loading: Boolean,
-  content: @Composable () -> Unit,
-) {
-  // Dedicated full-screen settings surface inside the existing app window.
-  SettingsScreen(
-    onDismiss = onDismiss,
-    loading = loading,
-  ) {
-    content()
-  }
-}
-
-@Composable
-private fun LandscapeSettingsShelf(
-  onDismiss: () -> Unit,
-  loading: Boolean,
-  content: @Composable () -> Unit,
-) {
-  // Unified with portrait: same-window full-screen Material 3 settings surface.
   SettingsScreen(
     onDismiss = onDismiss,
     loading = loading,

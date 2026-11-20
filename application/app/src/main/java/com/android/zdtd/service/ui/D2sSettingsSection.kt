@@ -111,9 +111,12 @@ fun D2sSettingsSection(
     val seq = ++loadSeq
     actions.loadJsonData(D2S_CONFIG_API) { obj ->
       if (seq != loadSeq) return@loadJsonData
-      // ApiClient.getJsonData returns an empty JSONObject on transport errors,
-      // so a missing "listener" key means the response was not a real config.
-      if (obj == null || !obj.has("listener")) {
+      // ApiClient collapses transport errors into an empty JSONObject and the
+      // daemon reports real errors as {"ok": false, "error": ...}. A genuine
+      // config response carries "ok": true (and all config fields). Do NOT key
+      // off "listener": it is legitimately JSON null when D2S is not connected.
+      val looksLikeConfig = obj?.optBoolean("ok", false) == true || obj?.has("direct_fallback") == true
+      if (obj == null || obj.length() == 0 || !looksLikeConfig) {
         loadFailed = true
         loading = false
         connecting = false

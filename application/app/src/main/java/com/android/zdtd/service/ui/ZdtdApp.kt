@@ -1751,7 +1751,13 @@ private fun MainShell(
 
     }
 
-    if (showSettings) {
+    AnimatedVisibility(
+      visible = showSettings,
+      enter = fadeIn(tween(durationMillis = 180)) +
+        slideInHorizontally(tween(durationMillis = 240)) { it / 8 },
+      exit = fadeOut(tween(durationMillis = 140)) +
+        slideOutHorizontally(tween(durationMillis = 180)) { it / 8 },
+    ) {
       Box(
         modifier = Modifier
           .fillMaxSize()

@@ -47,6 +47,7 @@ import com.android.zdtd.service.ui.rememberIsTelevision
 fun SettingsScreen(
   onDismiss: () -> Unit,
   loading: Boolean,
+  showBackButton: Boolean = true,
   content: @Composable () -> Unit,
 ) {
   val television = rememberIsTelevision()
@@ -90,6 +91,7 @@ fun SettingsScreen(
       }
     }
 
+    if (showBackButton) {
     IconButton(
       onClick = onDismiss,
       modifier = Modifier
@@ -105,6 +107,7 @@ fun SettingsScreen(
         contentDescription = stringResource(R.string.common_back),
         tint = MaterialTheme.colorScheme.onSurface,
       )
+    }
     }
   }
 }

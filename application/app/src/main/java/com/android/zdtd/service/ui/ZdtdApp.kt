@@ -122,7 +122,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
-import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 import java.util.Calendar
@@ -130,6 +129,7 @@ import com.android.zdtd.service.ui.AppUpdateBanner
 import com.android.zdtd.service.ui.AppUpdateSettings
 import com.android.zdtd.service.ui.settings.SettingsScreen
 import com.android.zdtd.service.ui.UnknownSourcesPermissionDialog
+import kotlin.math.roundToInt
 
 private const val REMOTE_CONTROL_FEATURE_ENABLED = false
 // Remote control is intentionally hidden/disabled for now: the feature is not stable yet.
@@ -1682,31 +1682,7 @@ private fun MainShell(
           }
         }
 
-        FloatingTopBarCard(
-          modifier = Modifier
-            .align(Alignment.TopCenter)
-            .zIndex(2f),
-          title = title,
-          canGoBack = canGoBack,
-          onBack = {
-            appsRoute = parentAppsRoute(appsRoute)
-          },
-          isHome = tab == Tab.HOME,
-          onTitleClick = { if (tab == Tab.HOME) showWorldMapPrompt = true },
-          programLogTarget = currentProgramLogTarget,
-          onOpenLogs = { target ->
-            if (target == null) showLogs = true else programLogsTarget = target
-          },
-          onOpenBackup = { showBackup = true },
-          onOpenSettings = {
-            settingsCloseRequested = false
-            showSettings = true
-          },
-          onOpenRemoteSetup = actions::openRemoteSetup,
-          remoteTargetName = uiState.remoteTargetName,
-          remoteTargetAddress = uiState.remoteTargetAddress,
-          onRemoteDisconnect = actions::exitRemoteControl,
-        )
+
 
         if (!vpsTerminalActive) {
           FloatingBottomNavigationCard(
@@ -1751,6 +1727,35 @@ private fun MainShell(
 
     }
 
+    if (!landscapeControl) {
+          FloatingTopBarCard(
+            modifier = Modifier
+              .align(Alignment.TopCenter)
+              .zIndex(12f),
+            title = title,
+            canGoBack = canGoBack,
+            onBack = {
+              if (showSettings) dismissSettings() else appsRoute = parentAppsRoute(appsRoute)
+            },
+            settingsActive = showSettings,
+            isHome = tab == Tab.HOME,
+            onTitleClick = { if (tab == Tab.HOME) showWorldMapPrompt = true },
+            programLogTarget = currentProgramLogTarget,
+            onOpenLogs = { target ->
+              if (target == null) showLogs = true else programLogsTarget = target
+            },
+            onOpenBackup = { showBackup = true },
+            onOpenSettings = {
+              settingsCloseRequested = false
+              showSettings = true
+            },
+            onOpenRemoteSetup = actions::openRemoteSetup,
+            remoteTargetName = uiState.remoteTargetName,
+            remoteTargetAddress = uiState.remoteTargetAddress,
+            onRemoteDisconnect = actions::exitRemoteControl,
+          )
+    }
+
     AnimatedVisibility(
       visible = showSettings,
       enter = fadeIn(tween(durationMillis = 180)) +
@@ -1766,6 +1771,7 @@ private fun MainShell(
         RootSettingsScreen(
           appUpdate = appUpdate,
           actions = actions,
+          showBackButton = false,
           loading = !settingsContentReady,
           onDismiss = { dismissSettings() },
           onDeleteModule = { dismissSettings { showDeleteModule = true } },
@@ -2199,19 +2205,41 @@ private fun FloatingTopBarCard(
   remoteTargetName: String,
   remoteTargetAddress: String,
   onRemoteDisconnect: () -> Unit,
+  settingsActive: Boolean = false,
 ) {
-  val shape = RoundedCornerShape(24.dp)
-  Box(
+  val corner by animateDpAsState(
+    targetValue = if (settingsActive) 26.dp else 24.dp,
+    animationSpec = spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow),
+    label = "settings_card_corner",
+  )
+  val shape = RoundedCornerShape(corner)
+  val contentAlpha by animateFloatAsState(
+    targetValue = if (settingsActive) 0f else 1f,
+    animationSpec = tween(durationMillis = 180),
+    label = "settings_card_content",
+  )
+  val backAlpha by animateFloatAsState(
+    targetValue = if (settingsActive) 1f else 0f,
+    animationSpec = tween(durationMillis = 220),
+    label = "settings_card_back",
+  )
+  BoxWithConstraints(
     modifier = modifier
       .fillMaxWidth()
       .statusBarsPadding()
       .padding(horizontal = 12.dp)
       .padding(top = 8.dp),
+    contentAlignment = Alignment.TopStart,
   ) {
+    val cardWidth by animateDpAsState(
+      targetValue = if (settingsActive) 58.dp else maxWidth,
+      animationSpec = spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow),
+      label = "settings_card_width",
+    )
     Surface(
       modifier = Modifier
-        .fillMaxWidth()
-        .height(if (REMOTE_CONTROL_FEATURE_ENABLED && remoteTargetName.isNotBlank()) 88.dp else 58.dp)
+        .width(cardWidth)
+        .height(if (settingsActive) 58.dp else if (REMOTE_CONTROL_FEATURE_ENABLED && remoteTargetName.isNotBlank()) 88.dp else 58.dp)
         .clip(shape),
       shape = shape,
       color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
@@ -2227,13 +2255,16 @@ private fun FloatingTopBarCard(
         Row(
           modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp),
+            .height(58.dp)
+            .graphicsLayer { alpha = contentAlpha },
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          if (canGoBack) {
+          if (canGoBack || settingsActive) {
             IconButton(
+              modifier = Modifier
+                .size(46.dp)
+                .graphicsLayer { alpha = if (settingsActive) backAlpha else 1f },
               onClick = onBack,
-              modifier = Modifier.size(46.dp),
             ) {
               Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
             }
@@ -2547,6 +2578,7 @@ private fun LandscapeNavIcon(
 private fun RootSettingsScreen(
   appUpdate: AppUpdateUiState,
   actions: ZdtdActions,
+  showBackButton: Boolean,
   loading: Boolean,
   onDismiss: () -> Unit,
   onDeleteModule: () -> Unit,
@@ -2615,6 +2647,7 @@ private fun RootSettingsScreen(
   SettingsScreen(
     onDismiss = onDismiss,
     loading = loading,
+    showBackButton = showBackButton,
   ) {
     content()
   }

@@ -1064,15 +1064,26 @@ private fun SeasonalAppTitle(
         overflow = TextOverflow.Ellipsis,
       )
       if (isHome && christmasActive) {
-        Image(
-          painter = painterResource(R.drawable.ic_christmas_hat),
-          contentDescription = null,
+        // The hat has white trim and a white pompom. On the light theme those parts
+        // disappear against the white top card, so add a small dimming disc behind it.
+        val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
+        Box(
           modifier = Modifier
             .align(Alignment.TopEnd)
             .offset(x = 8.dp, y = if (compact) (-8).dp else (-9).dp)
-            .size(if (compact) 24.dp else 27.dp)
-            .graphicsLayer { rotationZ = -11f },
-        )
+            .size(if (compact) 30.dp else 33.dp)
+            .clip(CircleShape)
+            .background(if (lightTheme) Color.Black.copy(alpha = 0.12f) else Color.Transparent),
+          contentAlignment = Alignment.Center,
+        ) {
+          Image(
+            painter = painterResource(R.drawable.ic_christmas_hat),
+            contentDescription = null,
+            modifier = Modifier
+              .size(if (compact) 24.dp else 27.dp)
+              .graphicsLayer { rotationZ = -11f },
+          )
+        }
       }
     }
   }
@@ -1527,6 +1538,13 @@ private fun MainShell(
     animationSpec = tween(durationMillis = 560, easing = FastOutSlowInEasing),
     label = "main_shell_slide_from_right",
   )
+  // Settings used to zero this layer in a single frame, which made the switch jerk.
+  // Fade it with the same rhythm as the Settings surface instead.
+  val shellAlpha by animateFloatAsState(
+    targetValue = if (showSettings) 0f else mainContentAlpha,
+    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+    label = "main_shell_settings_alpha",
+  )
   val density = LocalDensity.current
   val mainContentSlidePx = with(density) { mainContentSlide.toPx() }
   Box(
@@ -1546,7 +1564,7 @@ private fun MainShell(
       modifier = Modifier
         .fillMaxSize()
         .graphicsLayer {
-          alpha = if (showSettings) 0f else mainContentAlpha
+          alpha = shellAlpha
           translationX = mainContentSlidePx
         }
         .focusProperties { canFocus = !showSettings }
@@ -1758,10 +1776,10 @@ private fun MainShell(
 
     AnimatedVisibility(
       visible = showSettings,
-      enter = fadeIn(tween(durationMillis = 180)) +
-        slideInHorizontally(tween(durationMillis = 240)) { it / 8 },
-      exit = fadeOut(tween(durationMillis = 140)) +
-        slideOutHorizontally(tween(durationMillis = 180)) { it / 8 },
+      enter = fadeIn(tween(durationMillis = 200, easing = FastOutSlowInEasing)) +
+        slideInHorizontally(tween(durationMillis = 220, easing = FastOutSlowInEasing)) { it / 10 },
+      exit = fadeOut(tween(durationMillis = 180, easing = FastOutSlowInEasing)) +
+        slideOutHorizontally(tween(durationMillis = 200, easing = FastOutSlowInEasing)) { it / 10 },
     ) {
       Box(
         modifier = Modifier
@@ -2207,21 +2225,29 @@ private fun FloatingTopBarCard(
   onRemoteDisconnect: () -> Unit,
   settingsActive: Boolean = false,
 ) {
+  // Settings uses the same deliberate, slightly delayed collapse rhythm as the
+  // three top-bar buttons in a program profile: slow tween, no snap, full round.
+  val cardAnimation = tween<Dp>(durationMillis = 520, easing = FastOutSlowInEasing)
   val corner by animateDpAsState(
-    targetValue = if (settingsActive) 26.dp else 24.dp,
-    animationSpec = spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow),
+    targetValue = if (settingsActive) 29.dp else 24.dp,
+    animationSpec = cardAnimation,
     label = "settings_card_corner",
   )
   val shape = RoundedCornerShape(corner)
   val contentAlpha by animateFloatAsState(
     targetValue = if (settingsActive) 0f else 1f,
-    animationSpec = tween(durationMillis = 180),
+    animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
     label = "settings_card_content",
   )
   val backAlpha by animateFloatAsState(
     targetValue = if (settingsActive) 1f else 0f,
-    animationSpec = tween(durationMillis = 220),
+    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
     label = "settings_card_back",
+  )
+  val titleScale by animateFloatAsState(
+    targetValue = if (settingsActive) 0f else 1f,
+    animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),
+    label = "settings_card_title_scale",
   )
   BoxWithConstraints(
     modifier = modifier
@@ -2233,13 +2259,18 @@ private fun FloatingTopBarCard(
   ) {
     val cardWidth by animateDpAsState(
       targetValue = if (settingsActive) 58.dp else maxWidth,
-      animationSpec = spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow),
+      animationSpec = cardAnimation,
       label = "settings_card_width",
+    )
+    val cardHeight by animateDpAsState(
+      targetValue = if (settingsActive || !(REMOTE_CONTROL_FEATURE_ENABLED && remoteTargetName.isNotBlank())) 58.dp else 88.dp,
+      animationSpec = cardAnimation,
+      label = "settings_card_height",
     )
     Surface(
       modifier = Modifier
         .width(cardWidth)
-        .height(if (settingsActive) 58.dp else if (REMOTE_CONTROL_FEATURE_ENABLED && remoteTargetName.isNotBlank()) 88.dp else 58.dp)
+        .height(cardHeight)
         .clip(shape),
       shape = shape,
       color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
@@ -2255,15 +2286,14 @@ private fun FloatingTopBarCard(
         Row(
           modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp)
-            .graphicsLayer { alpha = contentAlpha },
+            .height(58.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           if (canGoBack || settingsActive) {
             IconButton(
               modifier = Modifier
                 .size(46.dp)
-                .graphicsLayer { alpha = if (settingsActive) backAlpha else 1f },
+                .alpha(if (settingsActive) backAlpha else 1f),
               onClick = onBack,
             ) {
               Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
@@ -2274,7 +2304,13 @@ private fun FloatingTopBarCard(
             isHome = isHome,
             onTitleClick = onTitleClick,
             compact = true,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+              .weight(1f)
+              .graphicsLayer {
+                alpha = contentAlpha
+                scaleX = titleScale
+                transformOrigin = TransformOrigin(0f, 0.5f)
+              },
           )
           TopBarActionCluster(
             programLogTarget = programLogTarget,
@@ -2282,6 +2318,7 @@ private fun FloatingTopBarCard(
             onOpenBackup = onOpenBackup,
             onOpenSettings = onOpenSettings,
             onOpenRemoteSetup = onOpenRemoteSetup,
+            forceCollapse = settingsActive,
           )
         }
         RemoteTargetTopLine(
@@ -2770,12 +2807,25 @@ private fun TopBarActionCluster(
   onOpenBackup: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenRemoteSetup: () -> Unit,
+  forceCollapse: Boolean = false,
 ) {
   val target = programLogTarget
   var collapsed by remember { mutableStateOf(false) }
+  var settingsCollapsed by remember { mutableStateOf(false) }
   val glow = remember { Animatable(0f) }
   val inProgramMode = target != null
-  val showFullActions = !inProgramMode || !collapsed
+
+  // Mirror the profile transition: let the buttons be seen first, then collapse.
+  LaunchedEffect(forceCollapse) {
+    if (forceCollapse) {
+      delay(200)
+      settingsCollapsed = true
+    } else {
+      settingsCollapsed = false
+    }
+  }
+
+  val showFullActions = (!inProgramMode || !collapsed) && !settingsCollapsed
 
   LaunchedEffect(target?.key) {
     if (target == null) {

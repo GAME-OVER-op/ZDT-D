@@ -267,6 +267,9 @@ interface ZdtdActions {
   fun postJsonResult(path: String, obj: JSONObject = JSONObject(), onDone: (JSONObject?) -> Unit)
   fun deleteJsonPath(path: String, onDone: (Boolean) -> Unit = {})
 
+  /** Query installed binaries for their own version strings. */
+  fun readBinaryVersions(componentId: String, onDone: (Map<String, String>) -> Unit)
+
   /** Load upstream GitHub releases for a tool, filtered for this device ABI. */
   fun loadToolReleases(componentId: String, onDone: (List<ToolReleaseUi>, String?) -> Unit)
 

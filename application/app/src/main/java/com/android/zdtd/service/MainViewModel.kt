@@ -7926,6 +7926,63 @@ private fun shQuote(s: String): String {
     return ToolReleaseCatalog.forComponent(componentId, abi)
   }
 
+  override fun readBinaryVersions(componentId: String, onDone: (Map<String, String>) -> Unit) {
+    val names = when (componentId) {
+      "sing-box-lx" -> listOf("sing-box-lx")
+      "tgwsproxy" -> listOf("tg-ws-proxy")
+      "byedpi" -> listOf("ciadpi-zdt", "ciadpi", "bye_dpi", "byedpi")
+      else -> RootBinaryComponentCatalog.find(componentId)?.binaryNames.orEmpty()
+    }
+    if (names.isEmpty()) {
+      onDone(emptyMap())
+      return
+    }
+    viewModelScope.launch {
+      val found = withContext(Dispatchers.IO) {
+        val result = LinkedHashMap<String, String>()
+        val strict = Regex("github\\s+android\\s+version\\s+(v[0-9]+(?:\\.[0-9]+){0,3})", RegexOption.IGNORE_CASE)
+        val loose = Regex("\\bv[0-9]+(?:\\.[0-9]+){1,3}\\b", RegexOption.IGNORE_CASE)
+
+        fun parse(text: String): String? {
+          strict.find(text)?.groupValues?.getOrNull(1)?.let { return it }
+          return loose.find(text)?.value?.lowercase()
+        }
+
+        fun flagsFor(name: String): List<String> = when (name) {
+          "nfqws", "nfqws2", "mihomo" -> listOf("-v", "version")
+          "mieru", "sing-box", "sing-box-lx" -> listOf("version", "-v", "--version")
+          "opera-proxy", "tg-ws-proxy" -> listOf("-version", "--version", "version")
+          "openvpn", "torproxy", "lyrebird" -> listOf("--version", "version", "-v")
+          else -> listOf("-v", "version", "--version", "-version")
+        }
+
+        for (name in names) {
+          var version: String? = null
+          for (dir in listOf("/data/adb/modules/ZDT-D/bin", "/data/adb/modules_update/ZDT-D/bin")) {
+            val path = "$dir/$name"
+            if (!root.execRootSh("test -f ${shQuote(path)}").isSuccess) continue
+            root.execRootSh("chmod 0755 ${shQuote(path)} 2>/dev/null || true")
+            for (flag in flagsFor(name)) {
+              val command = "timeout 5 ${shQuote(path)} $flag 2>&1"
+              val direct = root.execRootSh("$command || true")
+              val text = (direct.out + direct.err).joinToString("\n").trim()
+              version = parse(text)
+              if (version == null) {
+                val shellUser = root.execRootSh("su -lp 2000 -c ${shQuote(command)} || true")
+                version = parse((shellUser.out + shellUser.err).joinToString("\n").trim())
+              }
+              if (version != null) break
+            }
+            if (version != null) break
+          }
+          if (version != null) result[name] = version
+        }
+        result
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(found) }
+    }
+  }
+
   override fun loadToolReleases(componentId: String, onDone: (List<ToolReleaseUi>, String?) -> Unit) {
     val spec = toolReleaseSpec(componentId)
     if (spec == null) {

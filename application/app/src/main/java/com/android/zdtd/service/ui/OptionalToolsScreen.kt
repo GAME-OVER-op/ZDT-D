@@ -76,10 +76,29 @@ fun OptionalToolsScreen(
 ) {
   var releasesTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
   val eligibleReleases = remember { ToolReleaseCatalog.eligibleIds(ToolReleaseCatalog.currentAbi()) }
+  var binaryVersions by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
   LaunchedEffect(Unit) {
     actions.refreshOptionalTools()
   }
+
+  LaunchedEffect(components, rootComponentStates, tgWsProxyState.installed, singBoxLxState.installed) {
+    val ids = buildList {
+      add("tgwsproxy")
+      add("sing-box-lx")
+      RootBinaryComponentCatalog.moduleComponents.forEach { add(it.id) }
+    }
+    ids.forEach { id ->
+      actions.readBinaryVersions(id) { versions ->
+        if (versions.isNotEmpty()) binaryVersions = binaryVersions + (id to versions.values.joinToString(" / ") { it })
+      }
+    }
+  }
+
+  @Composable
+  fun versionText(componentId: String): String =
+    binaryVersions[componentId]?.takeIf { it.isNotBlank() }
+      ?: stringResource(R.string.tool_version_unknown)
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -94,6 +113,7 @@ fun OptionalToolsScreen(
         state = tgWsProxyState,
         onInstall = actions::installTgWsProxy,
         onRemove = actions::removeTgWsProxy,
+        binaryVersion = versionText("tgwsproxy"),
       )
     }
     item(key = "sing-box-lx") {
@@ -101,6 +121,7 @@ fun OptionalToolsScreen(
         state = singBoxLxState,
         onInstall = actions::installSingBoxLx,
         onRemove = actions::removeSingBoxLx,
+        binaryVersion = versionText("sing-box-lx"),
       )
     }
     RootBinaryComponentCatalog.moduleComponents.forEach { spec ->
@@ -113,6 +134,7 @@ fun OptionalToolsScreen(
           iconRes = programIconRes(spec.id),
           state = localState,
           installed = installed,
+          binaryVersion = versionText(spec.id),
           onInstall = { actions.installRootComponent(spec.id) },
           onRemove = { actions.removeRootComponent(spec.id) },
           onShowReleases = if (spec.id in eligibleReleases) {
@@ -148,6 +170,7 @@ private fun TgWsProxyUtilityCard(
   state: TgWsProxyComponentState,
   onInstall: () -> Unit,
   onRemove: () -> Unit,
+  binaryVersion: String,
 ) {
   OptionalBinaryUtilityCard(
     title = stringResource(R.string.tg_ws_proxy_title),
@@ -162,6 +185,7 @@ private fun TgWsProxyUtilityCard(
     isDownloading = state.stage == TgWsProxyComponentStage.DOWNLOADING,
     selectedAbi = state.selectedAbi,
     installedVersion = state.installedVersion,
+    binaryVersion = binaryVersion,
     errorText = state.errorMessage,
     onInstall = onInstall,
     onRemove = onRemove,
@@ -173,6 +197,7 @@ private fun SingBoxLxUtilityCard(
   state: SingBoxLxComponentState,
   onInstall: () -> Unit,
   onRemove: () -> Unit,
+  binaryVersion: String,
 ) {
   OptionalBinaryUtilityCard(
     title = stringResource(R.string.sing_box_lx_title),
@@ -188,6 +213,7 @@ private fun SingBoxLxUtilityCard(
     isDownloading = state.stage == SingBoxLxComponentStage.DOWNLOADING,
     selectedAbi = state.selectedAbi,
     installedVersion = state.installedVersion,
+    binaryVersion = binaryVersion,
     errorText = singBoxLxErrorText(state),
     onInstall = onInstall,
     onRemove = onRemove,
@@ -200,6 +226,7 @@ private fun GenericRootComponentCard(
   @DrawableRes iconRes: Int? = null,
   state: RootBinaryComponentState,
   installed: Boolean,
+  binaryVersion: String,
   onInstall: () -> Unit,
   onRemove: () -> Unit,
   onShowReleases: (() -> Unit)? = null,
@@ -227,6 +254,7 @@ private fun GenericRootComponentCard(
     isDownloading = state.stage == RootBinaryComponentStage.DOWNLOADING,
     selectedAbi = state.selectedAbi,
     installedVersion = state.installedVersion,
+    binaryVersion = binaryVersion,
     errorText = state.errorMessage,
     onInstall = onInstall,
     onRemove = onRemove,
@@ -249,6 +277,7 @@ private fun OptionalBinaryUtilityCard(
   isDownloading: Boolean,
   selectedAbi: String,
   installedVersion: String,
+  binaryVersion: String,
   errorText: String?,
   onInstall: () -> Unit,
   onRemove: () -> Unit,
@@ -312,6 +341,7 @@ private fun OptionalBinaryUtilityCard(
         statusText = statusText,
         selectedAbi = selectedAbi,
         installedVersion = installedVersion,
+        binaryVersion = binaryVersion,
         accentColor = accentColor,
       )
 
@@ -426,6 +456,7 @@ private fun OptionalToolStatusPill(
   statusText: String,
   selectedAbi: String,
   installedVersion: String,
+  binaryVersion: String,
   accentColor: Color,
 ) {
   Surface(
@@ -452,8 +483,13 @@ private fun OptionalToolStatusPill(
       if (selectedAbi.isNotBlank()) {
         Text("• $selectedAbi", style = MaterialTheme.typography.labelMedium)
       }
-      if (installedVersion.isNotBlank()) {
-        Text("• $installedVersion", style = MaterialTheme.typography.labelMedium)
+      if (installed) {
+        Text(
+          "• $binaryVersion",
+          style = MaterialTheme.typography.labelMedium,
+          color = if (binaryVersion == stringResource(R.string.tool_version_unknown))
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f) else accentColor,
+        )
       }
     }
   }

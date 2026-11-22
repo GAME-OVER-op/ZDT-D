@@ -70,6 +70,15 @@ struct D2sFileConfig {
     max_backend_attempts: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_connecting: Option<usize>,
+    // Present in the shipped module_template d2s.toml. D2S accepts them but the
+    // API does not expose them; keep them as compatibility fields so the strict
+    // parser does not reject an untouched template config.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hedge_stagger_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warm_tunnels: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warm_tunnel_ttl_secs: Option<u64>,
 }
 
 impl Default for D2sFileConfig {
@@ -98,6 +107,9 @@ impl Default for D2sFileConfig {
             route_timeout_ms: None,
             max_backend_attempts: None,
             max_connecting: None,
+            hedge_stagger_ms: None,
+            warm_tunnels: None,
+            warm_tunnel_ttl_secs: None,
         }
     }
 }

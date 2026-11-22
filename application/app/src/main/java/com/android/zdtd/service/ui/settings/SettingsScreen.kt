@@ -33,6 +33,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ui.rememberIsTelevision
@@ -48,6 +49,7 @@ fun SettingsScreen(
   onDismiss: () -> Unit,
   loading: Boolean,
   showBackButton: Boolean = true,
+  topContentPadding: Dp = 64.dp,
   content: @Composable () -> Unit,
 ) {
   val television = rememberIsTelevision()
@@ -67,7 +69,7 @@ fun SettingsScreen(
     Box(
       modifier = Modifier
         .fillMaxSize()
-        .padding(top = 64.dp),
+        .padding(top = topContentPadding),
     ) {
       if (loading) {
         Box(

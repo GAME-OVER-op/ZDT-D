@@ -2249,6 +2249,12 @@ private fun FloatingTopBarCard(
     animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),
     label = "settings_card_title_scale",
   )
+  // With a 58dp card and a 46dp button, 6dp on each side centers the back arrow.
+  val cardStartPadding by animateDpAsState(
+    targetValue = if (settingsActive) 6.dp else if (canGoBack) 2.dp else 16.dp,
+    animationSpec = cardAnimation,
+    label = "settings_card_start_padding",
+  )
   BoxWithConstraints(
     modifier = modifier
       .fillMaxWidth()
@@ -2281,7 +2287,7 @@ private fun FloatingTopBarCard(
       Column(
         modifier = Modifier
           .fillMaxSize()
-          .padding(start = if (canGoBack) 2.dp else 16.dp, end = 6.dp),
+          .padding(start = cardStartPadding, end = 6.dp),
       ) {
         Row(
           modifier = Modifier
@@ -2319,6 +2325,7 @@ private fun FloatingTopBarCard(
             onOpenSettings = onOpenSettings,
             onOpenRemoteSetup = onOpenRemoteSetup,
             forceCollapse = settingsActive,
+            collapseByWidth = !settingsActive,
           )
         }
         RemoteTargetTopLine(
@@ -2685,6 +2692,7 @@ private fun RootSettingsScreen(
     onDismiss = onDismiss,
     loading = loading,
     showBackButton = showBackButton,
+    topContentPadding = 0.dp,
   ) {
     content()
   }
@@ -2808,6 +2816,7 @@ private fun TopBarActionCluster(
   onOpenSettings: () -> Unit,
   onOpenRemoteSetup: () -> Unit,
   forceCollapse: Boolean = false,
+  collapseByWidth: Boolean = true,
 ) {
   val target = programLogTarget
   var collapsed by remember { mutableStateOf(false) }
@@ -2882,18 +2891,18 @@ private fun TopBarActionCluster(
         Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs))
       }
       if (REMOTE_CONTROL_FEATURE_ENABLED) {
-        CollapsingTopBarAction(visible = showFullActions) {
+        CollapsingTopBarAction(visible = showFullActions, animateWidth = collapseByWidth) {
           IconButton(onClick = onOpenRemoteSetup) {
             Icon(Icons.Filled.Sync, contentDescription = "Remote")
           }
         }
       }
-      CollapsingTopBarAction(visible = showFullActions) {
+      CollapsingTopBarAction(visible = showFullActions, animateWidth = collapseByWidth) {
         IconButton(onClick = onOpenBackup) {
           Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup))
         }
       }
-      CollapsingTopBarAction(visible = showFullActions) {
+      CollapsingTopBarAction(visible = showFullActions, animateWidth = collapseByWidth) {
         IconButton(onClick = onOpenSettings) {
           Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings))
         }
@@ -2905,10 +2914,13 @@ private fun TopBarActionCluster(
 @Composable
 private fun CollapsingTopBarAction(
   visible: Boolean,
+  animateWidth: Boolean = true,
   content: @Composable () -> Unit,
 ) {
+  // Settings shrinks the card itself, so keeping the button width fixed lets the
+  // clipped card perform the collapse without two competing layout animations.
   val width by animateDpAsState(
-    targetValue = if (visible) 48.dp else 0.dp,
+    targetValue = if (!animateWidth || visible) 48.dp else 0.dp,
     animationSpec = spring(
       dampingRatio = Spring.DampingRatioNoBouncy,
       stiffness = Spring.StiffnessMediumLow,
@@ -2917,7 +2929,10 @@ private fun CollapsingTopBarAction(
   )
   val alpha by animateFloatAsState(
     targetValue = if (visible) 1f else 0f,
-    animationSpec = tween(durationMillis = if (visible) 220 else 170, easing = FastOutSlowInEasing),
+    animationSpec = tween(
+      durationMillis = if (visible) 220 else if (animateWidth) 170 else 360,
+      easing = FastOutSlowInEasing,
+    ),
     label = "topBarActionAlpha",
   )
 

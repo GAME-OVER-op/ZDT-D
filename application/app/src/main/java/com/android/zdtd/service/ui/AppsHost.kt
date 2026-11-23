@@ -33,6 +33,7 @@ import com.android.zdtd.service.R
 import com.android.zdtd.service.UiState
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.components.RootBinaryComponentCatalog
+import com.android.zdtd.service.ui.vps.UrnetworkUiCallbacks
 import com.android.zdtd.service.ui.vps.VpsProfileScreen
 import com.android.zdtd.service.ui.vps.VpsServerDetailsScreen
 import com.android.zdtd.service.ui.vps.VpsServersScreen
@@ -75,6 +76,7 @@ fun AppsHost(
   val context = LocalContext.current
   val application = context.applicationContext as android.app.Application
   val vpsViewModel: VpsViewModel = viewModel(factory = remember(application) { VpsViewModelFactory(application) })
+  val urnetworkCallbacks = remember(vpsViewModel) { UrnetworkUiCallbacks.from(vpsViewModel) }
 
   val programs by remember(uiStateFlow) {
     uiStateFlow.map { it.programs }.distinctUntilChanged()
@@ -217,6 +219,7 @@ fun AppsHost(
         onOpenTerminal = { onOpenVpsTerminal(r.serverId) },
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
+        urnetworkCallbacks = urnetworkCallbacks,
       )
       is AppsRoute.VpsTerminal -> VpsTerminalScreen(
         serverId = r.serverId,
@@ -236,6 +239,7 @@ fun AppsHost(
             onOpenProfile = { onOpenVpsProfile(r.serverId, r.serviceId, it) },
             topContentPadding = topContentPadding,
             bottomContentPadding = bottomContentPadding,
+            urnetworkCallbacks = urnetworkCallbacks,
           )
         }
       }

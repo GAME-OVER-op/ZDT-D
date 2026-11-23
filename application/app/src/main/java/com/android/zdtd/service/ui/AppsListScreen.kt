@@ -955,6 +955,7 @@ internal fun programIconRes(id: String): Int? {
     "sing-box" -> R.drawable.ic_tool_sing_box
     "sing-box-lx" -> R.drawable.ic_tool_sing_box
     "hysteria2" -> R.drawable.ic_tool_hysteria2
+    "urnetwork" -> R.drawable.ic_tool_urnetwork
     else -> null
   }
 }

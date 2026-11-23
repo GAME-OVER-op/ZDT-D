@@ -2736,4 +2736,38 @@ APatch: 10700+</string>
     <string name="component_install_required_action">Установить</string>
     <string name="optional_component_generic_desc">Установка, обновление или удаление инструмента без переустановки модуля и перезагрузки.</string>
 
+
+    <string name="vps_service_urnetwork">URnetwork</string>
+    <string name="vps_service_urnetwork_desc">Распределённая сеть: раздаёт интернет сервера другим участникам и направляет трафик сервера через URnetwork.</string>
+    <string name="urnetwork_setup_email_title">Учётная запись URnetwork</string>
+    <string name="urnetwork_setup_email_body">Для работы URnetwork нужна авторизация по электронной почте. Введите адрес, к которому привязан ваш аккаунт URnetwork. Например: name@example.com</string>
+    <string name="urnetwork_setup_email_hint">Адрес электронной почты</string>
+    <string name="urnetwork_setup_email_example">Например: name@example.com</string>
+    <string name="urnetwork_setup_email_send">Отправить код</string>
+    <string name="urnetwork_setup_code_title">Код подтверждения</string>
+    <string name="urnetwork_setup_code_body">Мы запросили код подтверждения для входа в URnetwork. Откройте письмо и введите полученный код.</string>
+    <string name="urnetwork_setup_code_hint">Код подтверждения</string>
+    <string name="urnetwork_setup_code_verify">Подтвердить</string>
+    <string name="urnetwork_setup_code_resend">Запросить код ещё раз</string>
+    <string name="urnetwork_setup_share_title">Раздача интернета</string>
+    <string name="urnetwork_setup_share_body">Использовать этот сервер для раздачи интернета другим участникам сети URnetwork? Это включит режим provider и может увеличить расход трафика.</string>
+    <string name="urnetwork_setup_share_yes">Да, раздавать</string>
+    <string name="urnetwork_setup_share_no">Нет, только подключение</string>
+    <string name="urnetwork_setup_routing_title">Маршрутизация трафика</string>
+    <string name="urnetwork_setup_routing_body">Настроить весь исходящий трафик сервера через URnetwork? SSH-подключение и служебные адреса останутся доступными напрямую.</string>
+    <string name="urnetwork_setup_routing_yes">Да, перенаправить</string>
+    <string name="urnetwork_setup_routing_no">Нет, оставить как есть</string>
+    <string name="urnetwork_setup_installing">Установка и настройка URnetwork...</string>
+    <string name="urnetwork_setup_done">URnetwork настроен</string>
+    <string name="urnetwork_settings_title">Настройки URnetwork</string>
+    <string name="urnetwork_settings_exit">Выход через URnetwork: %1$s</string>
+    <string name="urnetwork_settings_exit_connected">подключён</string>
+    <string name="urnetwork_settings_exit_disconnected">отключён</string>
+    <string name="urnetwork_settings_share">Раздача интернета: %1$s</string>
+    <string name="urnetwork_settings_check">Проверить подключение</string>
+    <string name="urnetwork_settings_disable_routing">Отключить маршрутизацию</string>
+    <string name="urnetwork_settings_enable_routing">Включить маршрутизацию</string>
+    <string name="urnetwork_settings_country">Страна: %1$s</string>
+    <string name="urnetwork_settings_address">Адрес: %1$s</string>
+    <string name="urnetwork_error_prefix">Ошибка: %1$s</string>
 </resources>

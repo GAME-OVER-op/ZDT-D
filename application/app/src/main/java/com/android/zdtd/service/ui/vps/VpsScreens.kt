@@ -140,7 +140,9 @@ import com.android.zdtd.service.vps.VpsServer
 import com.android.zdtd.service.vps.VpsServiceKind
 import com.android.zdtd.service.vps.VpsServiceProfile
 import com.android.zdtd.service.vps.VpsServiceState
+import com.android.zdtd.service.vps.UrnetworkSetupUiState
 import com.android.zdtd.service.vps.VpsSshAuth
+import com.android.zdtd.service.vps.VpsUrnetworkSetupStep
 import com.android.zdtd.service.vps.VpsViewModel
 import java.io.File
 import java.net.URLEncoder
@@ -272,12 +274,14 @@ fun VpsServerDetailsScreen(
   onOpenTerminal: () -> Unit,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
+  urnetworkCallbacks: UrnetworkUiCallbacks,
 ) {
   val server = viewModel.server(serverId)
   val metrics by viewModel.metrics.collectAsState()
   val services by viewModel.serviceStates.collectAsState()
   val serviceLoads by viewModel.serviceLoads.collectAsState()
   val operation by viewModel.operation.collectAsState()
+  val urnetworkSetup by viewModel.urnetworkSetup.collectAsState()
   var removeTarget by remember { mutableStateOf<VpsServiceKind?>(null) }
   var variantTarget by remember { mutableStateOf<VpsServiceKind?>(null) }
   var logs by remember { mutableStateOf<String?>(null) }
@@ -353,6 +357,19 @@ fun VpsServerDetailsScreen(
     )
   }
 
+  if (urnetworkSetup.step != VpsUrnetworkSetupStep.NONE) {
+    UrnetworkSetupDialog(
+      state = urnetworkSetup,
+      onEmailChange = urnetworkCallbacks.setEmail,
+      onSendCode = urnetworkCallbacks.sendCode,
+      onCodeChange = urnetworkCallbacks.setCode,
+      onVerify = urnetworkCallbacks.verifyCode,
+      onShare = urnetworkCallbacks.setShare,
+      onRouting = urnetworkCallbacks.chooseRouting,
+      onDismiss = urnetworkCallbacks.dismissSetup,
+    )
+  }
+
   if (server == null) {
     VpsEmptyState(stringResource(R.string.vps_server_not_found), "")
     return
@@ -401,8 +418,11 @@ fun VpsServerDetailsScreen(
               enabled = currentMetrics.reachability == VpsReachability.ONLINE && currentMetrics.supportedPlatform,
               onOpen = { if (state.installed) onOpenService(kind) },
               onInstall = {
-                if (kind == VpsServiceKind.OPENVPN) variantTarget = kind
-                else viewModel.installService(serverId, kind)
+                when (kind) {
+                  VpsServiceKind.OPENVPN -> variantTarget = kind
+                  VpsServiceKind.URNETWORK -> urnetworkCallbacks.startSetup(serverId)
+                  else -> viewModel.installService(serverId, kind)
+                }
               },
               onSwitchVariant = { variantTarget = kind },
               onRestart = { viewModel.restartService(serverId, kind) },
@@ -429,6 +449,7 @@ fun VpsServiceScreen(
   onOpenProfile: (String) -> Unit,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
+  urnetworkCallbacks: UrnetworkUiCallbacks,
 ) {
   val profilesMap by viewModel.profiles.collectAsState()
   val services by viewModel.serviceStates.collectAsState()
@@ -436,6 +457,7 @@ fun VpsServiceScreen(
   val profileLoads by viewModel.profileLoads.collectAsState()
   val metricsMap by viewModel.metrics.collectAsState()
   val operation by viewModel.operation.collectAsState()
+  val urnetworkSetup by viewModel.urnetworkSetup.collectAsState()
   val profileKey = VpsViewModel.profileKey(serverId, kind)
   val profiles = profilesMap[profileKey].orEmpty()
   val state = services[serverId].orEmpty().firstOrNull { it.kind == kind }
@@ -452,6 +474,12 @@ fun VpsServiceScreen(
   LifecycleStartEffect("$serverId:${kind.wireId}") {
     viewModel.startServiceMonitoring(serverId, kind)
     onStopOrDispose { viewModel.stopServiceMonitoring(serverId, kind) }
+  }
+
+  LaunchedEffect(serverId, kind) {
+    if (kind == VpsServiceKind.URNETWORK && urnetworkSetup.exitInfo == null) {
+      urnetworkCallbacks.checkExit(serverId)
+    }
   }
 
   if (operation.shouldShowConsole()) {
@@ -499,46 +527,57 @@ fun VpsServiceScreen(
       VpsHeaderCard(
         title = serviceTitle(kind),
         description = serviceDescription(kind),
-        actionText = if (kind == VpsServiceKind.DNSCRYPT) null else stringResource(R.string.vps_create_profile),
+        actionText = if (kind == VpsServiceKind.DNSCRYPT || kind == VpsServiceKind.URNETWORK) null else stringResource(R.string.vps_create_profile),
         actionEnabled = serverOnline,
         onAction = { showCreate = true },
       )
     }
-    item {
-      VpsLoadTransition(
-        state = contentLoad,
-        loadingText = stringResource(if (kind == VpsServiceKind.DNSCRYPT) R.string.vps_loading_service else R.string.vps_loading_profiles),
-        onRetry = {
-          if (kind == VpsServiceKind.DNSCRYPT) viewModel.loadServices(serverId, silent = true)
-          else viewModel.loadProfiles(serverId, kind, silent = true)
-        },
-      ) {
-        if (kind == VpsServiceKind.DNSCRYPT) {
-          ManagedDnscryptCard(
-            state = state,
-            enabled = serverOnline,
-            onRestart = { viewModel.restartService(serverId, kind) },
-            onLogs = { viewModel.loadLogs(serverId, kind, null) { logs = it } },
-            horizontalPadding = 0.dp,
-          )
-        } else if (profiles.isEmpty()) {
-          VpsEmptyState(
-            stringResource(R.string.vps_no_profiles),
-            stringResource(R.string.vps_no_profiles_hint),
-            horizontalPadding = 0.dp,
-          )
-        } else {
-          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            profiles.forEach { profile ->
-              VpsProfileCard(
-                profile = profile,
-                enabled = serverOnline,
-                onClick = { onOpenProfile(profile.id) },
-                onRestart = { viewModel.restartService(serverId, kind, profile.id) },
-                onLogs = { viewModel.loadLogs(serverId, kind, profile.id) { logs = it } },
-                onDelete = { deleteTarget = profile },
-                horizontalPadding = 0.dp,
-              )
+    if (kind == VpsServiceKind.URNETWORK) {
+      item {
+        UrnetworkSettingsCard(
+          serverId = serverId,
+          setup = urnetworkSetup,
+          enabled = serverOnline,
+          callbacks = urnetworkCallbacks,
+        )
+      }
+    } else {
+      item {
+        VpsLoadTransition(
+          state = contentLoad,
+          loadingText = stringResource(if (kind == VpsServiceKind.DNSCRYPT) R.string.vps_loading_service else R.string.vps_loading_profiles),
+          onRetry = {
+            if (kind == VpsServiceKind.DNSCRYPT) viewModel.loadServices(serverId, silent = true)
+            else viewModel.loadProfiles(serverId, kind, silent = true)
+          },
+        ) {
+          if (kind == VpsServiceKind.DNSCRYPT) {
+            ManagedDnscryptCard(
+              state = state,
+              enabled = serverOnline,
+              onRestart = { viewModel.restartService(serverId, kind) },
+              onLogs = { viewModel.loadLogs(serverId, kind, null) { logs = it } },
+              horizontalPadding = 0.dp,
+            )
+          } else if (profiles.isEmpty()) {
+            VpsEmptyState(
+              stringResource(R.string.vps_no_profiles),
+              stringResource(R.string.vps_no_profiles_hint),
+              horizontalPadding = 0.dp,
+            )
+          } else {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+              profiles.forEach { profile ->
+                VpsProfileCard(
+                  profile = profile,
+                  enabled = serverOnline,
+                  onClick = { onOpenProfile(profile.id) },
+                  onRestart = { viewModel.restartService(serverId, kind, profile.id) },
+                  onLogs = { viewModel.loadLogs(serverId, kind, profile.id) { logs = it } },
+                  onDelete = { deleteTarget = profile },
+                  horizontalPadding = 0.dp,
+                )
+              }
             }
           }
         }
@@ -722,6 +761,270 @@ fun VpsProfileScreen(
               }
             }
           }
+        }
+      }
+    }
+  }
+}
+
+/** UI actions for the URnetwork setup wizard and exit settings. */
+data class UrnetworkUiCallbacks(
+  val startSetup: (String) -> Unit,
+  val setEmail: (String) -> Unit,
+  val sendCode: () -> Unit,
+  val setCode: (String) -> Unit,
+  val verifyCode: () -> Unit,
+  val setShare: (Boolean) -> Unit,
+  val chooseRouting: (Boolean) -> Unit,
+  val dismissSetup: () -> Unit,
+  val checkExit: (String) -> Unit,
+  val setRouting: (String, Boolean) -> Unit,
+) {
+  companion object {
+    fun from(viewModel: VpsViewModel): UrnetworkUiCallbacks = UrnetworkUiCallbacks(
+      startSetup = { serverId -> viewModel.startUrnetworkSetup(serverId) },
+      setEmail = { email -> viewModel.setUrnetworkEmail(email) },
+      sendCode = { viewModel.sendUrnetworkCode() },
+      setCode = { code -> viewModel.setUrnetworkCode(code) },
+      verifyCode = { viewModel.verifyUrnetworkCode() },
+      setShare = { share -> viewModel.setUrnetworkShare(share) },
+      chooseRouting = { enable -> viewModel.chooseUrnetworkRouting(enable) },
+      dismissSetup = { viewModel.dismissUrnetworkSetup() },
+      checkExit = { serverId -> viewModel.checkUrnetworkExit(serverId) },
+      setRouting = { serverId, enable -> viewModel.setUrnetworkRouting(serverId, enable) },
+    )
+  }
+}
+
+@Composable
+fun UrnetworkSetupDialog(
+  state: UrnetworkSetupUiState,
+  onEmailChange: (String) -> Unit,
+  onSendCode: () -> Unit,
+  onCodeChange: (String) -> Unit,
+  onVerify: () -> Unit,
+  onShare: (Boolean) -> Unit,
+  onRouting: (Boolean) -> Unit,
+  onDismiss: () -> Unit,
+) {
+  val step = state.step
+  val busy = state.busy
+  val title = when (step) {
+    VpsUrnetworkSetupStep.EMAIL -> stringResource(R.string.urnetwork_setup_email_title)
+    VpsUrnetworkSetupStep.CODE -> stringResource(R.string.urnetwork_setup_code_title)
+    VpsUrnetworkSetupStep.SHARE -> stringResource(R.string.urnetwork_setup_share_title)
+    VpsUrnetworkSetupStep.ROUTING -> stringResource(R.string.urnetwork_setup_routing_title)
+    VpsUrnetworkSetupStep.DONE -> stringResource(R.string.urnetwork_setup_done)
+    else -> stringResource(R.string.vps_service_urnetwork)
+  }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    icon = { Icon(painter = painterResource(R.drawable.ic_tool_urnetwork), contentDescription = null) },
+    title = { Text(title) },
+    text = {
+      Column(
+        modifier = Modifier
+          .heightIn(max = 460.dp)
+          .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        when (step) {
+          VpsUrnetworkSetupStep.EMAIL -> {
+            Text(stringResource(R.string.urnetwork_setup_email_body), style = MaterialTheme.typography.bodyMedium)
+            OutlinedTextField(
+              value = state.email.orEmpty(),
+              onValueChange = onEmailChange,
+              label = { Text(stringResource(R.string.urnetwork_setup_email_hint)) },
+              singleLine = true,
+              enabled = !busy,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+              modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+              stringResource(R.string.urnetwork_setup_email_example),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+            )
+          }
+          VpsUrnetworkSetupStep.CODE -> {
+            Text(stringResource(R.string.urnetwork_setup_code_body), style = MaterialTheme.typography.bodyMedium)
+            OutlinedTextField(
+              value = state.code.orEmpty(),
+              onValueChange = onCodeChange,
+              label = { Text(stringResource(R.string.urnetwork_setup_code_hint)) },
+              singleLine = true,
+              enabled = !busy,
+              modifier = Modifier.fillMaxWidth(),
+            )
+            TextButton(enabled = !busy, onClick = onSendCode) {
+              Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(17.dp))
+              Spacer(Modifier.width(6.dp))
+              Text(stringResource(R.string.urnetwork_setup_code_resend))
+            }
+          }
+          VpsUrnetworkSetupStep.SHARE -> Text(stringResource(R.string.urnetwork_setup_share_body), style = MaterialTheme.typography.bodyMedium)
+          VpsUrnetworkSetupStep.ROUTING -> Text(stringResource(R.string.urnetwork_setup_routing_body), style = MaterialTheme.typography.bodyMedium)
+          VpsUrnetworkSetupStep.INSTALL, VpsUrnetworkSetupStep.DONE -> {
+            if (busy) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(10.dp))
+                Text(stringResource(R.string.urnetwork_setup_installing))
+              }
+            } else {
+              Text(
+                stringResource(if (step == VpsUrnetworkSetupStep.DONE) R.string.urnetwork_setup_done else R.string.urnetwork_setup_installing),
+                style = MaterialTheme.typography.bodyMedium,
+              )
+            }
+          }
+        }
+        state.info?.takeIf { it.isNotBlank() }?.let { info ->
+          Text(info, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        state.error?.takeIf { it.isNotBlank() }?.let { error ->
+          Text(
+            stringResource(R.string.urnetwork_error_prefix, error),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+          )
+        }
+      }
+    },
+    confirmButton = {
+      when (step) {
+        VpsUrnetworkSetupStep.EMAIL -> Button(
+          enabled = !busy && state.email.orEmpty().isNotBlank(),
+          onClick = onSendCode,
+        ) {
+          if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+          else Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.urnetwork_setup_email_send))
+        }
+        VpsUrnetworkSetupStep.CODE -> Button(
+          enabled = !busy && state.code.orEmpty().isNotBlank(),
+          onClick = onVerify,
+        ) {
+          if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+          else Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.urnetwork_setup_code_verify))
+        }
+        VpsUrnetworkSetupStep.SHARE -> Button(enabled = !busy, onClick = { onShare(true) }) {
+          Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.urnetwork_setup_share_yes))
+        }
+        VpsUrnetworkSetupStep.ROUTING -> Button(enabled = !busy, onClick = { onRouting(true) }) {
+          Icon(Icons.Outlined.Router, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.urnetwork_setup_routing_yes))
+        }
+        else -> TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+      }
+    },
+    dismissButton = {
+      when (step) {
+        VpsUrnetworkSetupStep.EMAIL, VpsUrnetworkSetupStep.CODE -> OutlinedButton(enabled = !busy, onClick = onDismiss) {
+          Text(stringResource(R.string.action_cancel))
+        }
+        VpsUrnetworkSetupStep.SHARE -> OutlinedButton(enabled = !busy, onClick = { onShare(false) }) {
+          Text(stringResource(R.string.urnetwork_setup_share_no))
+        }
+        VpsUrnetworkSetupStep.ROUTING -> OutlinedButton(enabled = !busy, onClick = { onRouting(false) }) {
+          Text(stringResource(R.string.urnetwork_setup_routing_no))
+        }
+        else -> Unit
+      }
+    },
+  )
+}
+
+@Composable
+private fun UrnetworkSettingsCard(
+  serverId: String,
+  setup: UrnetworkSetupUiState,
+  enabled: Boolean,
+  callbacks: UrnetworkUiCallbacks,
+) {
+  val exit = setup.exitInfo
+  val connected = exit?.connected == true
+  val shareEnabled = setup.share
+  val address = exit?.ip.orEmpty()
+  val country = listOfNotNull(
+    exit?.country?.takeIf { it.isNotBlank() },
+    exit?.countryCode?.takeIf { it.isNotBlank() },
+  ).joinToString(" · ")
+
+  Card(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+    shape = RoundedCornerShape(20.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+  ) {
+    Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+          painter = painterResource(R.drawable.ic_tool_urnetwork),
+          contentDescription = null,
+          modifier = Modifier.size(24.dp),
+        )
+        Spacer(Modifier.width(9.dp))
+        Text(
+          stringResource(R.string.urnetwork_settings_title),
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.Bold,
+        )
+      }
+      Text(
+        stringResource(
+          R.string.urnetwork_settings_exit,
+          stringResource(if (connected) R.string.urnetwork_settings_exit_connected else R.string.urnetwork_settings_exit_disconnected),
+        ),
+        color = if (connected) Color(0xFF22C55E) else MaterialTheme.colorScheme.error,
+        fontWeight = FontWeight.SemiBold,
+      )
+      if (address.isNotBlank()) {
+        Text(stringResource(R.string.urnetwork_settings_address, address), style = MaterialTheme.typography.bodySmall)
+      }
+      if (country.isNotBlank()) {
+        Text(stringResource(R.string.urnetwork_settings_country, country), style = MaterialTheme.typography.bodySmall)
+      }
+      Text(
+        stringResource(
+          R.string.urnetwork_settings_share,
+          stringResource(if (shareEnabled) R.string.urnetwork_setup_share_yes else R.string.urnetwork_setup_share_no),
+        ),
+        style = MaterialTheme.typography.bodySmall,
+      )
+      setup.info?.takeIf { it.isNotBlank() }?.let { info ->
+        Text(info, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+      setup.error?.takeIf { it.isNotBlank() }?.let { error ->
+        Text(
+          stringResource(R.string.urnetwork_error_prefix, error),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.error,
+        )
+      }
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(
+          enabled = enabled,
+          onClick = { callbacks.checkExit(serverId) },
+          modifier = Modifier.weight(1f),
+        ) {
+          Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(17.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.urnetwork_settings_check))
+        }
+        FilledTonalButton(
+          enabled = enabled,
+          onClick = { callbacks.setRouting(serverId, !connected) },
+          modifier = Modifier.weight(1f),
+        ) {
+          Text(stringResource(if (connected) R.string.urnetwork_settings_disable_routing else R.string.urnetwork_settings_enable_routing))
         }
       }
     }
@@ -1990,6 +2293,7 @@ private fun ServiceIcon(kind: VpsServiceKind, accent: Color) {
     VpsServiceKind.XRAY -> R.drawable.ic_tool_sing_box
     VpsServiceKind.HYSTERIA2 -> R.drawable.ic_tool_hysteria2
     VpsServiceKind.WIREPROXY -> R.drawable.ic_tool_wireproxy
+    VpsServiceKind.URNETWORK -> R.drawable.ic_tool_urnetwork
     VpsServiceKind.DNSCRYPT -> null
   }
   Surface(modifier = Modifier.size(54.dp), shape = CircleShape, color = accent.copy(alpha = 0.13f), contentColor = accent, border = BorderStroke(1.dp, accent.copy(alpha = 0.32f))) {
@@ -2007,6 +2311,7 @@ private fun serviceTitle(kind: VpsServiceKind): String = when (kind) {
   VpsServiceKind.XRAY -> stringResource(R.string.vps_service_xray)
   VpsServiceKind.HYSTERIA2 -> stringResource(R.string.vps_service_hysteria2)
   VpsServiceKind.WIREPROXY -> stringResource(R.string.vps_service_wireproxy)
+  VpsServiceKind.URNETWORK -> stringResource(R.string.vps_service_urnetwork)
 }
 
 @Composable
@@ -2016,6 +2321,7 @@ private fun serviceDescription(kind: VpsServiceKind): String = when (kind) {
   VpsServiceKind.XRAY -> stringResource(R.string.vps_service_xray_desc)
   VpsServiceKind.HYSTERIA2 -> stringResource(R.string.vps_service_hysteria2_desc)
   VpsServiceKind.WIREPROXY -> stringResource(R.string.vps_service_wireproxy_desc)
+  VpsServiceKind.URNETWORK -> stringResource(R.string.vps_service_urnetwork_desc)
 }
 
 @Composable

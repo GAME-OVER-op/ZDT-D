@@ -19,7 +19,8 @@ enum class VpsServiceKind(val wireId: String) {
   OPENVPN("openvpn"),
   XRAY("xray"),
   HYSTERIA2("hysteria2"),
-  WIREPROXY("wireproxy");
+  WIREPROXY("wireproxy"),
+  URNETWORK("urnetwork");
 
   companion object {
     fun fromWireId(value: String): VpsServiceKind? = entries.firstOrNull { it.wireId == value }
@@ -171,4 +172,26 @@ data class VpsOperationState(
   val rolledBack: Boolean = false,
   val startedAt: Long = 0L,
   val finishedAt: Long = 0L,
+)
+
+data class VpsUrnetworkExitInfo(
+  val connected: Boolean,
+  val ip: String = "",
+  val country: String = "",
+  val countryCode: String = "",
+)
+
+enum class VpsUrnetworkSetupStep { NONE, EMAIL, CODE, SHARE, INSTALL, ROUTING, DONE }
+
+data class UrnetworkSetupUiState(
+  val step: VpsUrnetworkSetupStep = NONE,
+  val serverId: String? = null,
+  val email: String = "",
+  val code: String = "",
+  val jwt: String = "",
+  val share: Boolean = false,
+  val busy: Boolean = false,
+  val error: String? = null,
+  val info: String? = null,
+  val exitInfo: VpsUrnetworkExitInfo? = null,
 )

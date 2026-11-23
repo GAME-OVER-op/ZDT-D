@@ -158,6 +158,7 @@ import com.android.zdtd.service.FullAppUpgradeState
 import com.android.zdtd.service.FullAppUpgradeStatus
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ui.settings.SettingsScreen
+import com.android.zdtd.service.ui.vps.UrnetworkUiCallbacks
 import com.android.zdtd.service.ui.vps.VpsProfileScreen
 import com.android.zdtd.service.ui.vps.VpsServerDetailsScreen
 import com.android.zdtd.service.ui.vps.VpsServersScreen
@@ -223,6 +224,7 @@ fun NonRootApp(
 ) {
   val toolsNavFocusRequester = remember { FocusRequester() }
   val toolsEntryFocusRequester = remember { FocusRequester() }
+  val urnetworkCallbacks = remember(vpsViewModel) { UrnetworkUiCallbacks.from(vpsViewModel) }
   val context = LocalContext.current
   val nonRootLogsDir = remember(context) { NonRootRuntimeStore(context.applicationContext).logsDir.absolutePath }
   var tab by remember { mutableStateOf(Tab.HOME) }
@@ -414,6 +416,7 @@ fun NonRootApp(
           onOpenTerminal = { showVpsTerminal = true },
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomInset + 16.dp,
+          urnetworkCallbacks = urnetworkCallbacks,
         )
         page.startsWith("vps-terminal:") -> VpsTerminalScreen(
           serverId = vpsServerId.orEmpty(),
@@ -428,6 +431,7 @@ fun NonRootApp(
           onOpenProfile = { vpsProfileId = it },
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomInset + 16.dp,
+          urnetworkCallbacks = urnetworkCallbacks,
         )
         page.startsWith("vps-profile:") -> VpsProfileScreen(
           serverId = vpsServerId.orEmpty(),

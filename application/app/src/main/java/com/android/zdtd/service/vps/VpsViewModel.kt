@@ -27,6 +27,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
   private val store = VpsSecureStore(application)
   private val ssh = VpsSshClient()
   private val controller = VpsRemoteController(application, ssh)
+  private val authRepository = UrnetworkAuthRepository()
   private val root = RootConfigManager(application)
 
   private val _servers = MutableStateFlow(store.loadServers())
@@ -62,6 +63,9 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
 
   private val _configResult = MutableStateFlow<VpsConfigResult?>(null)
   val configResult: StateFlow<VpsConfigResult?> = _configResult.asStateFlow()
+
+  private val _urnetworkSetup = MutableStateFlow(UrnetworkSetupUiState())
+  val urnetworkSetup: StateFlow<UrnetworkSetupUiState> = _urnetworkSetup.asStateFlow()
 
   private val monitorJobs = ConcurrentHashMap<String, Job>()
   private var lastServerStatePersistAt = 0L
@@ -252,12 +256,163 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
-  fun installService(serverId: String, kind: VpsServiceKind, variant: String = "normal") {
+  fun installService(
+    serverId: String,
+    kind: VpsServiceKind,
+    variant: String = "normal",
+    jwt: String? = null,
+    onSuccess: () -> Unit = {},
+    onFailure: (String) -> Unit = {},
+  ) {
     val server = server(serverId) ?: return
     runRemoteOperation(
       title = "Installing ${kind.wireId}",
-      block = { onLine -> controller.install(server, kind, variant, onLine) },
-      onSuccess = { loadServices(serverId) },
+      block = { onLine -> controller.install(server, kind, variant, onLine, jwt) },
+      onSuccess = {
+        loadServices(serverId)
+        onSuccess()
+      },
+      onFailure = onFailure,
+    )
+  }
+
+  /** Open the guided URnetwork setup for a server. */
+  fun startUrnetworkSetup(serverId: String) {
+    _urnetworkSetup.value = UrnetworkSetupUiState(
+      step = VpsUrnetworkSetupStep.EMAIL,
+      serverId = serverId,
+    )
+  }
+
+  fun setUrnetworkEmail(email: String) {
+    _urnetworkSetup.update { it.copy(email = email, error = null) }
+  }
+
+  fun sendUrnetworkCode() {
+    val current = _urnetworkSetup.value
+    if (current.busy) return
+    val email = current.email.trim()
+    if (email.isBlank()) {
+      _urnetworkSetup.update { it.copy(error = "Введите e-mail") }
+      return
+    }
+    _urnetworkSetup.update { it.copy(busy = true, error = null, info = null) }
+    viewModelScope.launch {
+      authRepository.sendCode(email)
+        .onSuccess {
+          _urnetworkSetup.update {
+            it.copy(step = VpsUrnetworkSetupStep.CODE, busy = false, info = "Код отправлен. Проверьте почту.")
+          }
+        }
+        .onFailure { error ->
+          _urnetworkSetup.update { it.copy(busy = false, error = error.message ?: "Не удалось отправить код") }
+        }
+    }
+  }
+
+  fun setUrnetworkCode(code: String) {
+    _urnetworkSetup.update { it.copy(code = code, error = null) }
+  }
+
+  /** Verify the code; the JWT lives only in [urnetworkSetup] and is never persisted. */
+  fun verifyUrnetworkCode() {
+    val current = _urnetworkSetup.value
+    if (current.busy) return
+    val code = current.code.trim()
+    if (code.isBlank()) {
+      _urnetworkSetup.update { it.copy(error = "Введите код из письма") }
+      return
+    }
+    _urnetworkSetup.update { it.copy(busy = true, error = null) }
+    viewModelScope.launch {
+      authRepository.verifyCode(current.email.trim(), code)
+        .onSuccess { jwt ->
+          _urnetworkSetup.update {
+            it.copy(jwt = jwt, step = VpsUrnetworkSetupStep.SHARE, busy = false, error = null)
+          }
+        }
+        .onFailure { error ->
+          _urnetworkSetup.update { it.copy(busy = false, error = error.message ?: "Не удалось подтвердить код") }
+        }
+    }
+  }
+
+  fun setUrnetworkShare(share: Boolean) {
+    if (_operation.value.running) return
+    val current = _urnetworkSetup.value
+    val serverId = current.serverId ?: return
+    _urnetworkSetup.update {
+      it.copy(step = VpsUrnetworkSetupStep.INSTALL, share = share, busy = true, error = null, info = null)
+    }
+    installService(
+      serverId = serverId,
+      kind = VpsServiceKind.URNETWORK,
+      variant = if (share) "share" else "noshare",
+      jwt = current.jwt,
+      onSuccess = {
+        _urnetworkSetup.update { it.copy(step = VpsUrnetworkSetupStep.ROUTING, busy = false) }
+      },
+      onFailure = { message -> _urnetworkSetup.update { it.copy(busy = false, error = message) } },
+    )
+  }
+
+  /** Finish setup by choosing whether the server routes traffic through the exit. */
+  fun chooseUrnetworkRouting(enable: Boolean) {
+    if (_operation.value.running) return
+    val serverId = _urnetworkSetup.value.serverId ?: return
+    val server = server(serverId) ?: return
+    var exitInfo: VpsUrnetworkExitInfo? = null
+    _urnetworkSetup.update { it.copy(busy = true, error = null) }
+    runRemoteOperation(
+      title = "Configuring URnetwork routing",
+      block = { onLine ->
+        val configured = controller.configureUrnetworkExit(server, enable, onLine)
+        if (!configured.successful) return@runRemoteOperation configured
+        exitInfo = controller.checkUrnetworkExit(server, onLine)
+        configured
+      },
+      onSuccess = {
+        _urnetworkSetup.update {
+          it.copy(
+            step = VpsUrnetworkSetupStep.DONE,
+            share = enable,
+            exitInfo = exitInfo,
+            busy = false,
+            info = if (enable) "Трафик направляется через URnetwork" else "Маршрутизация через URnetwork отключена",
+          )
+        }
+        loadServices(serverId, silent = true)
+      },
+      onFailure = { message -> _urnetworkSetup.update { it.copy(busy = false, error = message) } },
+    )
+  }
+
+  fun dismissUrnetworkSetup() {
+    _urnetworkSetup.value = UrnetworkSetupUiState()
+  }
+
+  /** Refresh exit state for the service settings screen. */
+  fun checkUrnetworkExit(serverId: String) {
+    val server = server(serverId) ?: return
+    viewModelScope.launch {
+      runCatching { controller.checkUrnetworkExit(server) }
+        .onSuccess { info -> _urnetworkSetup.update { it.copy(exitInfo = info) } }
+        .onFailure { error ->
+          _urnetworkSetup.update { it.copy(error = error.message ?: "Не удалось получить состояние URnetwork") }
+        }
+    }
+  }
+
+  /** Toggle exit routing from the service settings screen. */
+  fun setUrnetworkRouting(serverId: String, enable: Boolean) {
+    val server = server(serverId) ?: return
+    runRemoteOperation(
+      title = "Configuring URnetwork routing",
+      block = { onLine -> controller.configureUrnetworkExit(server, enable, onLine) },
+      onSuccess = {
+        checkUrnetworkExit(serverId)
+        loadServices(serverId, silent = true)
+      },
     )
   }
 
@@ -520,6 +675,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     title: String,
     block: suspend ((String) -> Unit) -> VpsCommandResult,
     onSuccess: () -> Unit = {},
+    onFailure: (String) -> Unit = {},
   ) {
     if (_operation.value.running) return
     viewModelScope.launch {
@@ -541,7 +697,9 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
           }
         }
       }.getOrElse {
-        failOperation(it.message ?: "Operation failed")
+        val message = it.message ?: "Operation failed"
+        failOperation(message)
+        onFailure(message)
         return@launch
       }
       if (result.successful) {
@@ -549,7 +707,9 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
         onSuccess()
       } else {
         val failedStage = result.output.lineSequence().firstOrNull { it.startsWith("ZDT_FAILED_STAGE=") }?.substringAfter('=')
-        failOperation(result.output.lineSequence().firstOrNull { it.startsWith("ZDT_ERROR=") }?.substringAfter('=') ?: result.output.ifBlank { "Operation failed" }, failedStage)
+        val message = result.output.lineSequence().firstOrNull { it.startsWith("ZDT_ERROR=") }?.substringAfter('=') ?: result.output.ifBlank { "Operation failed" }
+        failOperation(message, failedStage)
+        onFailure(message)
       }
     }
   }

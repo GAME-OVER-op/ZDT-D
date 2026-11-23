@@ -34,9 +34,39 @@ class VpsRemoteController(
     kind: VpsServiceKind,
     variant: String = "normal",
     onLine: (String) -> Unit,
+    jwt: String? = null,
   ): VpsCommandResult {
-    val timeout = if (kind == VpsServiceKind.OPENVPN && variant == "strong") 30 * 60_000L else 12 * 60_000L
-    return run(server, listOf("install", kind.wireId, variant), onLine = onLine, timeoutMs = timeout)
+    val timeout = when {
+      kind == VpsServiceKind.URNETWORK -> 15 * 60_000L
+      kind == VpsServiceKind.OPENVPN && variant == "strong" -> 30 * 60_000L
+      else -> 12 * 60_000L
+    }
+    val env = jwt?.takeIf { it.isNotBlank() }
+      ?.let { mapOf(URNETWORK_JWT_ENV to it) }
+      .orEmpty()
+    return run(server, listOf("install", kind.wireId, variant), onLine = onLine, timeoutMs = timeout, env = env)
+  }
+
+  /** Enable or disable routing traffic through the URnetwork exit node. */
+  suspend fun configureUrnetworkExit(
+    server: VpsServer,
+    enable: Boolean,
+    onLine: (String) -> Unit,
+  ): VpsCommandResult = run(
+    server,
+    listOf(if (enable) "enable-exit" else "disable-exit"),
+    onLine = onLine,
+    timeoutMs = 5 * 60_000L,
+  )
+
+  /** Read the current URnetwork exit state from the remote host. */
+  suspend fun checkUrnetworkExit(
+    server: VpsServer,
+    onLine: ((String) -> Unit)? = null,
+  ): VpsUrnetworkExitInfo = withContext(Dispatchers.IO) {
+    val result = run(server, listOf("check-exit"), onLine = onLine, timeoutMs = 2 * 60_000L)
+    check(result.successful) { result.output.ifBlank { "Unable to read URnetwork exit state" } }
+    parseUrnetworkExitInfo(result.output)
   }
 
   suspend fun remove(server: VpsServer, kind: VpsServiceKind, onLine: (String) -> Unit): VpsCommandResult =
@@ -194,6 +224,7 @@ class VpsRemoteController(
     args: List<String>,
     timeoutMs: Long = 120_000L,
     onLine: ((String) -> Unit)? = null,
+    env: Map<String, String> = emptyMap(),
   ): VpsCommandResult = withContext(Dispatchers.IO) {
     val upload = ssh.uploadText(server, remotePath, script)
     if (!upload.successful) return@withContext upload
@@ -201,11 +232,36 @@ class VpsRemoteController(
       append("bash ").append(VpsSshClient.shellQuote(remotePath))
       args.forEach { append(' ').append(VpsSshClient.shellQuote(it)) }
     }
+    // The console/com log shows only the sanitized command: secrets are never
+    // added to the arguments or written to the ZDT_CMD line.
     onLine?.invoke("ZDT_CMD=$command")
-    ssh.execute(server, command, timeoutMs, onLine)
+    val actualCommand = if (env.isEmpty()) command else buildString {
+      env.forEach { (name, value) ->
+        require(ENV_NAME.matches(name)) { "Invalid environment variable name" }
+        append(name).append('=').append(VpsSshClient.shellQuote(value)).append(' ')
+      }
+      append(command)
+    }
+    ssh.execute(server, actualCommand, timeoutMs, onLine)
+  }
+
+  private fun parseUrnetworkExitInfo(output: String): VpsUrnetworkExitInfo {
+    val values = output.lineSequence().mapNotNull { line ->
+      val index = line.indexOf('=')
+      if (index <= 0) null else line.substring(0, index).trim() to line.substring(index + 1).trim()
+    }.toMap()
+    return VpsUrnetworkExitInfo(
+      connected = values["ZDT_EXIT"] == "1" || values["ZDT_EXIT"]?.equals("true", ignoreCase = true) == true,
+      ip = values["ZDT_EXIT_IP"].orEmpty(),
+      country = values["ZDT_EXIT_COUNTRY"].orEmpty(),
+      countryCode = values["ZDT_EXIT_COUNTRY_CODE"].orEmpty(),
+    )
   }
 
   companion object {
+    const val URNETWORK_JWT_ENV = "ZDT_URNETWORK_JWT"
+    private val ENV_NAME = Regex("^[A-Za-z_][A-Za-z0-9_]*$")
+
     fun normalizeId(value: String): String {
       val normalized = value.trim().lowercase(Locale.ROOT)
         .replace(Regex("[^a-z0-9._-]+"), "-")

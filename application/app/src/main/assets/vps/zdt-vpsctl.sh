@@ -35,6 +35,27 @@ profile_dir() { printf '%s/profiles/%s/%s' "$ZDT_STATE" "$1" "$2"; }
 load_meta() { source "$(profile_dir "$1" "$2")/meta.env"; }
 ensure_dirs() { mkdir -p "$ZDT_ROOT/bin" "$ZDT_ETC" "$ZDT_STATE/services" "$ZDT_STATE/profiles" "$ZDT_LOG" "$ZDT_BACKUP"; }
 
+# URnetwork (prebuilt VPS bundle from the pinned release).
+URNETWORK_RELEASE_BASE="https://github.com/GAME-OVER-op/urnetwork-termux/releases/download/vps-v1"
+URNETWORK_VERSION="vps-v1"
+URNETWORK_DIR="$ZDT_ROOT/urnetwork"
+URNETWORK_ETC="$ZDT_ETC/urnetwork"
+URNETWORK_PROFILE_DIR="$ZDT_STATE/profiles/urnetwork"
+URNETWORK_LOG_DIR="$ZDT_LOG/urnetwork"
+URNETWORK_JWT_FILE="$URNETWORK_ETC/jwt"
+URNETWORK_CONFIG="$URNETWORK_ETC/config"
+URNETWORK_UNIT="zdt-urnetwork.service"
+URNETWORK_USER="zdt-urnetwork"
+URNETWORK_TUN="urnet0"
+URNETWORK_TUN_ADDR="10.200.0.2/24"
+URNETWORK_TABLE="ur_exit"
+URNETWORK_TABLE_ID="105"
+URNETWORK_FWMARK="0x5555"
+URNETWORK_SOCKS="127.0.0.1:9999"
+URNETWORK_MANGLE_CHAIN="ZDT_UR_BYPASS"
+# Hosts whose addresses must keep using the main table (service control plane).
+URNETWORK_API_HOSTS="api.urnetwork.com connect.urnetwork.com exchange.urnetwork.com www.urnetwork.com app.urnetwork.com"
+
 
 stats_port_reserved() {
   local port=$1 meta
@@ -74,7 +95,7 @@ restore_unit_states() {
 }
 
 managed_units() {
-  systemctl list-unit-files --no-legend 2>/dev/null | awk '{print $1}' | grep -E '^(zdt-vps-firewall\.service|zdt-dnscrypt\.service|zdt-openvpn-net-.*\.service|zdt-xray-.*\.service|zdt-hysteria2-.*\.service|openvpn-server@zdt-.*\.service|wg-quick@zdtwg.*\.service)$' || true
+  systemctl list-unit-files --no-legend 2>/dev/null | awk '{print $1}' | grep -E '^(zdt-vps-firewall\.service|zdt-dnscrypt\.service|zdt-urnetwork\.service|zdt-openvpn-net-.*\.service|zdt-xray-.*\.service|zdt-hysteria2-.*\.service|openvpn-server@zdt-.*\.service|wg-quick@zdtwg.*\.service)$' || true
 }
 stop_managed_units() {
   local units=()
@@ -85,6 +106,7 @@ restore_managed_units() {
   systemctl daemon-reload >/dev/null 2>&1 || true
   [[ -x $ZDT_ROOT/bin/rebuild-firewall && -f $SYSTEMD_DIR/zdt-vps-firewall.service ]] && systemctl enable --now zdt-vps-firewall.service >/dev/null 2>&1 || true
   [[ -f $ZDT_STATE/services/dnscrypt.version && -f $SYSTEMD_DIR/zdt-dnscrypt.service ]] && systemctl enable --now zdt-dnscrypt.service >/dev/null 2>&1 || true
+  [[ -f $ZDT_STATE/services/urnetwork.version && -f $SYSTEMD_DIR/zdt-urnetwork.service ]] && systemctl enable --now zdt-urnetwork.service >/dev/null 2>&1 || true
   local p
   for p in "$ZDT_STATE/profiles/openvpn"/*; do
     [[ -f $p/meta.env ]] || continue; source "$p/meta.env"
@@ -123,7 +145,9 @@ begin_tx() {
     "$SYSCTL_FILE" "$SYSTEMD_DIR"/zdt-vps-firewall.service "$SYSTEMD_DIR"/zdt-dnscrypt.service \
     "$SYSTEMD_DIR"/zdt-openvpn-net-*.service "$SYSTEMD_DIR"/zdt-xray-*.service \
     "$SYSTEMD_DIR"/zdt-hysteria2-*.service "$SYSTEMD_DIR"/openvpn-server@zdt-*.service.d "$OPENVPN_DIR"/zdt-*.conf \
-    "$WIREGUARD_DIR"/zdtwg*.conf /etc/letsencrypt/renewal-hooks/deploy/zdt-vps-reload; do
+    "$WIREGUARD_DIR"/zdtwg*.conf /etc/letsencrypt/renewal-hooks/deploy/zdt-vps-reload \
+    "$URNETWORK_ETC" "$URNETWORK_PROFILE_DIR" "$ZDT_STATE/services/urnetwork.version" \
+    "$SYSTEMD_DIR/zdt-urnetwork.service" /etc/iproute2/rt_tables; do
     [[ -e $p || -L $p ]] && paths+=("$p")
   done
   if (( ${#paths[@]} > 0 )); then tar -czpf "$TX_BACKUP/state.tar.gz" "${paths[@]}" 2>/dev/null || true; fi
@@ -142,6 +166,9 @@ cleanup_managed_files() {
     "$WIREGUARD_DIR"/zdtwg*.conf "$SYSCTL_FILE"
   rm -rf "$SYSTEMD_DIR"/openvpn-server@zdt-*.service.d 2>/dev/null || true
   rm -f /etc/letsencrypt/renewal-hooks/deploy/zdt-vps-reload
+  rm -f "$SYSTEMD_DIR/$URNETWORK_UNIT"
+  rm -rf "$URNETWORK_ETC" "$URNETWORK_PROFILE_DIR"
+  remove_urnetwork_exit_rules || true
   while iptables -w 5 -D INPUT -j "$FIREWALL_CHAIN" 2>/dev/null; do :; done
   iptables -w 5 -F "$FIREWALL_CHAIN" 2>/dev/null || true
   iptables -w 5 -X "$FIREWALL_CHAIN" 2>/dev/null || true
@@ -330,13 +357,14 @@ external_service_warning() {
     xray) command -v xray >/dev/null 2>&1 && warn 'An external Xray installation was detected. ZDT-D will install an isolated copy.' || true ;;
     hysteria2) command -v hysteria >/dev/null 2>&1 && warn 'An external Hysteria installation was detected. ZDT-D will install an isolated copy.' || true ;;
     wireproxy) find /etc/wireguard -type f -name '*.conf' ! -name 'zdtwg*' 2>/dev/null | grep -q . && warn 'Existing WireGuard configurations were detected. ZDT-D profiles are isolated and are not adopted.' || true ;;
+    urnetwork) command -v proxy-socks >/dev/null 2>&1 && warn 'An external URnetwork proxy-socks installation was detected. ZDT-D will use its own isolated bundle.' || true ;;
   esac
 }
 
 service_installed() { local kind=$1; [[ -e $ZDT_STATE/services/$kind || -e $ZDT_STATE/services/$kind.version ]]; }
 any_managed_service() {
   local k
-  for k in dnscrypt openvpn xray hysteria2 wireproxy; do service_installed "$k" && return 0; done
+  for k in dnscrypt openvpn xray hysteria2 wireproxy urnetwork; do service_installed "$k" && return 0; done
   return 1
 }
 
@@ -874,6 +902,420 @@ ZDT_STRONG_PATCH
   stage 'Cleaning up build files'
   rm -rf "$work"
   info 'OpenVPN build files removed'
+}
+
+# ---------------------------------------------------------------------------
+# URnetwork service
+# ---------------------------------------------------------------------------
+
+urnetwork_config_set() {
+  local key=$1 value=$2 file=$URNETWORK_CONFIG tmp
+  [[ -f $file ]] || : > "$file"
+  tmp="$file.tmp.$$"
+  awk -v k="$key" -v v="$value" '
+    index($0, k "=") == 1 { print k "=" v; seen=1; next }
+    { print }
+    END { if (!seen) print k "=" v }
+  ' "$file" > "$tmp"
+  mv -f "$tmp" "$file"
+  chown root:root "$file"; chmod 0644 "$file"
+}
+
+urnetwork_config_get() {
+  local key=$1
+  [[ -f $URNETWORK_CONFIG ]] || return 0
+  awk -F= -v k="$key" '$1==k {sub(/^[^=]*=/, ""); gsub(/^"|"$/, ""); print; exit}' "$URNETWORK_CONFIG"
+}
+
+urnetwork_hosts() {
+  local configured
+  configured=$(urnetwork_config_get API_HOSTS)
+  printf '%s\n' ${configured:-$URNETWORK_API_HOSTS}
+}
+
+install_urnetwork() {
+  local share=${1:-noshare} jwt arch asset_arch asset tmp src candidate
+  case "$share" in share|noshare) ;; *) die 'Share flag must be share or noshare' ;; esac
+  external_service_warning urnetwork
+  stage 'Installing URnetwork dependencies'
+  apt_install curl ca-certificates tar acl python3
+  ensure_dirs
+  mkdir -p "$URNETWORK_DIR" "$URNETWORK_ETC" "$URNETWORK_PROFILE_DIR" "$URNETWORK_LOG_DIR"
+
+  jwt=$(printf '%s' "${ZDT_URNETWORK_JWT:-}" | tr -d '\r\n')
+  [[ -n $jwt ]] || die 'ZDT_URNETWORK_JWT environment variable must contain the network JWT'
+  info 'Network JWT supplied through the environment'
+
+  arch=$(uname -m)
+  case "$arch" in
+    x86_64|amd64) asset_arch=amd64 ;;
+    aarch64|arm64) asset_arch=arm64 ;;
+    *) die "Unsupported architecture for URnetwork: $arch" ;;
+  esac
+  asset="urnetwork-vps-linux-${asset_arch}.tar.gz"
+  tmp=$(mktemp -d)
+
+  stage 'Downloading prebuilt bundle'
+  curl -fL --retry 3 --connect-timeout 30 "$URNETWORK_RELEASE_BASE/$asset" -o "$tmp/$asset" \
+    || die "Unable to download URnetwork bundle $asset"
+  curl -fL --retry 3 --connect-timeout 30 "$URNETWORK_RELEASE_BASE/SHA256SUMS.txt" -o "$tmp/SHA256SUMS.txt" \
+    || die 'Unable to download URnetwork SHA256SUMS.txt'
+
+  stage 'Verifying checksum'
+  awk -v a="$asset" 'length($1)==64 && $1 ~ /^[0-9a-fA-F]+$/ { n=$2; sub(/^\*/, "", n); if (n==a) print $1 "  " a }' \
+    "$tmp/SHA256SUMS.txt" > "$tmp/expected.sha256"
+  [[ -s $tmp/expected.sha256 ]] || die "No checksum entry for $asset in SHA256SUMS.txt"
+  (cd "$tmp" && sha256sum -c expected.sha256) || die 'URnetwork bundle checksum mismatch'
+
+  stage 'Installing service'
+  mkdir -p "$tmp/extract"
+  tar -xzf "$tmp/$asset" -C "$tmp/extract"
+  src="$tmp/extract"
+  if [[ ! -f $src/proxy-socks ]]; then
+    for candidate in "$tmp/extract"/*; do
+      [[ -f $candidate/proxy-socks ]] && { src=$candidate; break; }
+    done
+  fi
+  [[ -f $src/proxy-socks ]] || die 'URnetwork bundle does not contain proxy-socks'
+  if [[ -f $src/SHA256SUMS.txt ]]; then
+    (cd "$src" && sha256sum -c SHA256SUMS.txt) || die 'URnetwork binary checksum mismatch'
+  fi
+  cp -a "$src"/. "$URNETWORK_DIR"/
+  find "$URNETWORK_DIR" -maxdepth 1 -type f -exec chmod 0755 {} +
+  for candidate in proxy-socks provider tun2socks; do
+    [[ -f $URNETWORK_DIR/$candidate ]] || warn "URnetwork bundle does not contain $candidate"
+  done
+  rm -rf "$tmp"
+
+  if ! id -u "$URNETWORK_USER" >/dev/null 2>&1; then
+    useradd --system --user-group --home-dir "$URNETWORK_PROFILE_DIR" --shell /usr/sbin/nologin "$URNETWORK_USER"
+  fi
+  chown -R "$URNETWORK_USER:$URNETWORK_USER" "$URNETWORK_PROFILE_DIR" "$URNETWORK_LOG_DIR"
+
+  local old_umask; old_umask=$(umask)
+  umask 077
+  printf '%s\n' "$jwt" > "$URNETWORK_JWT_FILE"
+  umask "$old_umask"
+  chown root:root "$URNETWORK_JWT_FILE"; chmod 0600 "$URNETWORK_JWT_FILE"
+  if command -v setfacl >/dev/null 2>&1; then
+    setfacl -m "u:$URNETWORK_USER:r" "$URNETWORK_JWT_FILE" \
+      || warn 'Unable to grant the service user read access to the JWT via ACL'
+  else
+    chgrp "$URNETWORK_USER" "$URNETWORK_JWT_FILE"; chmod 0640 "$URNETWORK_JWT_FILE"
+    warn 'setfacl is unavailable; JWT is group-readable by the service user only'
+  fi
+
+  local share_flag=0
+  [[ $share == share ]] && share_flag=1
+  cat > "$URNETWORK_CONFIG" <<CFG
+SHARE=$share_flag
+ROUTING=0
+API_HOSTS="$URNETWORK_API_HOSTS"
+CFG
+  chown root:root "$URNETWORK_CONFIG"; chmod 0644 "$URNETWORK_CONFIG"
+
+  cat > "$URNETWORK_DIR/start.sh" <<WRAPPER
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT=$URNETWORK_DIR
+ETC=$URNETWORK_ETC
+PROFILE=$URNETWORK_PROFILE_DIR
+LOG=$URNETWORK_LOG_DIR
+export HOME="\$PROFILE"
+mkdir -p "\$PROFILE" "\$LOG"
+cd "\$ROOT"
+SHARE=0
+ROUTING=0
+if [[ -f "\$ETC/config" ]]; then source "\$ETC/config"; fi
+export JWT="\$(cat "\$ETC/jwt")"
+if [[ -z "\$JWT" ]]; then echo 'ZDT_ERROR=URnetwork JWT is empty' >&2; exit 1; fi
+mkdir -p "\$PROFILE/.urnetwork"
+printf '%s\n' "\$JWT" > "\$PROFILE/.urnetwork/jwt"
+chmod 0600 "\$PROFILE/.urnetwork/jwt"
+provider_flags=()
+if [[ ! -f "\$PROFILE/.urnetwork/.provider.jwt" ]]; then
+  provider_flags+=(--allow-client-registration)
+fi
+pids=()
+cleanup() {
+  trap - TERM INT EXIT
+  for pid in "\${pids[@]}"; do kill "\$pid" 2>/dev/null || true; done
+  wait 2>/dev/null || true
+}
+trap cleanup TERM INT EXIT
+nohup ./proxy-socks --addr $URNETWORK_SOCKS >>"\$LOG/proxy-socks.log" 2>&1 &
+pids+=(\$!)
+if [[ "\${SHARE:-0}" == 1 && -x ./provider ]]; then
+  nohup ./provider "\${provider_flags[@]}" >>"\$LOG/provider.log" 2>&1 &
+  pids+=(\$!)
+fi
+if [[ "\${ROUTING:-0}" == 1 && -x ./tun2socks ]]; then
+  nohup ./tun2socks -device $URNETWORK_TUN -ifaddr $URNETWORK_TUN_ADDR -proxy socks5://$URNETWORK_SOCKS >>"\$LOG/tun2socks.log" 2>&1 &
+  pids+=(\$!)
+fi
+set +e
+wait -n "\${pids[@]}"
+status=\$?
+set -e
+exit "\$status"
+WRAPPER
+  chmod 0755 "$URNETWORK_DIR/start.sh"
+
+  cat > "$SYSTEMD_DIR/$URNETWORK_UNIT" <<UNIT
+[Unit]
+Description=ZDT-D URnetwork service
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=$URNETWORK_USER
+WorkingDirectory=$URNETWORK_DIR
+Environment=HOME=$URNETWORK_PROFILE_DIR
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+ExecStart=$URNETWORK_DIR/start.sh
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+  printf '%s\n' "$URNETWORK_VERSION" > "$ZDT_STATE/services/urnetwork.version"
+  stage 'Starting service'
+  run_visible systemctl daemon-reload
+  run_visible systemctl enable "$URNETWORK_UNIT"
+  run_visible systemctl restart "$URNETWORK_UNIT"
+  unit_is_active "$URNETWORK_UNIT" || {
+    journalctl -u "$URNETWORK_UNIT" -n 50 --no-pager >&2 || true
+    die 'URnetwork service failed to start'
+  }
+  info "URnetwork service installed (share=$share, bundle=$URNETWORK_VERSION)"
+}
+
+remove_urnetwork_exit_rules() {
+  command -v ip >/dev/null 2>&1 || return 0
+  ip rule del fwmark "$URNETWORK_FWMARK" lookup main pref 100 2>/dev/null || true
+  ip rule del from all lookup "$URNETWORK_TABLE_ID" pref 200 2>/dev/null || true
+  ip route del default dev "$URNETWORK_TUN" table "$URNETWORK_TABLE_ID" 2>/dev/null || true
+  if command -v iptables >/dev/null 2>&1; then
+    while iptables -w 5 -t mangle -D OUTPUT -j "$URNETWORK_MANGLE_CHAIN" 2>/dev/null; do :; done
+    iptables -w 5 -t mangle -F "$URNETWORK_MANGLE_CHAIN" 2>/dev/null || true
+    iptables -w 5 -t mangle -X "$URNETWORK_MANGLE_CHAIN" 2>/dev/null || true
+  fi
+  return 0
+}
+
+remove_urnetwork_rt_table_entry() {
+  local rt=/etc/iproute2/rt_tables
+  [[ -f $rt ]] || return 0
+  ip rule list 2>/dev/null | grep -Eq "(^|[^0-9])${URNETWORK_TABLE_ID}([^0-9]|$)|${URNETWORK_TABLE}" && return 0
+  ip route show table "$URNETWORK_TABLE_ID" 2>/dev/null | grep -q . && return 0
+  sed -i -E "/^[[:space:]]*${URNETWORK_TABLE_ID}[[:space:]]+${URNETWORK_TABLE}([[:space:]]|$)/d" "$rt"
+}
+
+snapshot_urnetwork_exit_state() {
+  local dir=$1
+  mkdir -p "$dir"
+  ip rule list > "$dir/ip-rule.list" 2>/dev/null || true
+  ip route show table "$URNETWORK_TABLE_ID" > "$dir/ip-route.list" 2>/dev/null || true
+  iptables-save -t mangle > "$dir/mangle.txt" 2>/dev/null || true
+  cp -f "$URNETWORK_CONFIG" "$dir/config" 2>/dev/null || true
+  cp -f "$SYSTEMD_DIR/$URNETWORK_UNIT" "$dir/unit" 2>/dev/null || true
+  cp -f /etc/iproute2/rt_tables "$dir/rt_tables" 2>/dev/null || true
+}
+
+restore_urnetwork_exit_state() {
+  local dir=$1 line
+  remove_urnetwork_exit_rules || true
+  if [[ -f $dir/ip-route.list ]]; then
+    while IFS= read -r line; do
+      [[ $line == default* ]] || continue
+      ip route add $line table "$URNETWORK_TABLE_ID" 2>/dev/null || true
+    done < "$dir/ip-route.list"
+  fi
+  if [[ -s $dir/mangle.txt ]]; then
+    iptables-restore --table mangle < "$dir/mangle.txt" 2>/dev/null || true
+  fi
+  [[ -f $dir/config ]] && { cp -f "$dir/config" "$URNETWORK_CONFIG"; chmod 0644 "$URNETWORK_CONFIG"; }
+  [[ -f $dir/unit ]] && cp -f "$dir/unit" "$SYSTEMD_DIR/$URNETWORK_UNIT"
+  [[ -f $dir/rt_tables ]] && cp -f "$dir/rt_tables" /etc/iproute2/rt_tables
+  urnetwork_config_set ROUTING 0
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl restart "$URNETWORK_UNIT" >/dev/null 2>&1 || true
+}
+
+apply_urnetwork_exit_rules() {
+  local backup=$1
+  # Run in a subshell with its own errexit: this helper is invoked from an
+  # `if ! ...` test, where the caller's errexit is temporarily disabled.
+  (
+    trap - ERR
+    set -Eeuo pipefail
+    local rt=/etc/iproute2/rt_tables host ip port i
+    local mark=( -j MARK --set-mark "$URNETWORK_FWMARK" )
+    mkdir -p /etc/iproute2
+    [[ -f $rt ]] || : > "$rt"
+    if grep -Eq "^[[:space:]]*${URNETWORK_TABLE_ID}[[:space:]]+" "$rt"; then
+      grep -Eq "^[[:space:]]*${URNETWORK_TABLE_ID}[[:space:]]+${URNETWORK_TABLE}([[:space:]]|$)" "$rt" \
+        || die "Route table id $URNETWORK_TABLE_ID is already used by another table"
+    elif grep -Eq "^[[:space:]]*${URNETWORK_TABLE}([[:space:]]|$)" "$rt"; then
+      die "Route table $URNETWORK_TABLE already exists with a different id"
+    else
+      printf '\n%s\t%s\n' "$URNETWORK_TABLE_ID" "$URNETWORK_TABLE" >> "$rt"
+    fi
+
+    urnetwork_config_set ROUTING 1
+    run_visible systemctl daemon-reload
+    run_visible systemctl restart "$URNETWORK_UNIT"
+    for ((i=0; i<30; i++)); do
+      ip link show "$URNETWORK_TUN" >/dev/null 2>&1 && break
+      sleep 0.5
+    done
+    ip link show "$URNETWORK_TUN" >/dev/null 2>&1 || die "TUN device $URNETWORK_TUN did not appear"
+
+    ip route replace default dev "$URNETWORK_TUN" table "$URNETWORK_TABLE"
+    ip rule add fwmark "$URNETWORK_FWMARK" lookup main pref 100
+    ip rule add from all lookup "$URNETWORK_TABLE" pref 200
+
+    iptables -w 5 -t mangle -N "$URNETWORK_MANGLE_CHAIN" 2>/dev/null || true
+    iptables -w 5 -t mangle -F "$URNETWORK_MANGLE_CHAIN"
+    iptables -w 5 -t mangle -D OUTPUT -j "$URNETWORK_MANGLE_CHAIN" 2>/dev/null || true
+    iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -m owner --uid-owner "$URNETWORK_USER" "${mark[@]}"
+    iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -p tcp --sport 22 "${mark[@]}"
+    iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -p udp --sport 22 "${mark[@]}"
+    iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -p tcp --dport 53 "${mark[@]}"
+    iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -p udp --dport 53 "${mark[@]}"
+    iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -p tcp --dport 80 "${mark[@]}"
+    iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -d 127.0.0.0/8 "${mark[@]}"
+    iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -d 169.254.169.254/32 "${mark[@]}"
+    iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -d 169.254.0.0/16 "${mark[@]}"
+    iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -d 224.0.0.0/4 "${mark[@]}"
+    for host in $(urnetwork_hosts); do
+      while read -r ip _; do
+        [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ && $ip != 0.0.0.0 ]] || continue
+        iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -d "$ip/32" "${mark[@]}"
+      done < <(getent ahostsv4 "$host" 2>/dev/null | awk '{print $1}' | sort -u)
+    done
+    while read -r port; do
+      valid_port "$port" || continue
+      iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -p tcp --sport "$port" "${mark[@]}"
+      iptables -w 5 -t mangle -A "$URNETWORK_MANGLE_CHAIN" -p udp --sport "$port" "${mark[@]}"
+    done < <({ ss -H -ltnup; ss -H -lnup; } 2>/dev/null \
+      | awk '$6 ~ /(zdt|openvpn|xray|hysteria|dnscrypt|wireproxy)/ {n=split($4,a,":"); if (n>1) print a[n]}' \
+      | grep -E '^[0-9]+$' | sort -un | head -200)
+    iptables -w 5 -t mangle -I OUTPUT 1 -j "$URNETWORK_MANGLE_CHAIN"
+    info "Exit bypass rules saved in $backup"
+  )
+}
+
+enable_urnetwork_exit() {
+  service_installed urnetwork || die 'URnetwork is not installed'
+  command -v ip >/dev/null 2>&1 || die 'iproute2 is required for full exit routing'
+  command -v iptables >/dev/null 2>&1 || die 'iptables is required for full exit routing'
+  stage 'Configuring full exit routing'
+  local backup="$ZDT_BACKUP/urnetwork-exit-$(date +%Y%m%d_%H%M%S)_$RANDOM"
+  mkdir -p "$backup"
+  info "Exit routing backup: $backup"
+  snapshot_urnetwork_exit_state "$backup"
+  if ! apply_urnetwork_exit_rules "$backup"; then
+    printf 'ZDT_ROLLBACK=started\n'
+    restore_urnetwork_exit_state "$backup"
+    printf 'ZDT_ROLLBACK=completed\n'
+    die 'Failed to configure URnetwork exit routing; previous state restored'
+  fi
+  printf 'ZDT_EXIT=1\n'
+  printf 'ZDT_EXIT_MODE=full\n'
+  printf 'ZDT_EXIT_TABLE=%s\n' "$URNETWORK_TABLE"
+  printf 'ZDT_EXIT_FWMARK=%s\n' "$URNETWORK_FWMARK"
+  printf 'ZDT_EXIT_TUN=%s\n' "$URNETWORK_TUN"
+  printf 'ZDT_EXIT_BACKUP=%s\n' "$backup"
+  info 'URnetwork full exit routing is active'
+}
+
+disable_urnetwork_exit() {
+  service_installed urnetwork || die 'URnetwork is not installed'
+  stage 'Disabling URnetwork full exit routing'
+  remove_urnetwork_exit_rules || true
+  remove_urnetwork_rt_table_entry || true
+  urnetwork_config_set ROUTING 0
+  run_visible systemctl daemon-reload
+  run_visible systemctl restart "$URNETWORK_UNIT"
+  printf 'ZDT_EXIT=0\n'
+  printf 'ZDT_EXIT_MODE=off\n'
+  info 'URnetwork full exit routing disabled'
+}
+
+check_urnetwork_exit() {
+  local ip='' payload='' info='' country='' code=''
+  urnetwork_exit_disconnected() {
+    printf 'ZDT_EXIT=0\nZDT_EXIT_IP=\nZDT_EXIT_COUNTRY=\nZDT_EXIT_COUNTRY_CODE=\n'
+  }
+  if ! service_installed urnetwork || ! unit_is_active "$URNETWORK_UNIT"; then
+    urnetwork_exit_disconnected
+    return 0
+  fi
+  command -v curl >/dev/null 2>&1 || { urnetwork_exit_disconnected; return 0; }
+  ip=$(curl -fsS --max-time 5 --socks5-hostname "$URNETWORK_SOCKS" "https://api.ipify.org" 2>/dev/null || true)
+  ip=$(printf '%s' "$ip" | tr -d '[:space:]')
+  if [[ ! $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    urnetwork_exit_disconnected
+    return 0
+  fi
+  payload=$(curl -fsS --max-time 5 --socks5-hostname "$URNETWORK_SOCKS" "https://api.ipify.org/my-ip-info" 2>/dev/null || true)
+  if command -v python3 >/dev/null 2>&1; then
+    info=$(URNETWORK_INFO_PAYLOAD="$payload" python3 - <<'PY' 2>/dev/null || true
+import json,os
+raw=os.environ.get('URNETWORK_INFO_PAYLOAD','')
+try: data=json.loads(raw)
+except Exception: data={}
+def walk(obj):
+    if isinstance(obj,dict):
+        yield obj
+        for value in obj.values():
+            yield from walk(value)
+    elif isinstance(obj,list):
+        for value in obj:
+            yield from walk(value)
+name=''
+code=''
+for item in walk(data):
+    if not name:
+        for key in ('country_name','countryName'):
+            value=item.get(key)
+            if isinstance(value,str) and value.strip():
+                name=value.strip(); break
+    if not code:
+        for key in ('country_code','countryCode','code'):
+            value=item.get(key)
+            if isinstance(value,str) and value.strip():
+                code=value.strip(); break
+    if not code:
+        value=item.get('country')
+        if isinstance(value,str) and value.strip():
+            value=value.strip()
+            if len(value)==2 and value.isalpha(): code=value.upper()
+            elif not name: name=value
+if not name: name=code
+print(name+'|'+code)
+PY
+)
+  else
+    country=$(printf '%s' "$payload" | grep -oE '"(country_name|countryName)"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*:[[:space:]]*"([^"]+)"/\1/' || true)
+    code=$(printf '%s' "$payload" | grep -oE '"(country_code|countryCode|code)"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*:[[:space:]]*"([^"]+)"/\1/' || true)
+    info="$country|$code"
+  fi
+  info=$(printf '%s' "$info" | tr -d '\r\n')
+  if [[ $info == *'|'* ]]; then
+    country=${info%%|*}
+    code=${info#*|}
+  else
+    country=$info
+    code=''
+  fi
+  printf 'ZDT_EXIT=1\n'
+  printf 'ZDT_EXIT_IP=%s\n' "$ip"
+  printf 'ZDT_EXIT_COUNTRY=%s\n' "$country"
+  printf 'ZDT_EXIT_COUNTRY_CODE=%s\n' "$code"
 }
 
 install_openvpn() {
@@ -1556,11 +1998,12 @@ service_active() {
     xray) has_active_profile_unit 'zdt-xray-*.service' ;;
     hysteria2) has_active_profile_unit 'zdt-hysteria2-*.service' ;;
     wireproxy) has_active_profile_unit 'wg-quick@zdtwg*.service' ;;
+    urnetwork) unit_is_active "$URNETWORK_UNIT" ;;
   esac
 }
 inventory() {
   local k version active installed
-  for k in dnscrypt openvpn xray hysteria2 wireproxy; do
+  for k in dnscrypt openvpn xray hysteria2 wireproxy urnetwork; do
     installed=0; active=0; version=''
     service_installed "$k" && installed=1
     service_active "$k" && active=1 || true
@@ -1689,6 +2132,7 @@ client_traffic_lines() {
     wireproxy) wireproxy_traffic_lines "$profile" || true ;;
     xray) xray_traffic_lines "$profile" || true ;;
     hysteria2) hysteria2_traffic_lines "$profile" || true ;;
+    urnetwork) : ;;  # URnetwork has no per-profile traffic counters
   esac
 }
 
@@ -1705,6 +2149,7 @@ list_profiles() {
       xray) unit="zdt-xray-$ID.service" ;;
       hysteria2) unit="zdt-hysteria2-$ID.service" ;;
       wireproxy) unit="wg-quick@$IFACE.service" ;;
+      urnetwork) continue ;;  # URnetwork is a single service without profiles
       *) continue ;;
     esac
     unit_is_active "$unit" && active=1 || true
@@ -1804,6 +2249,7 @@ with open(file,'w',encoding='utf-8') as h:
     json.dump({'server':host+':'+port,'auth':user+':'+pwd,'tls':{'sni':sni,'insecure':True,'pinSHA256':pin}},h,indent=2)
 PY
       mime='application/json' ;;
+    urnetwork) die 'Configurations are not supported for this service' ;;
     *) die 'Configurations are not supported for this service' ;;
   esac
   [[ -f $file ]] || die 'Generated configuration is missing'
@@ -1833,6 +2279,7 @@ delete_profile() {
       run_visible systemctl disable --now "zdt-hysteria2-$profile.service" || true; run_visible rm -f "$SYSTEMD_DIR/zdt-hysteria2-$profile.service" ;;
     wireproxy)
       run_visible systemctl disable --now "wg-quick@$IFACE.service" || true; run_visible rm -f "$WIREGUARD_DIR/$IFACE.conf" ;;
+    urnetwork) die 'Profiles are not supported for this service' ;;
     *) die 'Unknown profile service' ;;
   esac
   run_visible rm -rf "$dir"
@@ -1849,7 +2296,7 @@ remove_service() {
     info "$kind is not installed; nothing to remove"
     return 0
   fi
-  if [[ $kind != dnscrypt ]]; then
+  if [[ $kind != dnscrypt && $kind != urnetwork ]]; then
     for p in "$ZDT_STATE/profiles/$kind"/*; do [[ -d $p ]] && delete_profile "$kind" "$(basename "$p")"; done
   fi
   case "$kind" in
@@ -1868,6 +2315,13 @@ remove_service() {
       run_visible rm -rf "$ZDT_STATE/profiles/hysteria2"; run_visible rm -f "$ZDT_STATE/services/hysteria2.version" "$ZDT_ROOT/bin/hysteria" ;;
     wireproxy)
       run_visible rm -rf "$ZDT_STATE/profiles/wireproxy"; run_visible rm -f "$ZDT_STATE/services/wireproxy.version" ;;
+    urnetwork)
+      stage 'Removing URnetwork service and exit routing'
+      remove_urnetwork_exit_rules || true
+      run_visible systemctl disable --now "$URNETWORK_UNIT" || true
+      run_visible rm -f "$SYSTEMD_DIR/$URNETWORK_UNIT" "$ZDT_STATE/services/urnetwork.version"
+      run_visible rm -rf "$URNETWORK_ETC" "$URNETWORK_PROFILE_DIR" "$URNETWORK_DIR" "$URNETWORK_LOG_DIR"
+      info 'URnetwork service removed' ;;
     *) die 'Unknown service' ;;
   esac
   restore_ip_forward_if_unused
@@ -1888,6 +2342,7 @@ restart_service() {
     xray) [[ -n $profile ]] || die 'Profile is required'; rebuild_xray "$profile" ;;
     hysteria2) [[ -n $profile ]] || die 'Profile is required'; rebuild_hysteria2 "$profile" ;;
     wireproxy) [[ -n $profile ]] || die 'Profile is required'; load_meta wireproxy "$profile"; run_visible systemctl restart "wg-quick@$IFACE.service" ;;
+    urnetwork) run_visible systemctl restart "$URNETWORK_UNIT" ;;
     *) die 'Unknown service' ;;
   esac
   info "$kind restart completed"
@@ -1907,6 +2362,7 @@ show_logs() {
     xray) unit="zdt-xray-$profile.service" ;;
     hysteria2) unit="zdt-hysteria2-$profile.service" ;;
     wireproxy) load_meta wireproxy "$profile"; unit="wg-quick@$IFACE.service" ;;
+    urnetwork) unit="$URNETWORK_UNIT" ;;
     *) die 'Unknown service' ;;
   esac
   journalctl -u "$unit" -n 150 --no-pager
@@ -1919,16 +2375,20 @@ main() {
     check-platform) check_platform ;;
     inventory) inventory ;;
     install)
-      check_platform; local kind=${1:?service required} variant=${2:-normal}
+      check_platform; local kind=${1:?service required} variant=${2:-}
       case "$kind" in
         dnscrypt) with_tx install_dnscrypt ;;
-        openvpn) with_tx install_openvpn "$variant" ;;
+        openvpn) with_tx install_openvpn "${variant:-normal}" ;;
         xray) with_tx install_xray ;;
         hysteria2) with_tx install_hysteria2 ;;
         wireproxy) with_tx install_wireproxy ;;
+        urnetwork) with_tx install_urnetwork "${variant:-noshare}" ;;
         *) die 'Unknown service' ;;
       esac ;;
     remove) with_tx remove_service "${1:?service required}" ;;
+    enable-exit) enable_urnetwork_exit ;;
+    disable-exit) disable_urnetwork_exit ;;
+    check-exit) check_urnetwork_exit ;;
     list-profiles) list_profiles "${1:?service required}" ;;
     create-profile)
       check_platform

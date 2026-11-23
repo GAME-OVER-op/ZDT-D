@@ -2737,4 +2737,38 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="component_install_required_action">Install</string>
     <string name="optional_component_generic_desc">Download, update or remove this tool without reinstalling the module or rebooting.</string>
 
+
+    <string name="vps_service_urnetwork">URnetwork</string>
+    <string name="vps_service_urnetwork_desc">Distributed network that shares the server's internet with other participants and routes server traffic through URnetwork.</string>
+    <string name="urnetwork_setup_email_title">URnetwork account</string>
+    <string name="urnetwork_setup_email_body">To use URnetwork, sign in with your email. Enter the address linked to your URnetwork account. For example: name@example.com</string>
+    <string name="urnetwork_setup_email_hint">Email address</string>
+    <string name="urnetwork_setup_email_example">For example: name@example.com</string>
+    <string name="urnetwork_setup_email_send">Send code</string>
+    <string name="urnetwork_setup_code_title">Confirmation code</string>
+    <string name="urnetwork_setup_code_body">We requested a confirmation code to sign in to URnetwork. Open your email and enter the code you received.</string>
+    <string name="urnetwork_setup_code_hint">Confirmation code</string>
+    <string name="urnetwork_setup_code_verify">Confirm</string>
+    <string name="urnetwork_setup_code_resend">Resend code</string>
+    <string name="urnetwork_setup_share_title">Share internet</string>
+    <string name="urnetwork_setup_share_body">Use this server to share internet with other URnetwork participants? This enables provider mode and may increase traffic usage.</string>
+    <string name="urnetwork_setup_share_yes">Yes, share internet</string>
+    <string name="urnetwork_setup_share_no">No, connection only</string>
+    <string name="urnetwork_setup_routing_title">Route server traffic</string>
+    <string name="urnetwork_setup_routing_body">Route all outbound traffic of the server through URnetwork? SSH connections and service addresses will remain available directly.</string>
+    <string name="urnetwork_setup_routing_yes">Yes, route traffic</string>
+    <string name="urnetwork_setup_routing_no">No, keep as is</string>
+    <string name="urnetwork_setup_installing">Installing and configuring URnetwork...</string>
+    <string name="urnetwork_setup_done">URnetwork configured</string>
+    <string name="urnetwork_settings_title">URnetwork settings</string>
+    <string name="urnetwork_settings_exit">URnetwork exit: %1$s</string>
+    <string name="urnetwork_settings_exit_connected">connected</string>
+    <string name="urnetwork_settings_exit_disconnected">disconnected</string>
+    <string name="urnetwork_settings_share">Internet sharing: %1$s</string>
+    <string name="urnetwork_settings_check">Check connection</string>
+    <string name="urnetwork_settings_disable_routing">Disable routing</string>
+    <string name="urnetwork_settings_enable_routing">Enable routing</string>
+    <string name="urnetwork_settings_country">Country: %1$s</string>
+    <string name="urnetwork_settings_address">Address: %1$s</string>
+    <string name="urnetwork_error_prefix">Error: %1$s</string>
 </resources>

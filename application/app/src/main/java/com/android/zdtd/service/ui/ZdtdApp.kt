@@ -1335,11 +1335,12 @@ private fun MainShell(
     val profile = appUpdate.hotspotProfile.ifBlank {
       when (program) {
         "singbox" -> appUpdate.hotspotT2sSingboxProfile
+        "singbox-lx" -> appUpdate.hotspotT2sSingboxLxProfile
         "wireproxy" -> appUpdate.hotspotT2sWireproxyProfile
         else -> ""
       }
     }
-    val needsProfile = mode == "vpn" || program == "singbox" || program == "wireproxy"
+    val needsProfile = mode == "vpn" || program == "singbox" || program == "singbox-lx" || program == "wireproxy"
     val hotspotInvalid = appUpdate.hotspotT2sEnabled && (
       program.isBlank() || (needsProfile && profile.isBlank())
       )
@@ -2649,9 +2650,11 @@ private fun RootSettingsScreen(
       hotspotProfile = appUpdate.hotspotProfile,
       hotspotT2sTarget = appUpdate.hotspotT2sTarget,
       hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
+      hotspotT2sSingboxLxProfile = appUpdate.hotspotT2sSingboxLxProfile,
       hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
       hotspotT2sCaptureAll = appUpdate.hotspotT2sCaptureAll,
       hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
+      hotspotSingboxLxProfiles = appUpdate.hotspotSingboxLxProfiles,
       hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
       hotspotProxyPrograms = appUpdate.hotspotProxyPrograms,
       hotspotVpnPrograms = appUpdate.hotspotVpnPrograms,

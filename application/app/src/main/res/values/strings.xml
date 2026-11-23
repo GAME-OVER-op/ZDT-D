@@ -867,6 +867,7 @@ Install the module again.</string>
     <string name="settings_hotspot_profiles_empty">No enabled profiles found for this program.</string>
     <string name="settings_hotspot_program_operaproxy">opera-proxy</string>
     <string name="settings_hotspot_program_singbox">sing-box</string>
+    <string name="settings_hotspot_program_singbox_lx">sing-box-lx</string>
     <string name="settings_hotspot_warning_title">Security warning</string>
     <string name="settings_hotspot_warning_body">Enabling this feature may reduce device security because hotspot clients will be routed through the selected Proxy or VPN backend. Use it only on trusted networks.</string>
     <string name="settings_hotspot_warning_accept">Accept</string>

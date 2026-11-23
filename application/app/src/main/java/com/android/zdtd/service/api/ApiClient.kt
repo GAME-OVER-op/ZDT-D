@@ -204,21 +204,25 @@ class ApiClient(
     enabled: Boolean,
     target: String,
     singboxProfile: String = "",
+    singboxLxProfile: String = "",
     wireproxyProfile: String = "",
     captureAll: Boolean? = null,
   ): ApiModels.DaemonSettings {
     val safeTarget = when (target.trim().lowercase()) {
       "operaproxy", "opera-proxy", "opera_proxy" -> "operaproxy"
       "singbox", "sing-box", "sing_box" -> "singbox"
+      "singbox-lx", "sing-box-lx", "sing_box_lx" -> "singbox-lx"
       "wireproxy", "wire-proxy", "wire_proxy" -> "wireproxy"
       else -> ""
     }
     val safeProfile = if (safeTarget == "singbox") singboxProfile.trim() else ""
+    val safeLxProfile = if (safeTarget == "singbox-lx") singboxLxProfile.trim() else ""
     val safeWireproxyProfile = if (safeTarget == "wireproxy") wireproxyProfile.trim() else ""
     val body = JSONObject()
       .put("hotspot_t2s_enabled", enabled)
       .put("hotspot_t2s_target", safeTarget)
       .put("hotspot_t2s_singbox_profile", safeProfile)
+      .put("hotspot_t2s_singbox_lx_profile", safeLxProfile)
       .put("hotspot_t2s_wireproxy_profile", safeWireproxyProfile)
     if (enabled) body.put("ip_forward_enabled", true)
     captureAll?.let { body.put("hotspot_t2s_capture_all", it) }
@@ -318,6 +322,11 @@ class ApiClient(
 
   fun getSingBoxProfiles(): List<ApiModels.SingBoxProfileChoice> {
     val obj = requestJson("GET", "/api/programs/sing-box/profiles", null)
+    return ApiModels.parseSingBoxProfiles(obj)
+  }
+
+  fun getSingBoxLxProfiles(): List<ApiModels.SingBoxProfileChoice> {
+    val obj = requestJson("GET", "/api/programs/sing-box-lx/profiles", null)
     return ApiModels.parseSingBoxProfiles(obj)
   }
 

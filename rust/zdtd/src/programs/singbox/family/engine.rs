@@ -54,7 +54,11 @@ fn hotspot_profile_from_settings(spec: VariantSpec, api_settings: &settings::Api
     if !spec.hotspot_supported() {
         return None;
     }
-    api_settings.hotspot_t2s_singbox_profile().map(|s| s.to_string())
+    if spec.is_lx() {
+        api_settings.hotspot_t2s_singbox_lx_profile().map(|s| s.to_string())
+    } else {
+        api_settings.hotspot_t2s_singbox_profile().map(|s| s.to_string())
+    }
 }
 
 fn hotspot_profile(spec: VariantSpec) -> Option<String> {
@@ -722,11 +726,7 @@ pub(crate) fn start_construction_profile(
     ensure_file(spec.binary)?;
 
     let api_settings = settings::load_api_settings().unwrap_or_default();
-    let hotspot_profile = if spec.hotspot_supported() {
-        api_settings.hotspot_t2s_singbox_profile().map(|s| s.to_string())
-    } else {
-        None
-    };
+    let hotspot_profile = hotspot_profile_from_settings(spec, &api_settings);
     let external_used = external_used_ports(spec);
     let other_enabled_names: Vec<String> = active
         .profiles
@@ -863,11 +863,7 @@ pub(crate) fn start_t2s_if_enabled_with_settings(
         ensure_file(spec.binary)?;
     }
 
-    let hotspot_profile = if spec.hotspot_supported() {
-        api_settings.hotspot_t2s_singbox_profile().map(|s| s.to_string())
-    } else {
-        None
-    };
+    let hotspot_profile = hotspot_profile_from_settings(spec, &api_settings);
 
     let external_used = external_used_ports(spec);
     let mut own_used = BTreeSet::<u16>::new();
@@ -909,8 +905,13 @@ pub(crate) fn start_t2s_if_enabled_with_settings(
     }
 
     let t2s_bin = if plans.iter().any(|plan| plan.needs_t2s) { Some(find_module_binary("t2s")?) } else { None };
-    if spec.hotspot_supported() && api_settings.hotspot_t2s_for_singbox() && hotspot_profile.is_none() {
-        warn!("sing-box: hotspot target is sing-box, but no hotspot profile is selected; using 127.0.0.1 for all profiles");
+    let hotspot_target = if spec.is_lx() {
+        api_settings.hotspot_t2s_for_singbox_lx()
+    } else {
+        api_settings.hotspot_t2s_for_singbox()
+    };
+    if spec.hotspot_supported() && hotspot_target && hotspot_profile.is_none() {
+        warn!("{}: hotspot target is {}, but no hotspot profile is selected; using 127.0.0.1 for all profiles", spec.label, spec.label);
     }
     if let Some(ref wanted_profile) = hotspot_profile {
         if !plans.iter().any(|plan| plan.name == *wanted_profile) {

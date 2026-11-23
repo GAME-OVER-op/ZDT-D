@@ -246,6 +246,8 @@ fn post_setting(
                 #[serde(default)]
                 hotspot_t2s_singbox_profile: Option<String>,
                 #[serde(default)]
+                hotspot_t2s_singbox_lx_profile: Option<String>,
+                #[serde(default)]
                 hotspot_t2s_wireproxy_profile: Option<String>,
                 #[serde(default)]
                 hotspot_t2s_capture_all: Option<bool>,
@@ -276,6 +278,7 @@ fn post_setting(
                 setting.hotspot_profile.clear();
                 setting.hotspot_t2s_target.clear();
                 setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_singbox_lx_profile.clear();
                 setting.hotspot_t2s_wireproxy_profile.clear();
                 // Hotspot/tethering requires IPv4 forwarding. Persist the existing
                 // advanced setting when hotspot is enabled, but do not disable it
@@ -291,12 +294,14 @@ fn post_setting(
                 setting.hotspot_profile.clear();
                 setting.hotspot_t2s_target.clear();
                 setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_singbox_lx_profile.clear();
                 setting.hotspot_t2s_wireproxy_profile.clear();
             }
             if let Some(program) = patch.hotspot_program {
                 setting.hotspot_program = program;
                 setting.hotspot_t2s_target.clear();
                 setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_singbox_lx_profile.clear();
                 setting.hotspot_t2s_wireproxy_profile.clear();
             }
             if let Some(profile) = patch.hotspot_profile {
@@ -315,6 +320,14 @@ fn post_setting(
                     setting.hotspot_profile = profile.clone();
                 }
                 setting.hotspot_t2s_singbox_profile = profile;
+            }
+            if let Some(profile) = patch.hotspot_t2s_singbox_lx_profile {
+                if !profile.trim().is_empty() {
+                    setting.hotspot_mode = "proxy".to_string();
+                    setting.hotspot_program = "singbox-lx".to_string();
+                    setting.hotspot_profile = profile.clone();
+                }
+                setting.hotspot_t2s_singbox_lx_profile = profile;
             }
             if let Some(profile) = patch.hotspot_t2s_wireproxy_profile {
                 if !profile.trim().is_empty() {

@@ -325,17 +325,22 @@ fn collect_singbox_ports(out: &mut BTreeSet<u16>) -> Result<()> {
 fn collect_singbox_lx_ports(out: &mut BTreeSet<u16>) -> Result<()> {
     let active_path = crate::programs::registry::working_program_dir("singbox-lx").join("active.json");
     if !active_path.is_file() { return Ok(()); }
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_profile = api_settings.hotspot_t2s_singbox_lx_profile().map(|s| s.to_string());
     let active: ProfilesActive = read_json_file(&active_path).unwrap_or_default();
     let root = crate::programs::registry::working_program_dir("singbox-lx").join("profile");
     for (name, st) in active.profiles {
         if !st.enabled { continue; }
+        let is_hotspot_profile = hotspot_profile.as_deref() == Some(name.as_str());
         let profile_dir = root.join(&name);
         if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
         let setting_path = profile_dir.join("setting.json");
         if setting_path.is_file() {
             let setting: SingboxProfileSetting = read_json_file(&setting_path).unwrap_or_default();
-            if setting.t2s_port > 0 { out.insert(setting.t2s_port); }
-            if setting.t2s_web_port > 0 { out.insert(setting.t2s_web_port); }
+            if !is_hotspot_profile {
+                if setting.t2s_port > 0 { out.insert(setting.t2s_port); }
+                if setting.t2s_web_port > 0 { out.insert(setting.t2s_web_port); }
+            }
         }
         let server_root = profile_dir.join("server");
         if let Ok(rd) = fs::read_dir(&server_root) {

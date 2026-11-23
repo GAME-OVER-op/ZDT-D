@@ -124,6 +124,8 @@ pub struct ApiSettings {
     #[serde(default)]
     pub hotspot_t2s_singbox_profile: String,
     #[serde(default)]
+    pub hotspot_t2s_singbox_lx_profile: String,
+    #[serde(default)]
     pub hotspot_t2s_wireproxy_profile: String,
     #[serde(default)]
     pub hotspot_t2s_capture_all: bool,
@@ -149,6 +151,7 @@ impl Default for ApiSettings {
             hotspot_profile: String::new(),
             hotspot_t2s_target: String::new(),
             hotspot_t2s_singbox_profile: String::new(),
+            hotspot_t2s_singbox_lx_profile: String::new(),
             hotspot_t2s_wireproxy_profile: String::new(),
             hotspot_t2s_capture_all: false,
             captive_portal_enabled: false,
@@ -167,6 +170,7 @@ impl ApiSettings {
         self.hotspot_profile = self.hotspot_profile.trim().to_string();
         self.hotspot_t2s_target = normalize_hotspot_t2s_target(&self.hotspot_t2s_target);
         self.hotspot_t2s_singbox_profile = self.hotspot_t2s_singbox_profile.trim().to_string();
+        self.hotspot_t2s_singbox_lx_profile = self.hotspot_t2s_singbox_lx_profile.trim().to_string();
         self.hotspot_t2s_wireproxy_profile = self.hotspot_t2s_wireproxy_profile.trim().to_string();
 
         // Backward migration from the old proxy-only hotspot fields.
@@ -175,6 +179,7 @@ impl ApiSettings {
             self.hotspot_program = self.hotspot_t2s_target.clone();
             self.hotspot_profile = match ProgramId::parse(&self.hotspot_program) {
                 Some(ProgramId::SingBox) => self.hotspot_t2s_singbox_profile.clone(),
+                Some(ProgramId::SingBoxLx) => self.hotspot_t2s_singbox_lx_profile.clone(),
                 Some(ProgramId::WireProxy) => self.hotspot_t2s_wireproxy_profile.clone(),
                 _ => String::new(),
             };
@@ -185,6 +190,7 @@ impl ApiSettings {
             self.hotspot_profile.clear();
             self.hotspot_t2s_target.clear();
             self.hotspot_t2s_singbox_profile.clear();
+            self.hotspot_t2s_singbox_lx_profile.clear();
             self.hotspot_t2s_wireproxy_profile.clear();
             return;
         }
@@ -198,6 +204,7 @@ impl ApiSettings {
             // cannot accidentally build t2s hotspot REDIRECT rules.
             self.hotspot_t2s_target.clear();
             self.hotspot_t2s_singbox_profile.clear();
+            self.hotspot_t2s_singbox_lx_profile.clear();
             self.hotspot_t2s_wireproxy_profile.clear();
             return;
         }
@@ -208,6 +215,7 @@ impl ApiSettings {
             self.hotspot_profile.clear();
             self.hotspot_t2s_target.clear();
             self.hotspot_t2s_singbox_profile.clear();
+            self.hotspot_t2s_singbox_lx_profile.clear();
             self.hotspot_t2s_wireproxy_profile.clear();
             return;
         }
@@ -217,6 +225,11 @@ impl ApiSettings {
         }
         self.hotspot_t2s_target = self.hotspot_program.clone();
         self.hotspot_t2s_singbox_profile = if self.hotspot_program == ProgramId::SingBox.canonical() {
+            self.hotspot_profile.clone()
+        } else {
+            String::new()
+        };
+        self.hotspot_t2s_singbox_lx_profile = if self.hotspot_program == ProgramId::SingBoxLx.canonical() {
             self.hotspot_profile.clone()
         } else {
             String::new()
@@ -283,6 +296,14 @@ impl ApiSettings {
 
     pub fn hotspot_t2s_singbox_profile(&self) -> Option<&str> {
         self.hotspot_proxy_profile_for(ProgramId::SingBox.canonical())
+    }
+
+    pub fn hotspot_t2s_for_singbox_lx(&self) -> bool {
+        self.hotspot_proxy_for(ProgramId::SingBoxLx.canonical())
+    }
+
+    pub fn hotspot_t2s_singbox_lx_profile(&self) -> Option<&str> {
+        self.hotspot_proxy_profile_for(ProgramId::SingBoxLx.canonical())
     }
 
     pub fn hotspot_t2s_for_wireproxy(&self) -> bool {

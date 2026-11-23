@@ -155,7 +155,7 @@ pub static PROGRAMS: &[ProgramDescriptor] = &[
         working_dir: "singbox-lx", state_file: "active.json", state_kind: StateKind::ProfilesActive,
         profile_layout: ProfileLayout::ProfileDir, eager_profile_dir: false, app_list_layout: AppListLayout::ProfileDir,
         runtime_refresh: RuntimeRefreshKind::UidRoutingAndVpnNetd,
-        capabilities: ProgramCapabilities::new(true, true, true, false, false), netid_range: Some(NETID_SINGBOX_LX),
+        capabilities: ProgramCapabilities::new(true, true, true, true, false), netid_range: Some(NETID_SINGBOX_LX),
         adjustable_port_base: None, process_name: Some("sing-box-lx"), aliases: &["singbox_lx", "sing_box_lx"],
     },
     ProgramDescriptor {

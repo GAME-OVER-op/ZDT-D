@@ -436,6 +436,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       hotspotT2sEnabled = false,
       hotspotT2sTarget = "",
       hotspotT2sSingboxProfile = "",
+      hotspotT2sSingboxLxProfile = "",
       hotspotT2sWireproxyProfile = "",
       hotspotT2sCaptureAll = false,
       selinuxPermissiveEnabled = false,
@@ -8441,6 +8442,14 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       }
   }
 
+  private suspend fun fetchHotspotSingBoxLxProfiles(): List<ApiModels.SingBoxProfileChoice> {
+    return runCatching { api.getSingBoxLxProfiles() }
+      .getOrElse {
+        log("ERR", "hotspot sing-box-lx profiles load failed: ${it.message ?: it}")
+        emptyList()
+      }
+  }
+
   private suspend fun fetchHotspotWireproxyProfiles(): List<ApiModels.SingBoxProfileChoice> {
     return runCatching { api.getWireProxyProfiles() }
       .getOrElse {
@@ -8461,10 +8470,11 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     val settings = runCatching { api.getDaemonSettings() }
       .getOrDefault(com.android.zdtd.service.api.ApiModels.DaemonSettings())
     val singboxProfiles = fetchHotspotSingBoxProfiles()
+    val singboxLxProfiles = fetchHotspotSingBoxLxProfiles()
     val wireproxyProfiles = fetchHotspotWireproxyProfiles()
     val programs = runCatching { api.getPrograms() }.getOrDefault(emptyList())
     val energySaver = fetchEnergySaverState()
-    val proxyIds = setOf("operaproxy", "singbox", "sing-box", "wireproxy")
+    val proxyIds = setOf("operaproxy", "singbox", "sing-box", "singbox-lx", "sing-box-lx", "wireproxy")
     val vpnIds = setOf("openvpn", "amneziawg", "mihomo", "mieru")
     val proxyPrograms = programs.filter { it.id in proxyIds || (it.id == "sing-box") }
     val vpnPrograms = programs.filter { it.id in vpnIds }
@@ -8478,6 +8488,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         hotspotProfile = settings.hotspotProfile,
         hotspotT2sTarget = settings.hotspotT2sTarget,
         hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
+        hotspotT2sSingboxLxProfile = settings.hotspotT2sSingboxLxProfile,
         hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
         hotspotT2sCaptureAll = settings.hotspotT2sCaptureAll,
         captivePortalEnabled = settings.captivePortalEnabled,
@@ -8485,6 +8496,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         ipForwardEnabled = settings.ipForwardEnabled,
         tproxyEnabled = settings.tproxyEnabled,
         hotspotSingboxProfiles = singboxProfiles,
+        hotspotSingboxLxProfiles = singboxLxProfiles,
         hotspotWireproxyProfiles = wireproxyProfiles,
         hotspotProxyPrograms = proxyPrograms,
         hotspotVpnPrograms = vpnPrograms,
@@ -8504,6 +8516,11 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           val singboxProfilesDeferred = async {
             runCatching { api.getSingBoxProfiles() }
               .onFailure { log("ERR", "hotspot sing-box profiles load failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val singboxLxProfilesDeferred = async {
+            runCatching { api.getSingBoxLxProfiles() }
+              .onFailure { log("ERR", "hotspot sing-box-lx profiles load failed: ${it.message ?: it}") }
               .getOrNull()
           }
           val wireproxyProfilesDeferred = async {
@@ -8545,6 +8562,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
           val settings = daemonSettingsDeferred.await()
           val singboxProfiles = singboxProfilesDeferred.await()
+          val singboxLxProfiles = singboxLxProfilesDeferred.await()
           val wireproxyProfiles = wireproxyProfilesDeferred.await()
           val programs = programsDeferred.await()
           val energySaver = energySaverDeferred.await()
@@ -8563,6 +8581,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
                 hotspotProfile = settings.hotspotProfile,
                 hotspotT2sTarget = settings.hotspotT2sTarget,
                 hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
+                hotspotT2sSingboxLxProfile = settings.hotspotT2sSingboxLxProfile,
                 hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
                 hotspotT2sCaptureAll = settings.hotspotT2sCaptureAll,
                 captivePortalEnabled = settings.captivePortalEnabled,
@@ -8573,9 +8592,10 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
             }
             if (energySaver != null) next = next.copy(energySaver = energySaver)
             if (singboxProfiles != null) next = next.copy(hotspotSingboxProfiles = singboxProfiles)
+            if (singboxLxProfiles != null) next = next.copy(hotspotSingboxLxProfiles = singboxLxProfiles)
             if (wireproxyProfiles != null) next = next.copy(hotspotWireproxyProfiles = wireproxyProfiles)
             if (programs != null) {
-              val proxyIds = setOf("operaproxy", "singbox", "sing-box", "wireproxy")
+              val proxyIds = setOf("operaproxy", "singbox", "sing-box", "singbox-lx", "sing-box-lx", "wireproxy")
               val vpnIds = setOf("openvpn", "amneziawg", "mihomo", "mieru")
               next = next.copy(
                 hotspotProxyPrograms = programs.filter { it.id in proxyIds },
@@ -8680,6 +8700,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sSingboxLxProfile = applied.hotspotT2sSingboxLxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           selinuxPermissiveEnabled = applied.selinuxPermissiveEnabled,
@@ -8984,6 +9005,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sSingboxLxProfile = applied.hotspotT2sSingboxLxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
@@ -9006,6 +9028,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         hotspotProfile = "",
         hotspotT2sTarget = "",
         hotspotT2sSingboxProfile = "",
+        hotspotT2sSingboxLxProfile = "",
         hotspotT2sWireproxyProfile = "",
       )
     }
@@ -9037,6 +9060,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sSingboxLxProfile = applied.hotspotT2sSingboxLxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
@@ -9060,6 +9084,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         hotspotProfile = "",
         hotspotT2sTarget = "",
         hotspotT2sSingboxProfile = "",
+        hotspotT2sSingboxLxProfile = "",
         hotspotT2sWireproxyProfile = "",
       )
     }
@@ -9081,6 +9106,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sSingboxLxProfile = applied.hotspotT2sSingboxLxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
@@ -9104,10 +9130,11 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         hotspotProfile = safeProfile,
         hotspotT2sTarget = proxyTarget,
         hotspotT2sSingboxProfile = if (proxyTarget == "singbox") safeProfile else "",
+        hotspotT2sSingboxLxProfile = if (proxyTarget == "singbox-lx") safeProfile else "",
         hotspotT2sWireproxyProfile = if (proxyTarget == "wireproxy") safeProfile else "",
       )
     }
-    val needsProfile = safeMode == "vpn" || safeProgram == "singbox" || safeProgram == "wireproxy"
+    val needsProfile = safeMode == "vpn" || safeProgram == "singbox" || safeProgram == "singbox-lx" || safeProgram == "wireproxy"
     if (needsProfile && safeProfile.isBlank()) return
     if (safeProgram.isBlank()) return
     launchIO {
@@ -9128,6 +9155,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sSingboxLxProfile = applied.hotspotT2sSingboxLxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
@@ -9140,16 +9168,18 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
   override fun setHotspotT2sTarget(target: String) {
     val safeTarget = when (target.trim().lowercase()) {
-      "operaproxy", "singbox", "wireproxy" -> target.trim().lowercase()
+      "operaproxy", "singbox", "singbox-lx", "wireproxy" -> target.trim().lowercase()
       else -> ""
     }
     val enabled = _appUpdate.value.hotspotT2sEnabled
     val singboxProfile = if (safeTarget == "singbox") _appUpdate.value.hotspotT2sSingboxProfile else ""
+    val singboxLxProfile = if (safeTarget == "singbox-lx") _appUpdate.value.hotspotT2sSingboxLxProfile else ""
     val wireproxyProfile = if (safeTarget == "wireproxy") _appUpdate.value.hotspotT2sWireproxyProfile else ""
     _appUpdate.update {
       it.copy(
         hotspotT2sTarget = safeTarget,
         hotspotT2sSingboxProfile = singboxProfile,
+        hotspotT2sSingboxLxProfile = singboxLxProfile,
         hotspotT2sWireproxyProfile = wireproxyProfile,
       )
     }
@@ -9157,7 +9187,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     if (!enabled || safeTarget.isBlank()) {
       return
     }
-    if (safeTarget == "singbox" || safeTarget == "wireproxy") {
+    if (safeTarget == "singbox" || safeTarget == "singbox-lx" || safeTarget == "wireproxy") {
       return
     }
 
@@ -9181,6 +9211,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sSingboxLxProfile = applied.hotspotT2sSingboxLxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
@@ -9226,6 +9257,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sSingboxLxProfile = applied.hotspotT2sSingboxLxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
@@ -9245,6 +9277,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       it.copy(
         hotspotT2sTarget = "wireproxy",
         hotspotT2sSingboxProfile = "",
+        hotspotT2sSingboxLxProfile = "",
         hotspotT2sWireproxyProfile = safeProfile,
       )
     }
@@ -9271,6 +9304,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sSingboxLxProfile = applied.hotspotT2sSingboxLxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
@@ -9310,6 +9344,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sSingboxLxProfile = applied.hotspotT2sSingboxLxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           selinuxPermissiveEnabled = applied.selinuxPermissiveEnabled,

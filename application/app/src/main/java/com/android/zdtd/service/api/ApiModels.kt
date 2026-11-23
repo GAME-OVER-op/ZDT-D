@@ -269,6 +269,7 @@ object ApiModels {
     val hotspotProfile: String = "",
     val hotspotT2sTarget: String = "",
     val hotspotT2sSingboxProfile: String = "",
+    val hotspotT2sSingboxLxProfile: String = "",
     val hotspotT2sWireproxyProfile: String = "",
     val hotspotT2sCaptureAll: Boolean = false,
     val selinuxPermissiveEnabled: Boolean = false,
@@ -605,6 +606,7 @@ object ApiModels {
     val hotspotProgram = when (rawProgram) {
       "operaproxy", "opera-proxy", "opera_proxy" -> "operaproxy"
       "singbox", "sing-box", "sing_box" -> "singbox"
+      "singbox-lx", "sing-box-lx", "sing_box_lx" -> "singbox-lx"
       "wireproxy", "wire-proxy", "wire_proxy" -> "wireproxy"
       "openvpn", "open-vpn", "open_vpn" -> "openvpn"
       "amneziawg", "amnezia-wg", "amnezia_wg", "awg" -> "amneziawg"
@@ -622,10 +624,14 @@ object ApiModels {
     val safeTarget = when (rawTarget) {
       "operaproxy", "opera-proxy", "opera_proxy" -> "operaproxy"
       "singbox", "sing-box", "sing_box" -> "singbox"
+      "singbox-lx", "sing-box-lx", "sing_box_lx" -> "singbox-lx"
       "wireproxy", "wire-proxy", "wire_proxy" -> "wireproxy"
       else -> ""
     }
     val hotspotSingboxProfile = setting?.optString("hotspot_t2s_singbox_profile", "")
+      ?.trim()
+      .orEmpty()
+    val hotspotSingboxLxProfile = setting?.optString("hotspot_t2s_singbox_lx_profile", "")
       ?.trim()
       .orEmpty()
     val hotspotWireproxyProfile = setting?.optString("hotspot_t2s_wireproxy_profile", "")
@@ -640,6 +646,7 @@ object ApiModels {
       hotspotProfile = hotspotProfile,
       hotspotT2sTarget = safeTarget,
       hotspotT2sSingboxProfile = hotspotSingboxProfile,
+      hotspotT2sSingboxLxProfile = hotspotSingboxLxProfile,
       hotspotT2sWireproxyProfile = hotspotWireproxyProfile,
       hotspotT2sCaptureAll = hotspotCaptureAll,
       selinuxPermissiveEnabled = setting?.optBoolean("selinux_permissive_enabled", false) ?: false,

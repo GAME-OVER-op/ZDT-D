@@ -193,9 +193,11 @@ fun AppUpdateSettings(
   hotspotProfile: String,
   hotspotT2sTarget: String,
   hotspotT2sSingboxProfile: String,
+  hotspotT2sSingboxLxProfile: String,
   hotspotT2sWireproxyProfile: String,
   hotspotT2sCaptureAll: Boolean,
   hotspotSingboxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
+  hotspotSingboxLxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   hotspotWireproxyProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   hotspotProxyPrograms: List<com.android.zdtd.service.api.ApiModels.Program>,
   hotspotVpnPrograms: List<com.android.zdtd.service.api.ApiModels.Program>,
@@ -296,9 +298,11 @@ fun AppUpdateSettings(
           profile = hotspotProfile,
           target = hotspotT2sTarget,
           singboxProfile = hotspotT2sSingboxProfile,
+          singboxLxProfile = hotspotT2sSingboxLxProfile,
           wireproxyProfile = hotspotT2sWireproxyProfile,
           captureAll = hotspotT2sCaptureAll,
           singboxProfiles = hotspotSingboxProfiles,
+          singboxLxProfiles = hotspotSingboxLxProfiles,
           wireproxyProfiles = hotspotWireproxyProfiles,
           proxyPrograms = hotspotProxyPrograms,
           vpnPrograms = hotspotVpnPrograms,
@@ -1078,9 +1082,11 @@ private fun HotspotT2sSection(
   profile: String,
   target: String,
   singboxProfile: String,
+  singboxLxProfile: String,
   wireproxyProfile: String,
   captureAll: Boolean,
   singboxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
+  singboxLxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   wireproxyProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   proxyPrograms: List<com.android.zdtd.service.api.ApiModels.Program>,
   vpnPrograms: List<com.android.zdtd.service.api.ApiModels.Program>,
@@ -1099,17 +1105,20 @@ private fun HotspotT2sSection(
   val selectedProgram = program.ifBlank { target }.trim().lowercase().let {
     when (it) {
       "sing-box" -> "singbox"
+      "sing-box-lx" -> "singbox-lx"
       else -> it
     }
   }
   val selectedProfile = profile.ifBlank {
     when (selectedProgram) {
       "singbox" -> singboxProfile
+      "singbox-lx" -> singboxLxProfile
       "wireproxy" -> wireproxyProfile
       else -> ""
     }
   }
   val enabledSingboxProfiles = remember(singboxProfiles) { singboxProfiles.filter { it.enabled } }
+  val enabledSingboxLxProfiles = remember(singboxLxProfiles) { singboxLxProfiles.filter { it.enabled } }
   val enabledWireproxyProfiles = remember(wireproxyProfiles) { wireproxyProfiles.filter { it.enabled } }
 
   if (compactWidth) {
@@ -1210,7 +1219,7 @@ private fun HotspotT2sSection(
         }
       }
 
-      val proxyOptions = listOf("operaproxy", "singbox", "wireproxy")
+      val proxyOptions = listOf("operaproxy", "singbox", "singbox-lx", "wireproxy")
       val vpnOptions = listOf("openvpn", "amneziawg", "mihomo", "mieru")
       val options = if (safeMode == "vpn") vpnOptions else proxyOptions
       Text(
@@ -1224,6 +1233,7 @@ private fun HotspotT2sSection(
               val title = when (id) {
                 "operaproxy" -> stringResource(R.string.settings_hotspot_program_operaproxy)
                 "singbox" -> stringResource(R.string.settings_hotspot_program_singbox)
+                "singbox-lx" -> stringResource(R.string.settings_hotspot_program_singbox_lx)
                 "wireproxy" -> stringResource(R.string.settings_hotspot_program_wireproxy)
                 "openvpn" -> "OpenVPN"
                 "amneziawg" -> "AmneziaWG"
@@ -1249,15 +1259,20 @@ private fun HotspotT2sSection(
         }
       }
 
-      val needsProfile = safeMode == "vpn" || selectedProgram == "singbox" || selectedProgram == "wireproxy"
+      val needsProfile = safeMode == "vpn" || selectedProgram == "singbox" || selectedProgram == "singbox-lx" || selectedProgram == "wireproxy"
       AnimatedVisibility(visible = needsProfile && selectedProgram.isNotBlank()) {
         val programProfiles = if (safeMode == "vpn") {
           vpnPrograms.firstOrNull { it.id == selectedProgram }?.profiles?.filter { it.enabled }.orEmpty()
         } else {
-          proxyPrograms.firstOrNull { it.id == selectedProgram || (selectedProgram == "singbox" && it.id == "sing-box") }?.profiles?.filter { it.enabled }.orEmpty()
+          proxyPrograms.firstOrNull {
+            it.id == selectedProgram ||
+              (selectedProgram == "singbox" && it.id == "sing-box") ||
+              (selectedProgram == "singbox-lx" && it.id == "sing-box-lx")
+          }?.profiles?.filter { it.enabled }.orEmpty()
         }
         val profileNames = when {
           selectedProgram == "singbox" && programProfiles.isEmpty() -> enabledSingboxProfiles.map { it.name }
+          selectedProgram == "singbox-lx" && programProfiles.isEmpty() -> enabledSingboxLxProfiles.map { it.name }
           selectedProgram == "wireproxy" && programProfiles.isEmpty() -> enabledWireproxyProfiles.map { it.name }
           else -> programProfiles.map { it.name }
         }.distinct().sortedBy { it.lowercase() }

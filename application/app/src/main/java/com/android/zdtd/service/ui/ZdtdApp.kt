@@ -1125,24 +1125,6 @@ private fun MainShell(
   var showDeleteModuleNext by remember { mutableStateOf(false) }
   var showSettings by remember { mutableStateOf(false) }
   var settingsCloseRequested by remember { mutableStateOf(false) }
-  // Sequential collapse: first the three action buttons shrink into the logs
-  // button exactly like in a program profile, then the card itself shrinks.
-  var settingsButtonsCollapsed by remember { mutableStateOf(false) }
-  var settingsCardCollapsed by remember { mutableStateOf(false) }
-  LaunchedEffect(showSettings) {
-    if (showSettings) {
-      settingsButtonsCollapsed = false
-      settingsCardCollapsed = false
-      delay(180)
-      settingsButtonsCollapsed = true
-      delay(320)
-      settingsCardCollapsed = true
-    } else {
-      settingsCardCollapsed = false
-      delay(560)
-      settingsButtonsCollapsed = false
-    }
-  }
   var programLogsTarget by remember { mutableStateOf<ProgramLogTarget?>(null) }
   var showWorldMapPrompt by remember { mutableStateOf(false) }
 
@@ -1773,8 +1755,7 @@ private fun MainShell(
             onBack = {
               if (showSettings) dismissSettings() else appsRoute = parentAppsRoute(appsRoute)
             },
-            settingsActive = settingsCardCollapsed,
-            contentCollapsed = settingsButtonsCollapsed,
+            settingsActive = showSettings,
             isHome = tab == Tab.HOME,
             onTitleClick = { if (tab == Tab.HOME) showWorldMapPrompt = true },
             programLogTarget = currentProgramLogTarget,
@@ -2243,10 +2224,10 @@ private fun FloatingTopBarCard(
   remoteTargetAddress: String,
   onRemoteDisconnect: () -> Unit,
   settingsActive: Boolean = false,
-  contentCollapsed: Boolean = false,
 ) {
-  // The buttons collapse first (see MainShell), then the card shrinks with the
-  // same slow tween, without two competing per-frame layout animations.
+  // One animation drives everything: the card width. The title and the action
+  // cluster are clipped by the shrinking card and fade with the same progress,
+  // so they travel with its right edge instead of having their own animations.
   val cardAnimation = tween<Dp>(durationMillis = 520, easing = FastOutSlowInEasing)
   val corner by animateDpAsState(
     targetValue = if (settingsActive) 29.dp else 24.dp,
@@ -2256,12 +2237,11 @@ private fun FloatingTopBarCard(
   val shape = RoundedCornerShape(corner)
   val backAlpha by animateFloatAsState(
     targetValue = if (settingsActive) 1f else 0f,
-    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+    animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
     label = "settings_card_back",
   )
-  // With a 58dp card and a 46dp button, 6dp on each side centers the back arrow.
-  // Set momentarily instead of animated: one layout pass, not one per frame.
-  val cardStartPadding = if (settingsActive || canGoBack) 6.dp else 16.dp
+  // Original layout: the title starts at the edge, no reserved arrow slot.
+  val cardStartPadding = if (canGoBack) 2.dp else 16.dp
   BoxWithConstraints(
     modifier = modifier
       .fillMaxWidth()
@@ -2280,10 +2260,8 @@ private fun FloatingTopBarCard(
       animationSpec = cardAnimation,
       label = "settings_card_height",
     )
-    // The arrow is always composed (invisible when unused) so its slot never
-    // appears or disappears abruptly during the transition.
-    val buttonsWidth = 48.dp * if (REMOTE_CONTROL_FEATURE_ENABLED) 4 else 3
-    val titleExpandedWidth = (maxWidth - cardStartPadding - 6.dp - 46.dp - buttonsWidth).coerceAtLeast(0.dp)
+    val expandRange = (maxWidth - 58.dp).coerceAtLeast(1.dp)
+    val expandProgress = ((cardWidth - 58.dp) / expandRange).coerceIn(0f, 1f)
     Surface(
       modifier = Modifier
         .width(cardWidth)
@@ -2295,60 +2273,60 @@ private fun FloatingTopBarCard(
       shadowElevation = 0.dp,
       border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
     ) {
-      Column(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(start = cardStartPadding, end = 6.dp),
-      ) {
-        Row(
+      Box(Modifier.fillMaxSize()) {
+        Column(
           modifier = Modifier
-            .fillMaxWidth()
-            .height(58.dp),
-          verticalAlignment = Alignment.CenterVertically,
+            .fillMaxSize()
+            .padding(start = cardStartPadding, end = 6.dp),
         ) {
-          IconButton(
+          Row(
             modifier = Modifier
-              .size(46.dp)
-              .alpha(
-                when {
-                  settingsActive -> backAlpha
-                  canGoBack -> 1f
-                  else -> 0f
-                },
-              ),
-            enabled = canGoBack || settingsActive,
-            onClick = onBack,
+              .fillMaxWidth()
+              .height(58.dp),
+            verticalAlignment = Alignment.CenterVertically,
           ) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
-          }
-          CollapsingTopBarElement(
-            visible = !contentCollapsed,
-            expandedWidth = titleExpandedWidth,
-            contentAlignment = Alignment.CenterStart,
-          ) {
+            if (canGoBack) {
+              Spacer(Modifier.size(46.dp))
+            }
             SeasonalAppTitle(
               title = title,
               isHome = isHome,
               onTitleClick = onTitleClick,
               compact = true,
-              modifier = Modifier.fillMaxWidth(),
+              modifier = Modifier
+                .weight(1f)
+                .graphicsLayer { alpha = expandProgress },
             )
+            Box(Modifier.graphicsLayer { alpha = expandProgress }) {
+              TopBarActionCluster(
+                programLogTarget = programLogTarget,
+                onOpenLogs = onOpenLogs,
+                onOpenBackup = onOpenBackup,
+                onOpenSettings = onOpenSettings,
+                onOpenRemoteSetup = onOpenRemoteSetup,
+              )
+            }
           }
-          TopBarActionCluster(
-            programLogTarget = programLogTarget,
-            onOpenLogs = onOpenLogs,
-            onOpenBackup = onOpenBackup,
-            onOpenSettings = onOpenSettings,
-            onOpenRemoteSetup = onOpenRemoteSetup,
-            forceCollapse = contentCollapsed,
+          RemoteTargetTopLine(
+            name = remoteTargetName,
+            address = remoteTargetAddress,
+            onRemoteSetup = onOpenRemoteSetup,
+            onDisconnect = onRemoteDisconnect,
           )
         }
-        RemoteTargetTopLine(
-          name = remoteTargetName,
-          address = remoteTargetAddress,
-          onRemoteSetup = onOpenRemoteSetup,
-          onDisconnect = onRemoteDisconnect,
-        )
+        // The back arrow floats above the content and never occupies a slot,
+        // so ZDT-D keeps its original position when no profile is active.
+        IconButton(
+          modifier = Modifier
+            .align(Alignment.TopStart)
+            .padding(start = if (settingsActive) 6.dp else 2.dp)
+            .size(46.dp)
+            .alpha(if (settingsActive) backAlpha else if (canGoBack) 1f else 0f),
+          enabled = canGoBack || settingsActive,
+          onClick = onBack,
+        ) {
+          Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
+        }
       }
     }
   }
@@ -2830,13 +2808,12 @@ private fun TopBarActionCluster(
   onOpenBackup: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenRemoteSetup: () -> Unit,
-  forceCollapse: Boolean = false,
 ) {
   val target = programLogTarget
   var collapsed by remember { mutableStateOf(false) }
   val glow = remember { Animatable(0f) }
   val inProgramMode = target != null
-  val showFullActions = (!inProgramMode || !collapsed) && !forceCollapse
+  val showFullActions = !inProgramMode || !collapsed
 
   LaunchedEffect(target?.key) {
     if (target == null) {
@@ -2876,6 +2853,13 @@ private fun TopBarActionCluster(
 
   Box(
     modifier = Modifier
+      .animateContentSize(
+        animationSpec = spring(
+          dampingRatio = Spring.DampingRatioNoBouncy,
+          stiffness = Spring.StiffnessMediumLow,
+        ),
+        alignment = Alignment.CenterEnd,
+      )
       .padding(end = outerEndPadding)
       .background(MaterialTheme.colorScheme.error.copy(alpha = glow.value), CircleShape)
       .padding(horizontal = innerHorizontalPadding),
@@ -2911,43 +2895,30 @@ private fun CollapsingTopBarAction(
   visible: Boolean,
   content: @Composable () -> Unit,
 ) {
-  CollapsingTopBarElement(visible = visible, expandedWidth = 48.dp, content = content)
-}
-
-/** Shared collapse rhythm for the action buttons and the ZDT-D title. */
-@Composable
-private fun CollapsingTopBarElement(
-  visible: Boolean,
-  expandedWidth: Dp,
-  contentAlignment: Alignment = Alignment.Center,
-  content: @Composable () -> Unit,
-) {
   val width by animateDpAsState(
-    targetValue = if (visible) expandedWidth else 0.dp,
+    targetValue = if (visible) 48.dp else 0.dp,
     animationSpec = spring(
       dampingRatio = Spring.DampingRatioNoBouncy,
       stiffness = Spring.StiffnessMediumLow,
     ),
-    label = "topBarElementWidth",
+    label = "topBarActionWidth",
   )
-  // Alpha is derived from the same width value: the element fades in exact sync
-  // with its size and is scaled to fit, so it never appears as a clipped sliver.
-  val progress = if (expandedWidth.value > 0f) (width.value / expandedWidth.value).coerceIn(0f, 1f) else 0f
+  val alpha by animateFloatAsState(
+    targetValue = if (visible) 1f else 0f,
+    animationSpec = tween(durationMillis = if (visible) 220 else 170, easing = FastOutSlowInEasing),
+    label = "topBarActionAlpha",
+  )
 
   Box(
     modifier = Modifier
       .width(width)
       .clipToBounds(),
-    contentAlignment = contentAlignment,
+    contentAlignment = Alignment.Center,
   ) {
     Box(
       modifier = Modifier
-        .width(expandedWidth)
-        .graphicsLayer {
-          scaleX = progress
-          alpha = progress
-          transformOrigin = TransformOrigin(0.5f, 0.5f)
-        },
+        .width(48.dp)
+        .alpha(alpha),
       contentAlignment = Alignment.Center,
     ) {
       content()

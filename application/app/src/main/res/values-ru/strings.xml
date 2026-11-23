@@ -2182,6 +2182,7 @@ APatch: 10700+</string>
     <string name="tool_releases_checksum_failed">Скачанный файл не прошёл проверку SHA-256 от GitHub.</string>
     <string name="tool_releases_abi_mismatch">Скачанный бинарник не соответствует архитектуре устройства.</string>
     <string name="tool_version_unknown">не удалось определить версию</string>
+    <string name="tool_version_checking">проверка…</string>
     <string name="tool_releases_title">Доступные версии</string>
     <string name="tool_releases_empty">Совместимые релизы не найдены</string>
     <string name="tool_releases_notes">Описание релиза</string>

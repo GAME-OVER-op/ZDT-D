@@ -13,6 +13,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.RepeatMode
@@ -1443,6 +1444,14 @@ private fun MainShell(
   val floatingTopBarReserve = WindowInsets.statusBars
     .asPaddingValues()
     .calculateTopPadding() + (if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp)
+  val settingsTopReserve = if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp
+  // Settings content starts below the floating card, so the top of the shell
+  // uses the card colour instead of the near-black background gradient.
+  val settingsShellTopColor by animateColorAsState(
+    targetValue = if (showSettings) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.background,
+    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+    label = "settings_shell_top_color",
+  )
 
   LaunchedEffect(tab, showSettings) {
     actions.setActiveMainTab(if (showSettings) "SETTINGS" else tab.name)
@@ -1554,7 +1563,7 @@ private fun MainShell(
       .background(
         Brush.verticalGradient(
           colors = listOf(
-            MaterialTheme.colorScheme.background,
+            settingsShellTopColor,
             MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
             MaterialTheme.colorScheme.background,
           ),
@@ -1791,7 +1800,7 @@ private fun MainShell(
           appUpdate = appUpdate,
           actions = actions,
           showBackButton = false,
-          topContentPadding = 0.dp,
+          topContentPadding = settingsTopReserve,
           loading = !settingsContentReady,
           onDismiss = { dismissSettings() },
           onDeleteModule = { dismissSettings { showDeleteModule = true } },

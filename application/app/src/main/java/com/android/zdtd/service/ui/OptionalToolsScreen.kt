@@ -76,6 +76,7 @@ fun OptionalToolsScreen(
   var releasesTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
   val eligibleReleases = remember { ToolReleaseCatalog.eligibleIds(ToolReleaseCatalog.currentAbi()) }
   var binaryVersions by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+  var pendingVersions by remember { mutableStateOf<Set<String>>(emptySet()) }
 
   LaunchedEffect(Unit) {
     actions.refreshOptionalTools()
@@ -94,16 +95,22 @@ fun OptionalToolsScreen(
       }
     }
     ids.forEach { id ->
+      pendingVersions = pendingVersions + id
       actions.readBinaryVersions(id) { versions ->
         if (versions.isNotEmpty()) binaryVersions = binaryVersions + (id to versions.values.joinToString(" / ") { it })
+        pendingVersions = pendingVersions - id
       }
     }
   }
 
   @Composable
+  fun versionLoading(componentId: String): Boolean = componentId in pendingVersions
+
+  @Composable
   fun versionText(componentId: String): String =
     binaryVersions[componentId]?.takeIf { it.isNotBlank() }
-      ?: stringResource(R.string.tool_version_unknown)
+      ?: if (versionLoading(componentId)) stringResource(R.string.tool_version_checking)
+      else stringResource(R.string.tool_version_unknown)
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -119,6 +126,7 @@ fun OptionalToolsScreen(
         onInstall = actions::installTgWsProxy,
         onRemove = actions::removeTgWsProxy,
         binaryVersion = versionText("tgwsproxy"),
+        versionLoading = versionLoading("tgwsproxy"),
       )
     }
     item(key = "sing-box-lx") {
@@ -127,6 +135,7 @@ fun OptionalToolsScreen(
         onInstall = actions::installSingBoxLx,
         onRemove = actions::removeSingBoxLx,
         binaryVersion = versionText("sing-box-lx"),
+        versionLoading = versionLoading("sing-box-lx"),
       )
     }
     RootBinaryComponentCatalog.moduleComponents.forEach { spec ->
@@ -140,6 +149,7 @@ fun OptionalToolsScreen(
           state = localState,
           installed = installed,
           binaryVersion = versionText(spec.id),
+          versionLoading = versionLoading(spec.id),
           onInstall = { actions.installRootComponent(spec.id) },
           onRemove = { actions.removeRootComponent(spec.id) },
           onShowReleases = if (spec.id in eligibleReleases) {
@@ -177,6 +187,7 @@ private fun TgWsProxyUtilityCard(
   onInstall: () -> Unit,
   onRemove: () -> Unit,
   binaryVersion: String,
+  versionLoading: Boolean,
 ) {
   OptionalBinaryUtilityCard(
     title = stringResource(R.string.tg_ws_proxy_title),
@@ -192,6 +203,7 @@ private fun TgWsProxyUtilityCard(
     selectedAbi = state.selectedAbi,
     installedVersion = state.installedVersion,
     binaryVersion = binaryVersion,
+    versionLoading = versionLoading,
     errorText = state.errorMessage,
     onInstall = onInstall,
     onRemove = onRemove,
@@ -204,6 +216,7 @@ private fun SingBoxLxUtilityCard(
   onInstall: () -> Unit,
   onRemove: () -> Unit,
   binaryVersion: String,
+  versionLoading: Boolean,
 ) {
   OptionalBinaryUtilityCard(
     title = stringResource(R.string.sing_box_lx_title),
@@ -220,6 +233,7 @@ private fun SingBoxLxUtilityCard(
     selectedAbi = state.selectedAbi,
     installedVersion = state.installedVersion,
     binaryVersion = binaryVersion,
+    versionLoading = versionLoading,
     errorText = singBoxLxErrorText(state),
     onInstall = onInstall,
     onRemove = onRemove,
@@ -233,6 +247,7 @@ private fun GenericRootComponentCard(
   state: RootBinaryComponentState,
   installed: Boolean,
   binaryVersion: String,
+  versionLoading: Boolean,
   onInstall: () -> Unit,
   onRemove: () -> Unit,
   onShowReleases: (() -> Unit)? = null,
@@ -261,6 +276,7 @@ private fun GenericRootComponentCard(
     selectedAbi = state.selectedAbi,
     installedVersion = state.installedVersion,
     binaryVersion = binaryVersion,
+    versionLoading = versionLoading,
     errorText = state.errorMessage,
     onInstall = onInstall,
     onRemove = onRemove,
@@ -284,6 +300,7 @@ private fun OptionalBinaryUtilityCard(
   selectedAbi: String,
   installedVersion: String,
   binaryVersion: String,
+  versionLoading: Boolean,
   errorText: String?,
   onInstall: () -> Unit,
   onRemove: () -> Unit,
@@ -348,6 +365,7 @@ private fun OptionalBinaryUtilityCard(
         selectedAbi = selectedAbi,
         installedVersion = installedVersion,
         binaryVersion = binaryVersion,
+        versionLoading = versionLoading,
         accentColor = accentColor,
       )
 
@@ -465,6 +483,7 @@ private fun OptionalToolStatusPill(
   selectedAbi: String,
   installedVersion: String,
   binaryVersion: String,
+  versionLoading: Boolean,
   accentColor: Color,
 ) {
   Surface(
@@ -493,12 +512,20 @@ private fun OptionalToolStatusPill(
         Text("• $selectedAbi", style = MaterialTheme.typography.labelMedium)
       }
       if (installed) {
-        Text(
-          "• $binaryVersion",
-          style = MaterialTheme.typography.labelMedium,
-          color = if (binaryVersion == stringResource(R.string.tool_version_unknown))
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f) else accentColor,
-        )
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          if (versionLoading) {
+            CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp, color = accentColor)
+          }
+          Text(
+            "• $binaryVersion",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (binaryVersion == stringResource(R.string.tool_version_unknown))
+              MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f) else accentColor,
+          )
+        }
       }
     }
   }

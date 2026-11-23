@@ -2182,6 +2182,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="tool_releases_checksum_failed">Downloaded file failed the SHA-256 check from GitHub.</string>
     <string name="tool_releases_abi_mismatch">Downloaded binary does not match this device architecture.</string>
     <string name="tool_version_unknown">version could not be determined</string>
+    <string name="tool_version_checking">checking…</string>
     <string name="tool_releases_title">Available versions</string>
     <string name="tool_releases_empty">No compatible releases found</string>
     <string name="tool_releases_notes">Release notes</string>

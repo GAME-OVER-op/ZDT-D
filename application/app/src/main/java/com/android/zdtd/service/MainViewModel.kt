@@ -371,6 +371,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private val rootBinaryComponentRepository = RootBinaryComponentRepository(ctx, root, componentSelectionStore)
   private val componentSelectionMutex = Mutex()
 
+  // Manifest versions are read from disk once per component and kept in memory.
+  private val manifestVersionCache = LinkedHashMap<String, String>()
+  private val manifestVersionLock = Any()
+
   private val hotspotSettingsMutex = Mutex()
 
   private val githubHttp = OkHttpClient.Builder()
@@ -7926,6 +7930,27 @@ private fun shQuote(s: String): String {
     return ToolReleaseCatalog.forComponent(componentId, abi)
   }
 
+  private fun manifestVersionPath(componentId: String): String = when (componentId) {
+    "sing-box-lx" -> "/data/adb/modules/ZDT-D/working_folder/singbox-lx/component.json"
+    "tgwsproxy" -> "/data/adb/modules/ZDT-D/working_folder/tgwsproxy/component.json"
+    else -> "/data/adb/ZDT-D/component-info/$componentId.json"
+  }
+
+  /** Installed version from the component manifest, cached in memory. */
+  private fun manifestVersion(componentId: String): String? {
+    synchronized(manifestVersionLock) {
+      manifestVersionCache[componentId]?.let { return it.takeIf { it.isNotBlank() } }
+    }
+    val raw = runCatching { root.readTextFile(manifestVersionPath(componentId)) }.getOrDefault("")
+    val version = runCatching { JSONObject(raw).optString("installed_version", "").trim() }
+      .getOrDefault("")
+      .takeIf { it.isNotBlank() }
+    if (version != null) {
+      synchronized(manifestVersionLock) { manifestVersionCache[componentId] = version }
+    }
+    return version
+  }
+
   override fun readBinaryVersions(componentId: String, onDone: (Map<String, String>) -> Unit) {
     val names = when (componentId) {
       "sing-box-lx" -> listOf("sing-box-lx")
@@ -7940,20 +7965,42 @@ private fun shQuote(s: String): String {
     viewModelScope.launch {
       val found = withContext(Dispatchers.IO) {
         val result = LinkedHashMap<String, String>()
-        val strict = Regex("github\\s+android\\s+version\\s+(v[0-9]+(?:\\.[0-9]+){0,3})", RegexOption.IGNORE_CASE)
-        val loose = Regex("\\bv[0-9]+(?:\\.[0-9]+){1,3}\\b", RegexOption.IGNORE_CASE)
 
-        fun parse(text: String): String? {
-          strict.find(text)?.groupValues?.getOrNull(1)?.let { return it }
-          return loose.find(text)?.value?.lowercase()
+        fun parse(name: String, text: String): String? {
+          val token = "(v?[0-9]+(?:\\.[0-9]+){1,3}(?:-[0-9A-Za-z.]+)?)"
+          val anchored: Regex? = when (name) {
+            "nfqws", "nfqws2" ->
+              Regex("github\\s+android\\s+version\\s+$token", RegexOption.IGNORE_CASE)
+            "openvpn" -> Regex("OpenVPN\\s+$token", RegexOption.IGNORE_CASE)
+            "torproxy" -> Regex("tor(?:\\s+version)?\\s+$token", RegexOption.IGNORE_CASE)
+            "sing-box", "sing-box-lx" ->
+              Regex("sing-box(?:-lx)?\\s+version\\s+$token", RegexOption.IGNORE_CASE)
+            "mihomo" -> Regex("mihomo\\s+$token", RegexOption.IGNORE_CASE)
+            "mieru" -> Regex("mieru(?:\\s+version)?\\s+$token", RegexOption.IGNORE_CASE)
+            "tg-ws-proxy" -> Regex("tg-ws-proxy-rs\\s+$token", RegexOption.IGNORE_CASE)
+            "awg", "amneziawg-go" ->
+              Regex("(?:awg|amneziawg-go)(?:\\s+version)?\\s+$token", RegexOption.IGNORE_CASE)
+            "byedpi", "ciadpi-zdt", "ciadpi", "bye_dpi" ->
+              Regex("(?:byedpi|ciadpi)(?:\\s+version)?\\s+$token", RegexOption.IGNORE_CASE)
+            else -> null
+          }
+          anchored?.find(text)?.let { return it.groupValues[1] }
+          // Last resort: look only at lines that mention "version".
+          val versionLine = text.lineSequence().firstOrNull { it.contains("version", ignoreCase = true) } ?: text
+          return Regex("\\b(v?[0-9]+\\.[0-9]+(?:\\.[0-9]+){0,2}(?:-[0-9A-Za-z.]+)?)\\b")
+            .find(versionLine)?.value
         }
 
         fun flagsFor(name: String): List<String> = when (name) {
-          "nfqws", "nfqws2", "mihomo" -> listOf("-v", "version")
-          "mieru", "sing-box", "sing-box-lx" -> listOf("version", "-v", "--version")
-          "opera-proxy", "tg-ws-proxy" -> listOf("-version", "--version", "version")
-          "openvpn", "torproxy", "lyrebird" -> listOf("--version", "version", "-v")
-          else -> listOf("-v", "version", "--version", "-version")
+          "nfqws", "nfqws2" -> listOf("--version", "version", "-v")
+          "sing-box", "sing-box-lx", "mieru", "hysteria2" -> listOf("version", "--version", "-v")
+          "mihomo", "awg", "amneziawg-go" -> listOf("-v", "--version", "version")
+          "openvpn", "torproxy", "lyrebird", "wireproxy", "dpitunnel-cli" ->
+            listOf("--version", "version", "-v", "-version")
+          "opera-proxy" -> listOf("-version", "--version", "version", "-v")
+          "tg-ws-proxy" -> listOf("--version", "version", "-version", "-v")
+          "byedpi", "ciadpi-zdt", "ciadpi", "bye_dpi" -> listOf("-v", "--version", "version", "-version")
+          else -> listOf("--version", "version", "-v", "-version")
         }
 
         for (name in names) {
@@ -7966,16 +8013,19 @@ private fun shQuote(s: String): String {
               val command = "timeout 5 ${shQuote(path)} $flag 2>&1"
               val direct = root.execRootSh("$command || true")
               val text = (direct.out + direct.err).joinToString("\n").trim()
-              version = parse(text)
+              version = parse(name, text)
               if (version == null) {
                 val shellUser = root.execRootSh("su -lp 2000 -c ${shQuote(command)} || true")
-                version = parse((shellUser.out + shellUser.err).joinToString("\n").trim())
+                version = parse(name, (shellUser.out + shellUser.err).joinToString("\n").trim())
               }
               if (version != null) break
             }
             if (version != null) break
           }
           if (version != null) result[name] = version
+        }
+        if (result.isEmpty()) {
+          manifestVersion(componentId)?.let { result[names.first()] = it }
         }
         result
       }

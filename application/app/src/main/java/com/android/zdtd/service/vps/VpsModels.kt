@@ -184,7 +184,7 @@ data class VpsUrnetworkExitInfo(
 enum class VpsUrnetworkSetupStep { NONE, EMAIL, CODE, SHARE, INSTALL, ROUTING, DONE }
 
 data class UrnetworkSetupUiState(
-  val step: VpsUrnetworkSetupStep = NONE,
+  val step: VpsUrnetworkSetupStep = VpsUrnetworkSetupStep.NONE,
   val serverId: String? = null,
   val email: String = "",
   val code: String = "",

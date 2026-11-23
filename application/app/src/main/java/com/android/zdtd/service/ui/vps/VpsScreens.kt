@@ -830,6 +830,7 @@ fun UrnetworkSetupDialog(
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
         when (step) {
+          VpsUrnetworkSetupStep.NONE -> Unit
           VpsUrnetworkSetupStep.EMAIL -> {
             Text(stringResource(R.string.urnetwork_setup_email_body), style = MaterialTheme.typography.bodyMedium)
             OutlinedTextField(
@@ -2449,6 +2450,7 @@ private fun importConfigIntoZdtd(
       }
     }
     VpsServiceKind.DNSCRYPT -> onDone(context.getString(R.string.vps_import_failed))
+    VpsServiceKind.URNETWORK -> onDone(context.getString(R.string.vps_import_failed))
   }
 }
 

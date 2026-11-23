@@ -2739,7 +2739,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 
 
     <string name="vps_service_urnetwork">URnetwork</string>
-    <string name="vps_service_urnetwork_desc">Distributed network that shares the server's internet with other participants and routes server traffic through URnetwork.</string>
+    <string name="vps_service_urnetwork_desc">Distributed network that shares the server’s internet with other participants and routes server traffic through URnetwork.</string>
     <string name="urnetwork_setup_email_title">URnetwork account</string>
     <string name="urnetwork_setup_email_body">To use URnetwork, sign in with your email. Enter the address linked to your URnetwork account. For example: name@example.com</string>
     <string name="urnetwork_setup_email_hint">Email address</string>

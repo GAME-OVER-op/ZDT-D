@@ -2708,7 +2708,7 @@ APatch: 10700+</string>
     <string name="vps_service_urnetwork">URnetwork</string>
     <string name="vps_service_urnetwork_desc">Розподілена мережа, що ділиться інтернетом сервера з іншими учасниками та направляє трафік сервера через URnetwork.</string>
     <string name="urnetwork_setup_email_title">Обліковий запис URnetwork</string>
-    <string name="urnetwork_setup_email_body">Для роботи URnetwork потрібна авторизація електронною поштою. Введіть адресу, до якої прив'язано ваш обліковий запис URnetwork. Наприклад: name@example.com</string>
+    <string name="urnetwork_setup_email_body">Для роботи URnetwork потрібна авторизація електронною поштою. Введіть адресу, до якої прив’язано ваш обліковий запис URnetwork. Наприклад: name@example.com</string>
     <string name="urnetwork_setup_email_hint">Адреса електронної пошти</string>
     <string name="urnetwork_setup_email_example">Наприклад: name@example.com</string>
     <string name="urnetwork_setup_email_send">Надіслати код</string>

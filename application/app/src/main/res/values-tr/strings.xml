@@ -2705,7 +2705,7 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="vps_service_urnetwork">URnetwork</string>
     <string name="vps_service_urnetwork_desc">Sunucunun internet bağlantısını URnetwork katılımcılarıyla paylaşan ve sunucu trafiğini URnetwork üzerinden yönlendiren dağıtık ağ.</string>
     <string name="urnetwork_setup_email_title">URnetwork hesabı</string>
-    <string name="urnetwork_setup_email_body">URnetwork'ü kullanmak için e-posta adresinizle giriş yapın. URnetwork hesabınıza bağlı adresi girin. Örneğin: name@example.com</string>
+    <string name="urnetwork_setup_email_body">URnetwork’ü kullanmak için e-posta adresinizle giriş yapın. URnetwork hesabınıza bağlı adresi girin. Örneğin: name@example.com</string>
     <string name="urnetwork_setup_email_hint">E-posta adresi</string>
     <string name="urnetwork_setup_email_example">Örneğin: name@example.com</string>
     <string name="urnetwork_setup_email_send">Kod gönder</string>

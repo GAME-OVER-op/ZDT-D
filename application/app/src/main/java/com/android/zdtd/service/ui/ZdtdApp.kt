@@ -1139,7 +1139,7 @@ private fun MainShell(
       settingsCardCollapsed = true
     } else {
       settingsCardCollapsed = false
-      delay(480)
+      delay(560)
       settingsButtonsCollapsed = false
     }
   }
@@ -2280,10 +2280,10 @@ private fun FloatingTopBarCard(
       animationSpec = cardAnimation,
       label = "settings_card_height",
     )
-    // The title uses the very same width collapse as the action buttons.
-    val arrowWidth = if (canGoBack || settingsActive) 46.dp else 0.dp
+    // The arrow is always composed (invisible when unused) so its slot never
+    // appears or disappears abruptly during the transition.
     val buttonsWidth = 48.dp * if (REMOTE_CONTROL_FEATURE_ENABLED) 4 else 3
-    val titleExpandedWidth = (maxWidth - cardStartPadding - 6.dp - arrowWidth - buttonsWidth).coerceAtLeast(0.dp)
+    val titleExpandedWidth = (maxWidth - cardStartPadding - 6.dp - 46.dp - buttonsWidth).coerceAtLeast(0.dp)
     Surface(
       modifier = Modifier
         .width(cardWidth)
@@ -2306,15 +2306,20 @@ private fun FloatingTopBarCard(
             .height(58.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          if (canGoBack || settingsActive) {
-            IconButton(
-              modifier = Modifier
-                .size(46.dp)
-                .alpha(if (settingsActive) backAlpha else 1f),
-              onClick = onBack,
-            ) {
-              Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
-            }
+          IconButton(
+            modifier = Modifier
+              .size(46.dp)
+              .alpha(
+                when {
+                  settingsActive -> backAlpha
+                  canGoBack -> 1f
+                  else -> 0f
+                },
+              ),
+            enabled = canGoBack || settingsActive,
+            onClick = onBack,
+          ) {
+            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
           }
           CollapsingTopBarElement(
             visible = !contentCollapsed,
@@ -2871,13 +2876,6 @@ private fun TopBarActionCluster(
 
   Box(
     modifier = Modifier
-      .animateContentSize(
-        animationSpec = spring(
-          dampingRatio = Spring.DampingRatioNoBouncy,
-          stiffness = Spring.StiffnessMediumLow,
-        ),
-        alignment = Alignment.CenterEnd,
-      )
       .padding(end = outerEndPadding)
       .background(MaterialTheme.colorScheme.error.copy(alpha = glow.value), CircleShape)
       .padding(horizontal = innerHorizontalPadding),
@@ -2932,11 +2930,9 @@ private fun CollapsingTopBarElement(
     ),
     label = "topBarElementWidth",
   )
-  val alpha by animateFloatAsState(
-    targetValue = if (visible) 1f else 0f,
-    animationSpec = tween(durationMillis = if (visible) 220 else 170, easing = FastOutSlowInEasing),
-    label = "topBarElementAlpha",
-  )
+  // Alpha is derived from the same width value: the element fades in exact sync
+  // with its size and is scaled to fit, so it never appears as a clipped sliver.
+  val progress = if (expandedWidth.value > 0f) (width.value / expandedWidth.value).coerceIn(0f, 1f) else 0f
 
   Box(
     modifier = Modifier
@@ -2947,7 +2943,11 @@ private fun CollapsingTopBarElement(
     Box(
       modifier = Modifier
         .width(expandedWidth)
-        .alpha(alpha),
+        .graphicsLayer {
+          scaleX = progress
+          alpha = progress
+          transformOrigin = TransformOrigin(0.5f, 0.5f)
+        },
       contentAlignment = Alignment.Center,
     ) {
       content()

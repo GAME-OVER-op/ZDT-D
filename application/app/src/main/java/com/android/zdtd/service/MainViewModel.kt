@@ -371,9 +371,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private val rootBinaryComponentRepository = RootBinaryComponentRepository(ctx, root, componentSelectionStore)
   private val componentSelectionMutex = Mutex()
 
-  // Manifest versions are read from disk once per component and kept in memory.
+  // Version probes and manifest reads are expensive; keep them in memory.
   private val manifestVersionCache = LinkedHashMap<String, String>()
   private val manifestVersionLock = Any()
+  private val binaryVersionCache = LinkedHashMap<String, Map<String, String>>()
+  private val binaryVersionLock = Any()
 
   private val hotspotSettingsMutex = Mutex()
 
@@ -7963,6 +7965,12 @@ private fun shQuote(s: String): String {
       onDone(emptyMap())
       return
     }
+    synchronized(binaryVersionLock) {
+      binaryVersionCache[componentId]?.let {
+        onDone(it)
+        return
+      }
+    }
     viewModelScope.launch {
       val found = withContext(Dispatchers.IO) {
         val result = LinkedHashMap<String, String>()
@@ -8006,20 +8014,19 @@ private fun shQuote(s: String): String {
 
         for (name in names) {
           var version: String? = null
+          val flags = flagsFor(name).joinToString(" ")
           for (dir in listOf("/data/adb/modules/ZDT-D/bin", "/data/adb/modules_update/ZDT-D/bin")) {
             val path = "$dir/$name"
-            if (!root.execRootSh("test -f ${shQuote(path)}").isSuccess) continue
-            root.execRootSh("chmod 0755 ${shQuote(path)} 2>/dev/null || true")
-            for (flag in flagsFor(name)) {
-              val command = "timeout 5 ${shQuote(path)} $flag 2>&1"
-              val direct = root.execRootSh("$command || true")
-              val text = (direct.out + direct.err).joinToString("\n").trim()
-              version = parse(name, text)
-              if (version == null) {
-                val shellUser = root.execRootSh("su -lp 2000 -c ${shQuote(command)} || true")
-                version = parse(name, (shellUser.out + shellUser.err).joinToString("\n").trim())
-              }
-              if (version != null) break
+            // One root shell per binary: test, chmod and try every flag in a
+            // single invocation instead of spawning a process per flag.
+            val script = "test -f ${shQuote(path)} || exit 1; " +
+              "chmod 0755 ${shQuote(path)} 2>/dev/null; " +
+              "for f in $flags; do timeout 3 ${shQuote(path)} \"\$f\" 2>&1; done"
+            val direct = root.execRootSh("$script || true")
+            version = parse(name, (direct.out + direct.err).joinToString("\n").trim())
+            if (version == null) {
+              val shellUser = root.execRootSh("su -lp 2000 -c ${shQuote(script)} || true")
+              version = parse(name, (shellUser.out + shellUser.err).joinToString("\n").trim())
             }
             if (version != null) break
           }
@@ -8027,6 +8034,9 @@ private fun shQuote(s: String): String {
         }
         if (result.isEmpty()) {
           manifestVersion(componentId)?.let { result[names.first()] = it }
+        }
+        if (result.isNotEmpty()) {
+          synchronized(binaryVersionLock) { binaryVersionCache[componentId] = result }
         }
         result
       }
@@ -8191,6 +8201,7 @@ private fun shQuote(s: String): String {
         if (okInstall) {
           rootBinaryComponentRepository.markVersionInstalled(componentId, versionForPath)
           synchronized(manifestVersionLock) { manifestVersionCache.remove(componentId) }
+          synchronized(binaryVersionLock) { binaryVersionCache.remove(componentId) }
           refreshOptionalTools()
         }
         report(100, "")

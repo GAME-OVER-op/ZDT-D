@@ -1,6 +1,7 @@
 package com.android.zdtd.service.ui
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -82,9 +83,15 @@ fun OptionalToolsScreen(
 
   LaunchedEffect(components, rootComponentStates, tgWsProxyState.installed, singBoxLxState.installed) {
     val ids = buildList {
-      add("tgwsproxy")
-      add("sing-box-lx")
-      RootBinaryComponentCatalog.moduleComponents.forEach { add(it.id) }
+      if (tgWsProxyState.installed) add("tgwsproxy")
+      if (singBoxLxState.installed) add("sing-box-lx")
+      RootBinaryComponentCatalog.moduleComponents.forEach { spec ->
+        val local = rootComponentStates[spec.id]
+        val installed = (local?.isWorking == true && local.installed) ||
+          local?.installed == true ||
+          components.firstOrNull { it.id == spec.id }?.installed == true
+        if (installed) add(spec.id)
+      }
     }
     ids.forEach { id ->
       actions.readBinaryVersions(id) { versions ->
@@ -293,7 +300,8 @@ private fun OptionalBinaryUtilityCard(
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(14.dp),
+        .padding(14.dp)
+        .animateContentSize(),
       verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
       Row(
@@ -361,7 +369,9 @@ private fun OptionalBinaryUtilityCard(
       }
 
       Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+          .fillMaxWidth()
+          .animateContentSize(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
@@ -458,6 +468,7 @@ private fun OptionalToolStatusPill(
   accentColor: Color,
 ) {
   Surface(
+    modifier = Modifier.animateContentSize(),
     color = accentColor.copy(alpha = 0.14f),
     contentColor = accentColor,
     border = BorderStroke(1.dp, accentColor.copy(alpha = 0.35f)),

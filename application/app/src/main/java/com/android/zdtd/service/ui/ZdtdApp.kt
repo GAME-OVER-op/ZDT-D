@@ -1442,6 +1442,9 @@ private fun MainShell(
   val floatingTopBarReserve = WindowInsets.statusBars
     .asPaddingValues()
     .calculateTopPadding() + (if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp)
+  // SettingsScreen already applies safeDrawing insets, so only the extra
+  // reserve for the floating top bar is needed here.
+  val settingsTopReserve = if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp
 
   LaunchedEffect(tab, showSettings) {
     actions.setActiveMainTab(if (showSettings) "SETTINGS" else tab.name)
@@ -1790,6 +1793,7 @@ private fun MainShell(
           appUpdate = appUpdate,
           actions = actions,
           showBackButton = false,
+          topContentPadding = settingsTopReserve,
           loading = !settingsContentReady,
           onDismiss = { dismissSettings() },
           onDeleteModule = { dismissSettings { showDeleteModule = true } },
@@ -2318,7 +2322,7 @@ private fun FloatingTopBarCard(
         // so ZDT-D keeps its original position when no profile is active.
         IconButton(
           modifier = Modifier
-            .align(Alignment.TopStart)
+            .align(Alignment.CenterStart)
             .padding(start = if (settingsActive) 6.dp else 2.dp)
             .size(46.dp)
             .alpha(if (settingsActive) backAlpha else if (canGoBack) 1f else 0f),
@@ -2616,6 +2620,7 @@ private fun RootSettingsScreen(
   appUpdate: AppUpdateUiState,
   actions: ZdtdActions,
   showBackButton: Boolean,
+  topContentPadding: Dp = 0.dp,
   loading: Boolean,
   onDismiss: () -> Unit,
   onDeleteModule: () -> Unit,
@@ -2685,7 +2690,7 @@ private fun RootSettingsScreen(
     onDismiss = onDismiss,
     loading = loading,
     showBackButton = showBackButton,
-    topContentPadding = 0.dp,
+    topContentPadding = topContentPadding,
   ) {
     content()
   }

@@ -148,6 +148,7 @@ fun OptionalToolsScreen(
     ToolReleasesDialog(
       componentId = target.first,
       title = target.second,
+      installedVersion = versionText(target.first),
       actions = actions,
       onDismiss = { releasesTarget = null },
     )
@@ -301,16 +302,16 @@ private fun OptionalBinaryUtilityCard(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
         Surface(
-          modifier = Modifier.size(52.dp),
+          modifier = Modifier.size(58.dp),
           color = accentColor.copy(alpha = 0.18f),
           contentColor = accentColor,
-          shape = RoundedCornerShape(16.dp),
+          shape = RoundedCornerShape(18.dp),
         ) {
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (iconRes != null) {
-              Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(26.dp))
+              Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(30.dp))
             } else {
-              Icon(icon, contentDescription = null, modifier = Modifier.size(26.dp))
+              Icon(icon, contentDescription = null, modifier = Modifier.size(30.dp))
             }
           }
         }

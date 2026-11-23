@@ -1442,9 +1442,6 @@ private fun MainShell(
   val floatingTopBarReserve = WindowInsets.statusBars
     .asPaddingValues()
     .calculateTopPadding() + (if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp)
-  // SettingsScreen already applies safeDrawing insets, so only the extra
-  // reserve for the floating top bar is needed here.
-  val settingsTopReserve = if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp
 
   LaunchedEffect(tab, showSettings) {
     actions.setActiveMainTab(if (showSettings) "SETTINGS" else tab.name)
@@ -1793,7 +1790,7 @@ private fun MainShell(
           appUpdate = appUpdate,
           actions = actions,
           showBackButton = false,
-          topContentPadding = settingsTopReserve,
+          topContentPadding = 0.dp,
           loading = !settingsContentReady,
           onDismiss = { dismissSettings() },
           onDeleteModule = { dismissSettings { showDeleteModule = true } },

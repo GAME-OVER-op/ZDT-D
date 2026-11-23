@@ -8161,7 +8161,10 @@ private fun shQuote(s: String): String {
             return@launch
           }
         }
-        val wanted = spec.binaryPath(abi, release.version)
+        // Release versions are displayed with a leading "v", but archive paths
+        // use the bare version (e.g. zapret-v72.13, not zapret-vv72.13).
+        val versionForPath = release.version.trim().removePrefix("v").removePrefix("V")
+        val wanted = spec.binaryPath(abi, versionForPath)
         val okExtract = withContext(Dispatchers.IO) {
           when (spec.archiveKind) {
             ToolArchiveKind.RAW -> runCatching { archive.copyTo(binary, overwrite = true); binary.length() > 0L }.getOrDefault(false)
@@ -8184,6 +8187,11 @@ private fun shQuote(s: String): String {
         }
         report(90, str(R.string.mv_auto_058))
         val okInstall = installBinaryAtomically(binary, "/data/adb/modules/ZDT-D/bin/${spec.installName}")
+        if (okInstall) {
+          rootBinaryComponentRepository.markVersionInstalled(componentId, versionForPath)
+          synchronized(manifestVersionLock) { manifestVersionCache.remove(componentId) }
+          refreshOptionalTools()
+        }
         report(100, "")
         finish(okInstall, if (okInstall) null else str(R.string.prog_update_error_install_failed))
       } catch (e: Exception) {

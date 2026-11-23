@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudDownload
@@ -23,7 +22,6 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.Extension
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -285,19 +283,17 @@ private fun OptionalBinaryUtilityCard(
 ) {
   val accentColor = if (installed) Color(0xFF22C55E) else MaterialTheme.colorScheme.primary
   Card(
-    modifier = Modifier
-      .fillMaxWidth()
-      .padding(horizontal = 12.dp),
-    shape = RoundedCornerShape(22.dp),
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(20.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.40f)),
+    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.34f)),
   ) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 14.dp, vertical = 14.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
+        .padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -305,17 +301,16 @@ private fun OptionalBinaryUtilityCard(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
         Surface(
-          modifier = Modifier.size(58.dp),
-          color = accentColor.copy(alpha = 0.14f),
+          modifier = Modifier.size(52.dp),
+          color = accentColor.copy(alpha = 0.18f),
           contentColor = accentColor,
-          shape = CircleShape,
-          border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
+          shape = RoundedCornerShape(16.dp),
         ) {
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (iconRes != null) {
-              Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(29.dp))
+              Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(26.dp))
             } else {
-              Icon(icon, contentDescription = null, modifier = Modifier.size(29.dp))
+              Icon(icon, contentDescription = null, modifier = Modifier.size(26.dp))
             }
           }
         }
@@ -329,8 +324,10 @@ private fun OptionalBinaryUtilityCard(
           )
           Text(
             text = description,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
           )
         }
       }
@@ -374,15 +371,15 @@ private fun OptionalBinaryUtilityCard(
         }
         if (installed) {
           Button(
-            onClick = onInstall,
-            enabled = !isWorking,
+            onClick = {},
+            enabled = false,
             modifier = Modifier
               .weight(1f)
-              .tvFocusHighlight(RoundedCornerShape(18.dp), !isWorking),
+              .tvFocusHighlight(RoundedCornerShape(18.dp), false),
           ) {
-            Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Icon(Icons.Outlined.DownloadDone, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.size(8.dp))
-            Text(stringResource(R.string.optional_tools_download_again))
+            Text(stringResource(R.string.optional_tools_status_installed))
           }
           OutlinedButton(
             onClick = onRemove,

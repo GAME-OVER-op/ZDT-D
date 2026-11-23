@@ -524,6 +524,18 @@ class RootBinaryComponentRepository(
     check(root.writeTextFile(infoPath(spec), info.toString(2))) { "Unable to write component installation metadata" }
   }
 
+  /** Records a version installed outside the normal archive flow (e.g. GitHub release picker). */
+  fun markVersionInstalled(componentId: String, version: String) {
+    val spec = RootBinaryComponentCatalog.find(componentId) ?: return
+    val info = JSONObject()
+      .put("installed", true)
+      .put("component", spec.id)
+      .put("selected_abi", selectAbi().orEmpty())
+      .put("installed_version", version.trim())
+      .put("installed_at_unix", System.currentTimeMillis() / 1000L)
+    runCatching { root.writeTextFile(infoPath(spec), info.toString(2)) }
+  }
+
   private fun readInstalledVersion(spec: RootBinaryComponentSpec): String {
     val raw = runCatching { root.readTextFile(infoPath(spec)) }.getOrDefault("")
     return runCatching { JSONObject(raw).optString("installed_version", "") }.getOrDefault("")

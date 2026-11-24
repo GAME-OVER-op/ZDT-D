@@ -54,7 +54,7 @@ URNETWORK_FWMARK="0x5555"
 URNETWORK_SOCKS="127.0.0.1:9999"
 URNETWORK_MANGLE_CHAIN="ZDT_UR_BYPASS"
 # Hosts whose addresses must keep using the main table (service control plane).
-URNETWORK_API_HOSTS="api.urnetwork.com connect.urnetwork.com exchange.urnetwork.com www.urnetwork.com app.urnetwork.com"
+URNETWORK_API_HOSTS="api.bringyour.com connect.bringyour.com whodis.bringyour.com extender.bringyour.com api.urnetwork.com connect.urnetwork.com exchange.urnetwork.com"
 
 
 stats_port_reserved() {
@@ -1046,11 +1046,11 @@ trap cleanup TERM INT EXIT
 nohup ./proxy-socks --addr $URNETWORK_SOCKS >>"\$LOG/proxy-socks.log" 2>&1 &
 pids+=(\$!)
 if [[ "\${SHARE:-0}" == 1 && -x ./provider ]]; then
-  nohup ./provider "\${provider_flags[@]}" >>"\$LOG/provider.log" 2>&1 &
+  nohup ./provider start "\${provider_flags[@]}" >>"\$LOG/provider.log" 2>&1 &
   pids+=(\$!)
 fi
 if [[ "\${ROUTING:-0}" == 1 && -x ./tun2socks ]]; then
-  nohup ./tun2socks -device $URNETWORK_TUN -ifaddr $URNETWORK_TUN_ADDR -proxy socks5://$URNETWORK_SOCKS >>"\$LOG/tun2socks.log" 2>&1 &
+  nohup ./tun2socks -device $URNETWORK_TUN --proxy socks5://$URNETWORK_SOCKS --tun-post-up "ip addr add $URNETWORK_TUN_ADDR dev $URNETWORK_TUN && ip link set $URNETWORK_TUN up" >>"\$LOG/tun2socks.log" 2>&1 &
   pids+=(\$!)
 fi
 set +e
@@ -1153,29 +1153,35 @@ apply_urnetwork_exit_rules() {
     set -Eeuo pipefail
     local rt=/etc/iproute2/rt_tables host ip port i
     local mark=( -j MARK --set-mark "$URNETWORK_FWMARK" )
+    # `die` only returns 1 and does not stop this subshell when the caller uses
+    # `if ! ...`. Fail explicitly so rollback actually runs on errors.
+    fail() { printf 'ZDT_ERROR=%s\n' "$*" >&2; exit 1; }
     mkdir -p /etc/iproute2
     [[ -f $rt ]] || : > "$rt"
     if grep -Eq "^[[:space:]]*${URNETWORK_TABLE_ID}[[:space:]]+" "$rt"; then
       grep -Eq "^[[:space:]]*${URNETWORK_TABLE_ID}[[:space:]]+${URNETWORK_TABLE}([[:space:]]|$)" "$rt" \
-        || die "Route table id $URNETWORK_TABLE_ID is already used by another table"
+        || fail "Route table id $URNETWORK_TABLE_ID is already used by another table"
     elif grep -Eq "^[[:space:]]*${URNETWORK_TABLE}([[:space:]]|$)" "$rt"; then
-      die "Route table $URNETWORK_TABLE already exists with a different id"
+      fail "Route table $URNETWORK_TABLE already exists with a different id"
     else
       printf '\n%s\t%s\n' "$URNETWORK_TABLE_ID" "$URNETWORK_TABLE" >> "$rt"
     fi
 
     urnetwork_config_set ROUTING 1
+    # Clear stale rules from an interrupted previous attempt so `ip rule add`
+    # does not fail with "File exists".
+    remove_urnetwork_exit_rules || true
     run_visible systemctl daemon-reload
     run_visible systemctl restart "$URNETWORK_UNIT"
     for ((i=0; i<30; i++)); do
       ip link show "$URNETWORK_TUN" >/dev/null 2>&1 && break
       sleep 0.5
     done
-    ip link show "$URNETWORK_TUN" >/dev/null 2>&1 || die "TUN device $URNETWORK_TUN did not appear"
+    ip link show "$URNETWORK_TUN" >/dev/null 2>&1 || fail "TUN device $URNETWORK_TUN did not appear"
 
-    ip route replace default dev "$URNETWORK_TUN" table "$URNETWORK_TABLE"
-    ip rule add fwmark "$URNETWORK_FWMARK" lookup main pref 100
-    ip rule add from all lookup "$URNETWORK_TABLE" pref 200
+    ip route replace default dev "$URNETWORK_TUN" table "$URNETWORK_TABLE" || fail 'Failed to install URnetwork exit route'
+    ip rule add fwmark "$URNETWORK_FWMARK" lookup main pref 100 || fail 'Failed to add URnetwork bypass rule'
+    ip rule add from all lookup "$URNETWORK_TABLE" pref 200 || fail 'Failed to add URnetwork exit rule'
 
     iptables -w 5 -t mangle -N "$URNETWORK_MANGLE_CHAIN" 2>/dev/null || true
     iptables -w 5 -t mangle -F "$URNETWORK_MANGLE_CHAIN"
@@ -1203,7 +1209,7 @@ apply_urnetwork_exit_rules() {
     done < <({ ss -H -ltnup; ss -H -lnup; } 2>/dev/null \
       | awk '$6 ~ /(zdt|openvpn|xray|hysteria|dnscrypt|wireproxy)/ {n=split($4,a,":"); if (n>1) print a[n]}' \
       | grep -E '^[0-9]+$' | sort -un | head -200)
-    iptables -w 5 -t mangle -I OUTPUT 1 -j "$URNETWORK_MANGLE_CHAIN"
+    iptables -w 5 -t mangle -I OUTPUT 1 -j "$URNETWORK_MANGLE_CHAIN" || fail 'Failed to install URnetwork mangle chain'
     info "Exit bypass rules saved in $backup"
   )
 }

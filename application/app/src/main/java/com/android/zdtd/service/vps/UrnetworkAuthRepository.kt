@@ -61,8 +61,10 @@ class UrnetworkAuthRepository {
       .build()
     http.newCall(request).execute().use { response ->
       val text = response.body?.string().orEmpty()
+      // The API answers some errors with plain text (for example
+      // "Invalid login."), so a parse failure must not hide the real message.
       val parsed = runCatching { if (text.isBlank()) JSONObject() else JSONObject(text) }
-        .getOrElse { throw IOException("Invalid URnetwork server response") }
+        .getOrNull() ?: JSONObject()
       if (!response.isSuccessful) {
         val message = parsed.optJSONObject("error")?.optString("message", "").orEmpty()
           .ifBlank { parsed.optString("message", "") }

@@ -53,6 +53,13 @@ URNETWORK_TABLE_ID="105"
 URNETWORK_FWMARK="0x5555"
 URNETWORK_SOCKS="127.0.0.1:9999"
 URNETWORK_COUNTRY="Germany"
+URNETWORK_REGION=""
+URNETWORK_CITY=""
+URNETWORK_PROVIDER_ID=""
+URNETWORK_MAX_MEMORY="512mib"
+URNETWORK_NO_PORT_MAPPING=1
+URNETWORK_API_URL="https://api.bringyour.com"
+URNETWORK_PLATFORM_URL="wss://connect.bringyour.com"
 URNETWORK_MANGLE_CHAIN="ZDT_UR_BYPASS"
 # Hosts whose addresses must keep using the main table (service control plane).
 URNETWORK_API_HOSTS="api.bringyour.com connect.bringyour.com whodis.bringyour.com extender.bringyour.com api.urnetwork.com connect.urnetwork.com exchange.urnetwork.com"
@@ -910,10 +917,21 @@ ZDT_STRONG_PATCH
 # ---------------------------------------------------------------------------
 
 urnetwork_config_set() {
-  local key=$1 value=$2 file=$URNETWORK_CONFIG tmp
+  local key=$1 value=$2 file=$URNETWORK_CONFIG tmp stored
+  stored=$value
+  # Values such as API_HOSTS contain spaces. Quote those so start.sh can still
+  # source the config; plain tokens stay verbatim for compatibility.
+  if [[ $stored =~ [^A-Za-z0-9_./:=@+,-] ]]; then
+    stored=${stored//\\/\\\\}
+    stored=${stored//\"/\\\"}
+    stored=${stored//\$/\\\$}
+    stored=${stored//\`/\\\`}
+    stored="\"$stored\""
+  fi
   [[ -f $file ]] || : > "$file"
   tmp="$file.tmp.$$"
-  awk -v k="$key" -v v="$value" '
+  URNETWORK_CFG_VALUE=$stored awk -v k="$key" '
+    BEGIN { v = ENVIRON["URNETWORK_CFG_VALUE"] }
     index($0, k "=") == 1 { print k "=" v; seen=1; next }
     { print }
     END { if (!seen) print k "=" v }
@@ -932,6 +950,46 @@ urnetwork_hosts() {
   local configured
   configured=$(urnetwork_config_get API_HOSTS)
   printf '%s\n' ${configured:-$URNETWORK_API_HOSTS}
+}
+
+URNETWORK_SETTING_KEYS=(
+  SHARE ROUTING COUNTRY REGION CITY PROVIDER_ID SOCKS_ADDR MAX_MEMORY
+  NO_PORT_MAPPING API_URL PLATFORM_URL API_HOSTS
+)
+
+urnetwork_setting_valid() {
+  local key=$1 k
+  for k in "${URNETWORK_SETTING_KEYS[@]}"; do
+    [[ $key == "$k" ]] && return 0
+  done
+  return 1
+}
+
+get_urnetwork_settings() {
+  local key value
+  for key in "${URNETWORK_SETTING_KEYS[@]}"; do
+    value=$(urnetwork_config_get "$key")
+    printf 'ZDT_SETTING_%s=%s\n' "$key" "$value"
+  done
+}
+
+set_urnetwork_settings() {
+  (($# > 0)) || die 'At least one KEY=VALUE setting is required'
+  local entry key value i
+  local -a keys=() values=()
+  for entry in "$@"; do
+    [[ $entry == *=* ]] || die "Invalid setting (expected KEY=VALUE): $entry"
+    key=${entry%%=*}
+    value=${entry#*=}
+    urnetwork_setting_valid "$key" || die "Unknown URnetwork setting: $key"
+    [[ $value != *$'\n'* && $value != *$'\r'* ]] || die "Invalid value for $key: newlines are not allowed"
+    ((${#value} <= 512)) || die "Value for $key is too long (maximum 512 characters)"
+    keys+=("$key"); values+=("$value")
+  done
+  for ((i=0; i<${#keys[@]}; i++)); do
+    urnetwork_config_set "${keys[$i]}" "${values[$i]}"
+  done
+  printf 'ZDT_SETTINGS=updated\n'
 }
 
 install_urnetwork() {
@@ -1019,6 +1077,14 @@ install_urnetwork() {
 SHARE=$share_flag
 ROUTING=0
 COUNTRY=$URNETWORK_COUNTRY
+REGION=$URNETWORK_REGION
+CITY=$URNETWORK_CITY
+PROVIDER_ID=$URNETWORK_PROVIDER_ID
+SOCKS_ADDR=$URNETWORK_SOCKS
+MAX_MEMORY=$URNETWORK_MAX_MEMORY
+NO_PORT_MAPPING=$URNETWORK_NO_PORT_MAPPING
+API_URL=$URNETWORK_API_URL
+PLATFORM_URL=$URNETWORK_PLATFORM_URL
 API_HOSTS="$URNETWORK_API_HOSTS"
 CFG
   chown root:root "$URNETWORK_CONFIG"; chmod 0644 "$URNETWORK_CONFIG"
@@ -1045,6 +1111,10 @@ provider_flags=()
 if [[ ! -f "\$PROFILE/.urnetwork/.provider.jwt" ]]; then
   provider_flags+=(--allow-client-registration)
 fi
+provider_flags+=(--max-memory "\${MAX_MEMORY:-$URNETWORK_MAX_MEMORY}")
+if [[ "\${NO_PORT_MAPPING:-$URNETWORK_NO_PORT_MAPPING}" == 1 ]]; then
+  provider_flags+=(--no-port-mapping)
+fi
 pids=()
 cleanup() {
   trap - TERM INT EXIT
@@ -1052,14 +1122,18 @@ cleanup() {
   wait 2>/dev/null || true
 }
 trap cleanup TERM INT EXIT
-nohup ./proxy-socks --addr $URNETWORK_SOCKS --country "\${COUNTRY:-Germany}" >>"\$LOG/proxy-socks.log" 2>&1 &
+proxy_flags=(--addr "\${SOCKS_ADDR:-$URNETWORK_SOCKS}" --country "\${COUNTRY:-$URNETWORK_COUNTRY}" --api-url "\${API_URL:-$URNETWORK_API_URL}" --platform-url "\${PLATFORM_URL:-$URNETWORK_PLATFORM_URL}")
+if [[ -n "\${REGION:-}" ]]; then proxy_flags+=(--region "\$REGION"); fi
+if [[ -n "\${CITY:-}" ]]; then proxy_flags+=(--city "\$CITY"); fi
+if [[ -n "\${PROVIDER_ID:-}" ]]; then proxy_flags+=(--provider-id "\$PROVIDER_ID"); fi
+nohup ./proxy-socks "\${proxy_flags[@]}" >>"\$LOG/proxy-socks.log" 2>&1 &
 pids+=(\$!)
 if [[ "\${SHARE:-0}" == 1 && -x ./provider ]]; then
   nohup ./provider start "\${provider_flags[@]}" >>"\$LOG/provider.log" 2>&1 &
   pids+=(\$!)
 fi
 if [[ "\${ROUTING:-0}" == 1 && -x ./tun2socks ]]; then
-  nohup ./tun2socks --device $URNETWORK_TUN --proxy socks5://$URNETWORK_SOCKS --tun-post-up "sh -c 'ip addr add $URNETWORK_TUN_ADDR dev $URNETWORK_TUN && ip link set $URNETWORK_TUN up'" >>"\$LOG/tun2socks.log" 2>&1 &
+  nohup ./tun2socks --device $URNETWORK_TUN --proxy "socks5://\${SOCKS_ADDR:-$URNETWORK_SOCKS}" --tun-post-up "sh -c 'ip addr add $URNETWORK_TUN_ADDR dev $URNETWORK_TUN && ip link set $URNETWORK_TUN up'" >>"\$LOG/tun2socks.log" 2>&1 &
   pids+=(\$!)
 fi
 set +e
@@ -2421,6 +2495,8 @@ main() {
     enable-exit) enable_urnetwork_exit ;;
     disable-exit) disable_urnetwork_exit ;;
     check-exit) check_urnetwork_exit ;;
+    get-settings) get_urnetwork_settings ;;
+    set-settings) set_urnetwork_settings "$@" ;;
     list-profiles) list_profiles "${1:?service required}" ;;
     create-profile)
       check_platform

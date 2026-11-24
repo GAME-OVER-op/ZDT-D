@@ -278,10 +278,23 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
 
   /** Open the guided URnetwork setup for a server. */
   fun startUrnetworkSetup(serverId: String) {
+    val server = server(serverId) ?: return
     _urnetworkSetup.value = UrnetworkSetupUiState(
       step = VpsUrnetworkSetupStep.EMAIL,
       serverId = serverId,
+      busy = true,
     )
+    viewModelScope.launch {
+      val settings = runCatching { controller.getUrnetworkSettings(server) }
+        .getOrDefault(VpsUrnetworkSettings())
+      _urnetworkSetup.update { current ->
+        if (current.serverId == serverId) {
+          current.copy(settings = settings, share = settings.share, busy = false, error = null)
+        } else {
+          current
+        }
+      }
+    }
   }
 
   fun setUrnetworkEmail(email: String) {
@@ -328,7 +341,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
       authRepository.verifyCode(current.email.trim(), code)
         .onSuccess { jwt ->
           _urnetworkSetup.update {
-            it.copy(jwt = jwt, step = VpsUrnetworkSetupStep.SHARE, busy = false, error = null)
+            it.copy(jwt = jwt, step = VpsUrnetworkSetupStep.SETTINGS, busy = false, error = null)
           }
         }
         .onFailure { error ->
@@ -341,6 +354,19 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     if (_operation.value.running) return
     val current = _urnetworkSetup.value
     val serverId = current.serverId ?: return
+    val server = server(serverId) ?: return
+    val settings = current.settings.copy(share = share)
+    _urnetworkSetup.update { it.copy(share = share, settings = settings, busy = true) }
+    viewModelScope.launch {
+      // Persist the chosen share flag with the rest of the settings; install still
+      // applies its own share variant, so a failed write is not treated as fatal.
+      runCatching { controller.setUrnetworkSettings(server, settings) }
+      installUrnetworkWithShare(serverId, share)
+    }
+  }
+
+  private fun installUrnetworkWithShare(serverId: String, share: Boolean) {
+    val current = _urnetworkSetup.value
     _urnetworkSetup.update {
       it.copy(step = VpsUrnetworkSetupStep.INSTALL, share = share, busy = true, error = null, info = null)
     }
@@ -354,6 +380,99 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
       },
       onFailure = { message -> _urnetworkSetup.update { it.copy(busy = false, error = message) } },
     )
+  }
+
+  fun updateUrnetworkSettings(settings: VpsUrnetworkSettings) {
+    _urnetworkSetup.update { it.copy(settings = settings, error = null) }
+  }
+
+  fun saveUrnetworkSettingsFromSetup() {
+    val current = _urnetworkSetup.value
+    if (current.busy || _operation.value.running) return
+    val serverId = current.serverId ?: return
+    val server = server(serverId) ?: return
+    val settings = current.settings
+    _urnetworkSetup.update { it.copy(busy = true, error = null, info = null) }
+    viewModelScope.launch {
+      val written = runCatching { controller.setUrnetworkSettings(server, settings) }
+      val message = when {
+        written.isFailure -> written.exceptionOrNull()?.message ?: "Не удалось сохранить настройки URnetwork"
+        written.getOrNull()?.successful == false ->
+          written.getOrNull()?.output?.takeIf { it.isNotBlank() } ?: "Не удалось сохранить настройки URnetwork"
+        else -> null
+      }
+      if (message != null) {
+        _urnetworkSetup.update { it.copy(busy = false, error = message) }
+        return@launch
+      }
+      if (settings.share) {
+        // The share flag is already known: skip the question and proceed to installation.
+        _urnetworkSetup.update { it.copy(step = VpsUrnetworkSetupStep.INSTALL) }
+        installUrnetworkWithShare(serverId, true)
+      } else {
+        _urnetworkSetup.update { it.copy(step = VpsUrnetworkSetupStep.SHARE, busy = false) }
+      }
+    }
+  }
+
+  fun loadUrnetworkSettings(serverId: String) {
+    val server = server(serverId) ?: return
+    if (_operation.value.running || _urnetworkSetup.value.busy) return
+    _urnetworkSetup.update { it.copy(busy = true, error = null) }
+    viewModelScope.launch {
+      runCatching { controller.getUrnetworkSettings(server) }
+        .onSuccess { settings ->
+          _urnetworkSetup.update { it.copy(settings = settings, busy = false, error = null) }
+        }
+        .onFailure { error ->
+          _urnetworkSetup.update {
+            it.copy(busy = false, error = error.message ?: "Не удалось загрузить настройки URnetwork")
+          }
+        }
+    }
+  }
+
+  fun saveUrnetworkSettings(serverId: String, settings: VpsUrnetworkSettings) {
+    if (_operation.value.running || _urnetworkSetup.value.busy) return
+    val server = server(serverId) ?: return
+    _urnetworkSetup.update { it.copy(settings = settings, busy = true, error = null, info = null) }
+    viewModelScope.launch {
+      startOperation("Saving URnetwork settings")
+      try {
+        val written = controller.setUrnetworkSettings(server, settings)
+        if (!written.successful) {
+          val message = written.output.ifBlank { "Не удалось сохранить настройки URnetwork" }
+          failOperation(message)
+          _urnetworkSetup.update { it.copy(busy = false, error = message) }
+          return@launch
+        }
+        // Same effect as restartService(serverId, VpsServiceKind.URNETWORK), but kept
+        // inside this operation so the exit check cannot race with the restart.
+        val restarted = controller.restart(server, VpsServiceKind.URNETWORK, null, ::consumeRemoteLine)
+        if (!restarted.successful) {
+          val message = restarted.output.ifBlank { "Не удалось перезапустить URnetwork" }
+          failOperation(message)
+          _urnetworkSetup.update { it.copy(busy = false, error = message) }
+          return@launch
+        }
+        val exitInfo = controller.checkUrnetworkExit(server, ::consumeRemoteLine)
+        finishOperation()
+        _urnetworkSetup.update {
+          it.copy(
+            settings = settings,
+            exitInfo = exitInfo,
+            busy = false,
+            error = null,
+            info = "Настройки URnetwork сохранены",
+          )
+        }
+        loadServices(serverId, silent = true)
+      } catch (error: Throwable) {
+        val message = error.message ?: "Не удалось сохранить настройки URnetwork"
+        failOperation(message)
+        _urnetworkSetup.update { it.copy(busy = false, error = message) }
+      }
+    }
   }
 
   /** Finish setup by choosing whether the server routes traffic through the exit. */
@@ -677,6 +796,22 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
+  private fun consumeRemoteLine(line: String) {
+    when {
+      line.startsWith("ZDT_STAGE=") -> updateStage(line.substringAfter('='))
+      line.startsWith("ZDT_CMD=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.COMMAND)
+      line.startsWith("ZDT_INFO=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.INFO)
+      line.startsWith("ZDT_WARNING=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.WARNING)
+      line.startsWith("ZDT_ERROR=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.ERROR)
+      line.startsWith("ZDT_ROLLBACK=") -> {
+        appendConsole(line.substringAfter('='), VpsConsoleEntryType.ROLLBACK)
+        _operation.value = _operation.value.copy(rolledBack = true)
+      }
+      line.startsWith("ZDT_FAILED_STAGE=") || line.startsWith("ZDT_COMMIT=") || line.startsWith("ZDT_BACKUP=") -> Unit
+      else -> appendConsole(line, VpsConsoleEntryType.OUTPUT)
+    }
+  }
+
   private fun runRemoteOperation(
     title: String,
     block: suspend ((String) -> Unit) -> VpsCommandResult,
@@ -687,21 +822,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       startOperation(title)
       val result = runCatching {
-        block { line ->
-          when {
-            line.startsWith("ZDT_STAGE=") -> updateStage(line.substringAfter('='))
-            line.startsWith("ZDT_CMD=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.COMMAND)
-            line.startsWith("ZDT_INFO=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.INFO)
-            line.startsWith("ZDT_WARNING=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.WARNING)
-            line.startsWith("ZDT_ERROR=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.ERROR)
-            line.startsWith("ZDT_ROLLBACK=") -> {
-              appendConsole(line.substringAfter('='), VpsConsoleEntryType.ROLLBACK)
-              _operation.value = _operation.value.copy(rolledBack = true)
-            }
-            line.startsWith("ZDT_FAILED_STAGE=") || line.startsWith("ZDT_COMMIT=") || line.startsWith("ZDT_BACKUP=") -> Unit
-            else -> appendConsole(line, VpsConsoleEntryType.OUTPUT)
-          }
-        }
+        block(::consumeRemoteLine)
       }.getOrElse {
         val message = it.message ?: "Operation failed"
         failOperation(message)

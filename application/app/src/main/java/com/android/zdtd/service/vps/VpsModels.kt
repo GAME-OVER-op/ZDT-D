@@ -181,7 +181,22 @@ data class VpsUrnetworkExitInfo(
   val countryCode: String = "",
 )
 
-enum class VpsUrnetworkSetupStep { NONE, EMAIL, CODE, SHARE, INSTALL, ROUTING, DONE }
+data class VpsUrnetworkSettings(
+  val share: Boolean = false,
+  val routing: Boolean = false,
+  val country: String = "Germany",
+  val region: String = "",
+  val city: String = "",
+  val providerId: String = "",
+  val socksAddr: String = "127.0.0.1:9999",
+  val maxMemory: String = "512mib",
+  val noPortMapping: Boolean = true,
+  val apiUrl: String = "https://api.bringyour.com",
+  val platformUrl: String = "wss://connect.bringyour.com",
+  val apiHosts: String = "api.bringyour.com connect.bringyour.com whodis.bringyour.com extender.bringyour.com api.urnetwork.com connect.urnetwork.com exchange.urnetwork.com",
+)
+
+enum class VpsUrnetworkSetupStep { NONE, EMAIL, CODE, SETTINGS, SHARE, INSTALL, ROUTING, DONE }
 
 data class UrnetworkSetupUiState(
   val step: VpsUrnetworkSetupStep = VpsUrnetworkSetupStep.NONE,
@@ -194,4 +209,5 @@ data class UrnetworkSetupUiState(
   val error: String? = null,
   val info: String? = null,
   val exitInfo: VpsUrnetworkExitInfo? = null,
+  val settings: VpsUrnetworkSettings = VpsUrnetworkSettings(),
 )

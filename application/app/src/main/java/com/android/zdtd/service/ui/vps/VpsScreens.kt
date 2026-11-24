@@ -74,6 +74,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -142,6 +143,7 @@ import com.android.zdtd.service.vps.VpsServiceProfile
 import com.android.zdtd.service.vps.VpsServiceState
 import com.android.zdtd.service.vps.UrnetworkSetupUiState
 import com.android.zdtd.service.vps.VpsSshAuth
+import com.android.zdtd.service.vps.VpsUrnetworkSettings
 import com.android.zdtd.service.vps.VpsUrnetworkSetupStep
 import com.android.zdtd.service.vps.VpsViewModel
 import java.io.File
@@ -366,6 +368,8 @@ fun VpsServerDetailsScreen(
       onVerify = urnetworkCallbacks.verifyCode,
       onShare = urnetworkCallbacks.setShare,
       onRouting = urnetworkCallbacks.chooseRouting,
+      onSettingsChange = urnetworkCallbacks.updateSettings,
+      onSaveSettings = urnetworkCallbacks.saveSettingsFromSetup,
       onDismiss = urnetworkCallbacks.dismissSetup,
     )
   }
@@ -477,8 +481,11 @@ fun VpsServiceScreen(
   }
 
   LaunchedEffect(serverId, kind) {
-    if (kind == VpsServiceKind.URNETWORK && urnetworkSetup.exitInfo == null) {
-      urnetworkCallbacks.checkExit(serverId)
+    if (kind == VpsServiceKind.URNETWORK) {
+      urnetworkCallbacks.loadSettings(serverId)
+      if (urnetworkSetup.exitInfo == null) {
+        urnetworkCallbacks.checkExit(serverId)
+      }
     }
   }
 
@@ -779,6 +786,10 @@ data class UrnetworkUiCallbacks(
   val dismissSetup: () -> Unit,
   val checkExit: (String) -> Unit,
   val setRouting: (String, Boolean) -> Unit,
+  val updateSettings: (VpsUrnetworkSettings) -> Unit,
+  val saveSettings: (String, VpsUrnetworkSettings) -> Unit,
+  val saveSettingsFromSetup: () -> Unit,
+  val loadSettings: (String) -> Unit,
 ) {
   companion object {
     fun from(viewModel: VpsViewModel): UrnetworkUiCallbacks = UrnetworkUiCallbacks(
@@ -792,6 +803,108 @@ data class UrnetworkUiCallbacks(
       dismissSetup = { viewModel.dismissUrnetworkSetup() },
       checkExit = { serverId -> viewModel.checkUrnetworkExit(serverId) },
       setRouting = { serverId, enable -> viewModel.setUrnetworkRouting(serverId, enable) },
+      updateSettings = { settings -> viewModel.updateUrnetworkSettings(settings) },
+      saveSettings = { serverId, settings -> viewModel.saveUrnetworkSettings(serverId, settings) },
+      saveSettingsFromSetup = { viewModel.saveUrnetworkSettingsFromSetup() },
+      loadSettings = { serverId -> viewModel.loadUrnetworkSettings(serverId) },
+    )
+  }
+}
+
+/** Compact, scrollable editor for the URnetwork exit configuration. */
+@Composable
+fun UrnetworkSettingsFields(
+  settings: VpsUrnetworkSettings,
+  onChange: (VpsUrnetworkSettings) -> Unit,
+  enabled: Boolean,
+) {
+  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Text(
+      stringResource(R.string.urnetwork_settings_fields_title),
+      style = MaterialTheme.typography.titleSmall,
+      fontWeight = FontWeight.SemiBold,
+    )
+    OutlinedTextField(
+      value = settings.country.orEmpty(),
+      onValueChange = { onChange(settings.copy(country = it)) },
+      label = { Text(stringResource(R.string.urnetwork_settings_country)) },
+      singleLine = true,
+      enabled = enabled,
+      modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+      value = settings.region.orEmpty(),
+      onValueChange = { onChange(settings.copy(region = it)) },
+      label = { Text(stringResource(R.string.urnetwork_settings_region)) },
+      singleLine = true,
+      enabled = enabled,
+      modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+      value = settings.city.orEmpty(),
+      onValueChange = { onChange(settings.copy(city = it)) },
+      label = { Text(stringResource(R.string.urnetwork_settings_city)) },
+      singleLine = true,
+      enabled = enabled,
+      modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+      value = settings.providerId.orEmpty(),
+      onValueChange = { onChange(settings.copy(providerId = it)) },
+      label = { Text(stringResource(R.string.urnetwork_settings_provider_id)) },
+      singleLine = true,
+      enabled = enabled,
+      modifier = Modifier.fillMaxWidth(),
+    )
+    Text(
+      stringResource(R.string.urnetwork_settings_provider_id_hint),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedTextField(
+      value = settings.socksAddr.orEmpty(),
+      onValueChange = { onChange(settings.copy(socksAddr = it)) },
+      label = { Text(stringResource(R.string.urnetwork_settings_socks_addr)) },
+      singleLine = true,
+      enabled = enabled,
+      modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+      value = settings.maxMemory.orEmpty(),
+      onValueChange = { onChange(settings.copy(maxMemory = it)) },
+      label = { Text(stringResource(R.string.urnetwork_settings_max_memory)) },
+      singleLine = true,
+      enabled = enabled,
+      modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+      value = settings.apiUrl.orEmpty(),
+      onValueChange = { onChange(settings.copy(apiUrl = it)) },
+      label = { Text(stringResource(R.string.urnetwork_settings_api_url)) },
+      singleLine = true,
+      enabled = enabled,
+      modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+      value = settings.platformUrl.orEmpty(),
+      onValueChange = { onChange(settings.copy(platformUrl = it)) },
+      label = { Text(stringResource(R.string.urnetwork_settings_platform_url)) },
+      singleLine = true,
+      enabled = enabled,
+      modifier = Modifier.fillMaxWidth(),
+    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      Checkbox(
+        checked = settings.noPortMapping,
+        onCheckedChange = { onChange(settings.copy(noPortMapping = it)) },
+        enabled = enabled,
+      )
+      Text(stringResource(R.string.urnetwork_settings_no_port_mapping), style = MaterialTheme.typography.bodyMedium)
+    }
+    Text(
+      stringResource(R.string.urnetwork_settings_unique_note),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
   }
 }
@@ -805,13 +918,21 @@ fun UrnetworkSetupDialog(
   onVerify: () -> Unit,
   onShare: (Boolean) -> Unit,
   onRouting: (Boolean) -> Unit,
+  onSettingsChange: (VpsUrnetworkSettings) -> Unit,
+  onSaveSettings: () -> Unit,
   onDismiss: () -> Unit,
 ) {
   val step = state.step
   val busy = state.busy
-  val title = when (step) {
+  // "Back" from settings re-shows the code step locally; a successful verification
+  // replaces the JWT and takes the wizard forward again without resending e-mail.
+  var settingsBackToCode by remember { mutableStateOf(false) }
+  LaunchedEffect(step, state.jwt) { settingsBackToCode = false }
+  val shownStep = if (step == VpsUrnetworkSetupStep.SETTINGS && settingsBackToCode) VpsUrnetworkSetupStep.CODE else step
+  val title = when (shownStep) {
     VpsUrnetworkSetupStep.EMAIL -> stringResource(R.string.urnetwork_setup_email_title)
     VpsUrnetworkSetupStep.CODE -> stringResource(R.string.urnetwork_setup_code_title)
+    VpsUrnetworkSetupStep.SETTINGS -> stringResource(R.string.urnetwork_setup_settings_title)
     VpsUrnetworkSetupStep.SHARE -> stringResource(R.string.urnetwork_setup_share_title)
     VpsUrnetworkSetupStep.ROUTING -> stringResource(R.string.urnetwork_setup_routing_title)
     VpsUrnetworkSetupStep.DONE -> stringResource(R.string.urnetwork_setup_done)
@@ -829,7 +950,7 @@ fun UrnetworkSetupDialog(
           .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        when (step) {
+        when (shownStep) {
           VpsUrnetworkSetupStep.NONE -> Unit
           VpsUrnetworkSetupStep.EMAIL -> {
             Text(stringResource(R.string.urnetwork_setup_email_body), style = MaterialTheme.typography.bodyMedium)
@@ -864,6 +985,14 @@ fun UrnetworkSetupDialog(
               Text(stringResource(R.string.urnetwork_setup_code_resend))
             }
           }
+          VpsUrnetworkSetupStep.SETTINGS -> {
+            Text(stringResource(R.string.urnetwork_setup_settings_body), style = MaterialTheme.typography.bodyMedium)
+            UrnetworkSettingsFields(
+              settings = state.settings,
+              onChange = onSettingsChange,
+              enabled = !busy,
+            )
+          }
           VpsUrnetworkSetupStep.SHARE -> Text(stringResource(R.string.urnetwork_setup_share_body), style = MaterialTheme.typography.bodyMedium)
           VpsUrnetworkSetupStep.ROUTING -> Text(stringResource(R.string.urnetwork_setup_routing_body), style = MaterialTheme.typography.bodyMedium)
           VpsUrnetworkSetupStep.INSTALL, VpsUrnetworkSetupStep.DONE -> {
@@ -875,7 +1004,7 @@ fun UrnetworkSetupDialog(
               }
             } else {
               Text(
-                stringResource(if (step == VpsUrnetworkSetupStep.DONE) R.string.urnetwork_setup_done else R.string.urnetwork_setup_installing),
+                stringResource(if (shownStep == VpsUrnetworkSetupStep.DONE) R.string.urnetwork_setup_done else R.string.urnetwork_setup_installing),
                 style = MaterialTheme.typography.bodyMedium,
               )
             }
@@ -894,7 +1023,7 @@ fun UrnetworkSetupDialog(
       }
     },
     confirmButton = {
-      when (step) {
+      when (shownStep) {
         VpsUrnetworkSetupStep.EMAIL -> Button(
           enabled = !busy && state.email.orEmpty().isNotBlank(),
           onClick = onSendCode,
@@ -913,6 +1042,12 @@ fun UrnetworkSetupDialog(
           Spacer(Modifier.width(6.dp))
           Text(stringResource(R.string.urnetwork_setup_code_verify))
         }
+        VpsUrnetworkSetupStep.SETTINGS -> Button(enabled = !busy, onClick = onSaveSettings) {
+          if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+          else Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.urnetwork_setup_settings_next))
+        }
         VpsUrnetworkSetupStep.SHARE -> Button(enabled = !busy, onClick = { onShare(true) }) {
           Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
           Spacer(Modifier.width(6.dp))
@@ -927,9 +1062,12 @@ fun UrnetworkSetupDialog(
       }
     },
     dismissButton = {
-      when (step) {
+      when (shownStep) {
         VpsUrnetworkSetupStep.EMAIL, VpsUrnetworkSetupStep.CODE -> OutlinedButton(enabled = !busy, onClick = onDismiss) {
           Text(stringResource(R.string.action_cancel))
+        }
+        VpsUrnetworkSetupStep.SETTINGS -> OutlinedButton(enabled = !busy, onClick = { settingsBackToCode = true }) {
+          Text(stringResource(R.string.urnetwork_setup_settings_back))
         }
         VpsUrnetworkSetupStep.SHARE -> OutlinedButton(enabled = !busy, onClick = { onShare(false) }) {
           Text(stringResource(R.string.urnetwork_setup_share_no))
@@ -953,12 +1091,18 @@ private fun UrnetworkSettingsCard(
   val exit = setup.exitInfo
   val connected = exit?.connected == true
   val busy = setup.busy
-  val shareEnabled = setup.share
+  val canEdit = enabled && !busy
+  val settings = setup.settings
+  var savedNotice by remember { mutableStateOf(false) }
+  LaunchedEffect(settings, setup.error) { savedNotice = false }
+
   val address = exit?.ip.orEmpty()
   val country = listOfNotNull(
     exit?.country?.takeIf { it.isNotBlank() },
     exit?.countryCode?.takeIf { it.isNotBlank() },
   ).joinToString(" · ")
+  val yes = stringResource(R.string.urnetwork_setup_share_yes)
+  val no = stringResource(R.string.urnetwork_setup_share_no)
 
   Card(
     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -989,18 +1133,26 @@ private fun UrnetworkSettingsCard(
         fontWeight = FontWeight.SemiBold,
       )
       if (address.isNotBlank()) {
-        Text(stringResource(R.string.urnetwork_settings_address, address), style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.urnetwork_settings_status_ip, address), style = MaterialTheme.typography.bodySmall)
       }
       if (country.isNotBlank()) {
-        Text(stringResource(R.string.urnetwork_settings_country, country), style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.urnetwork_settings_status_country, country), style = MaterialTheme.typography.bodySmall)
       }
       Text(
-        stringResource(
-          R.string.urnetwork_settings_share,
-          stringResource(if (shareEnabled) R.string.urnetwork_setup_share_yes else R.string.urnetwork_setup_share_no),
-        ),
+        stringResource(R.string.urnetwork_settings_share, if (settings.share) yes else no),
         style = MaterialTheme.typography.bodySmall,
       )
+      Text(
+        stringResource(R.string.urnetwork_settings_routing, if (settings.routing) yes else no),
+        style = MaterialTheme.typography.bodySmall,
+      )
+
+      UrnetworkSettingsFields(
+        settings = settings,
+        onChange = callbacks.updateSettings,
+        enabled = canEdit,
+      )
+
       setup.info?.takeIf { it.isNotBlank() }?.let { info ->
         Text(info, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
       }
@@ -1011,12 +1163,31 @@ private fun UrnetworkSettingsCard(
           color = MaterialTheme.colorScheme.error,
         )
       }
+      if (savedNotice && setup.error.isNullOrBlank() && !busy) {
+        Text(
+          stringResource(R.string.urnetwork_settings_saved),
+          style = MaterialTheme.typography.bodySmall,
+          color = Color(0xFF22C55E),
+        )
+      }
       if (busy) {
         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
       }
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(
-          enabled = enabled && !busy,
+          enabled = canEdit,
+          onClick = {
+            callbacks.saveSettings(serverId, settings)
+            savedNotice = true
+          },
+          modifier = Modifier.weight(1f),
+        ) {
+          Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(17.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.urnetwork_settings_save))
+        }
+        OutlinedButton(
+          enabled = !busy,
           onClick = { callbacks.checkExit(serverId) },
           modifier = Modifier.weight(1f),
         ) {
@@ -1024,13 +1195,13 @@ private fun UrnetworkSettingsCard(
           Spacer(Modifier.width(6.dp))
           Text(stringResource(R.string.urnetwork_settings_check))
         }
-        FilledTonalButton(
-          enabled = enabled && !busy,
-          onClick = { callbacks.setRouting(serverId, !connected) },
-          modifier = Modifier.weight(1f),
-        ) {
-          Text(stringResource(if (connected) R.string.urnetwork_settings_disable_routing else R.string.urnetwork_settings_enable_routing))
-        }
+      }
+      FilledTonalButton(
+        enabled = !busy,
+        onClick = { callbacks.setRouting(serverId, !connected) },
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Text(stringResource(if (connected) R.string.urnetwork_settings_disable_routing else R.string.urnetwork_settings_enable_routing))
       }
     }
   }

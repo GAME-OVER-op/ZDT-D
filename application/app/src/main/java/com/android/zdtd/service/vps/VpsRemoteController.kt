@@ -69,6 +69,35 @@ class VpsRemoteController(
     parseUrnetworkExitInfo(result.output)
   }
 
+  /** Read the full URnetwork configuration from the remote host. */
+  suspend fun getUrnetworkSettings(server: VpsServer): VpsUrnetworkSettings {
+    val result = run(server, listOf("get-settings"), timeoutMs = 30_000L)
+    check(result.successful) { result.output.ifBlank { "Unable to read URnetwork settings" } }
+    return parseUrnetworkSettings(result.output)
+  }
+
+  /** Write the full URnetwork configuration; the caller is responsible for restarting the service. */
+  suspend fun setUrnetworkSettings(server: VpsServer, settings: VpsUrnetworkSettings): VpsCommandResult =
+    run(
+      server,
+      listOf(
+        "set-settings",
+        "${KEY_SHARE}=${settingBool(settings.share)}",
+        "${KEY_ROUTING}=${settingBool(settings.routing)}",
+        "${KEY_COUNTRY}=${settings.country}",
+        "${KEY_REGION}=${settings.region}",
+        "${KEY_CITY}=${settings.city}",
+        "${KEY_PROVIDER_ID}=${settings.providerId}",
+        "${KEY_SOCKS_ADDR}=${settings.socksAddr}",
+        "${KEY_MAX_MEMORY}=${settings.maxMemory}",
+        "${KEY_NO_PORT_MAPPING}=${settingBool(settings.noPortMapping)}",
+        "${KEY_API_URL}=${settings.apiUrl}",
+        "${KEY_PLATFORM_URL}=${settings.platformUrl}",
+        "${KEY_API_HOSTS}=${settings.apiHosts}",
+      ),
+      timeoutMs = 30_000L,
+    )
+
   suspend fun remove(server: VpsServer, kind: VpsServiceKind, onLine: (String) -> Unit): VpsCommandResult =
     run(server, listOf("remove", kind.wireId), onLine = onLine, timeoutMs = 5 * 60_000L)
 
@@ -245,6 +274,30 @@ class VpsRemoteController(
     ssh.execute(server, actualCommand, timeoutMs, onLine)
   }
 
+  private fun parseUrnetworkSettings(output: String): VpsUrnetworkSettings {
+    val values = output.lineSequence().mapNotNull { line ->
+      val body = line.removePrefix("ZDT_SETTING_")
+      if (body == line) return@mapNotNull null
+      val index = body.indexOf('=')
+      if (index <= 0) null else body.substring(0, index).trim() to body.substring(index + 1).trim()
+    }.toMap()
+    fun text(key: String, default: String) = values[key]?.trim()?.takeIf { it.isNotEmpty() } ?: default
+    return VpsUrnetworkSettings(
+      share = boolSetting(values, KEY_SHARE, false),
+      routing = boolSetting(values, KEY_ROUTING, false),
+      country = text(KEY_COUNTRY, "Germany"),
+      region = text(KEY_REGION, ""),
+      city = text(KEY_CITY, ""),
+      providerId = text(KEY_PROVIDER_ID, ""),
+      socksAddr = text(KEY_SOCKS_ADDR, "127.0.0.1:9999"),
+      maxMemory = text(KEY_MAX_MEMORY, "512mib"),
+      noPortMapping = boolSetting(values, KEY_NO_PORT_MAPPING, true),
+      apiUrl = text(KEY_API_URL, "https://api.bringyour.com"),
+      platformUrl = text(KEY_PLATFORM_URL, "wss://connect.bringyour.com"),
+      apiHosts = text(KEY_API_HOSTS, VpsUrnetworkSettings().apiHosts),
+    )
+  }
+
   private fun parseUrnetworkExitInfo(output: String): VpsUrnetworkExitInfo {
     val values = output.lineSequence().mapNotNull { line ->
       val index = line.indexOf('=')
@@ -260,7 +313,30 @@ class VpsRemoteController(
 
   companion object {
     const val URNETWORK_JWT_ENV = "ZDT_URNETWORK_JWT"
+    private const val KEY_SHARE = "SHARE"
+    private const val KEY_ROUTING = "ROUTING"
+    private const val KEY_COUNTRY = "COUNTRY"
+    private const val KEY_REGION = "REGION"
+    private const val KEY_CITY = "CITY"
+    private const val KEY_PROVIDER_ID = "PROVIDER_ID"
+    private const val KEY_SOCKS_ADDR = "SOCKS_ADDR"
+    private const val KEY_MAX_MEMORY = "MAX_MEMORY"
+    private const val KEY_NO_PORT_MAPPING = "NO_PORT_MAPPING"
+    private const val KEY_API_URL = "API_URL"
+    private const val KEY_PLATFORM_URL = "PLATFORM_URL"
+    private const val KEY_API_HOSTS = "API_HOSTS"
     private val ENV_NAME = Regex("^[A-Za-z_][A-Za-z0-9_]*$")
+
+    private fun settingBool(value: Boolean): String = if (value) "1" else "0"
+
+    private fun boolSetting(values: Map<String, String>, key: String, default: Boolean): Boolean {
+      val raw = values[key]?.trim()?.lowercase(Locale.ROOT) ?: return default
+      return when (raw) {
+        "1", "true", "yes", "on" -> true
+        "0", "false", "no", "off" -> false
+        else -> default
+      }
+    }
 
     fun normalizeId(value: String): String {
       val normalized = value.trim().lowercase(Locale.ROOT)

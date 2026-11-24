@@ -952,6 +952,7 @@ private fun UrnetworkSettingsCard(
 ) {
   val exit = setup.exitInfo
   val connected = exit?.connected == true
+  val busy = setup.busy
   val shareEnabled = setup.share
   val address = exit?.ip.orEmpty()
   val country = listOfNotNull(
@@ -1010,9 +1011,12 @@ private fun UrnetworkSettingsCard(
           color = MaterialTheme.colorScheme.error,
         )
       }
+      if (busy) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+      }
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(
-          enabled = enabled,
+          enabled = enabled && !busy,
           onClick = { callbacks.checkExit(serverId) },
           modifier = Modifier.weight(1f),
         ) {
@@ -1021,7 +1025,7 @@ private fun UrnetworkSettingsCard(
           Text(stringResource(R.string.urnetwork_settings_check))
         }
         FilledTonalButton(
-          enabled = enabled,
+          enabled = enabled && !busy,
           onClick = { callbacks.setRouting(serverId, !connected) },
           modifier = Modifier.weight(1f),
         ) {

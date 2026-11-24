@@ -946,6 +946,13 @@ install_urnetwork() {
   [[ -n $jwt ]] || die 'ZDT_URNETWORK_JWT environment variable must contain the network JWT'
   info 'Network JWT supplied through the environment'
 
+  # The service may still be running from a previous install attempt. Stop it
+  # before replacing its binaries, otherwise cp fails with "Text file busy".
+  if systemctl is-active --quiet "$URNETWORK_UNIT" 2>/dev/null; then
+    stage 'Stopping URnetwork service'
+    run_visible systemctl stop "$URNETWORK_UNIT"
+  fi
+
   arch=$(uname -m)
   case "$arch" in
     x86_64|amd64) asset_arch=amd64 ;;
@@ -1050,7 +1057,7 @@ if [[ "\${SHARE:-0}" == 1 && -x ./provider ]]; then
   pids+=(\$!)
 fi
 if [[ "\${ROUTING:-0}" == 1 && -x ./tun2socks ]]; then
-  nohup ./tun2socks -device $URNETWORK_TUN --proxy socks5://$URNETWORK_SOCKS --tun-post-up "ip addr add $URNETWORK_TUN_ADDR dev $URNETWORK_TUN && ip link set $URNETWORK_TUN up" >>"\$LOG/tun2socks.log" 2>&1 &
+  nohup ./tun2socks --device $URNETWORK_TUN --proxy socks5://$URNETWORK_SOCKS --tun-post-up "sh -c 'ip addr add $URNETWORK_TUN_ADDR dev $URNETWORK_TUN && ip link set $URNETWORK_TUN up'" >>"\$LOG/tun2socks.log" 2>&1 &
   pids+=(\$!)
 fi
 set +e
@@ -1071,11 +1078,11 @@ Type=simple
 User=$URNETWORK_USER
 WorkingDirectory=$URNETWORK_DIR
 Environment=HOME=$URNETWORK_PROFILE_DIR
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 ExecStart=$URNETWORK_DIR/start.sh
 Restart=on-failure
 RestartSec=3
-NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
 UNIT
@@ -1228,6 +1235,18 @@ enable_urnetwork_exit() {
     restore_urnetwork_exit_state "$backup"
     printf 'ZDT_ROLLBACK=completed\n'
     die 'Failed to configure URnetwork exit routing; previous state restored'
+  fi
+  local probe='' i
+  for ((i=0; i<15; i++)); do
+    probe=$(curl -fsS --max-time 4 --socks5-hostname "$URNETWORK_SOCKS" "https://api.ipify.org" 2>/dev/null || true)
+    [[ -n $probe ]] && break
+    sleep 2
+  done
+  if [[ -z $probe ]]; then
+    printf 'ZDT_ROLLBACK=started\n'
+    restore_urnetwork_exit_state "$backup"
+    printf 'ZDT_ROLLBACK=completed\n'
+    die 'URnetwork exit is not connected; previous state restored'
   fi
   printf 'ZDT_EXIT=1\n'
   printf 'ZDT_EXIT_MODE=full\n'

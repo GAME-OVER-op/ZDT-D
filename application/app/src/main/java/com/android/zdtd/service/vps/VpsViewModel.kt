@@ -394,11 +394,17 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
   /** Refresh exit state for the service settings screen. */
   fun checkUrnetworkExit(serverId: String) {
     val server = server(serverId) ?: return
+    _urnetworkSetup.update { it.copy(busy = true, error = null, info = null) }
     viewModelScope.launch {
       runCatching { controller.checkUrnetworkExit(server) }
-        .onSuccess { info -> _urnetworkSetup.update { it.copy(exitInfo = info) } }
+        .onSuccess { info -> _urnetworkSetup.update { it.copy(exitInfo = info, busy = false) } }
         .onFailure { error ->
-          _urnetworkSetup.update { it.copy(error = error.message ?: "Не удалось получить состояние URnetwork") }
+          _urnetworkSetup.update {
+            it.copy(
+              busy = false,
+              error = error.message ?: "Не удалось получить состояние URnetwork",
+            )
+          }
         }
     }
   }

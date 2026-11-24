@@ -2755,4 +2755,17 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="urnetwork_settings_saved">Ayarlar kaydedildi</string>
     <string name="urnetwork_settings_status_ip">IP: %1$s</string>
     <string name="urnetwork_settings_routing">Yönlendirme: %1$s</string>
+    <string name="urnetwork_picker_title">Çıkış seç</string>
+    <string name="urnetwork_picker_auto">Otomatik / herhangi bir çıkış</string>
+    <string name="urnetwork_picker_country_section">Ülke</string>
+    <string name="urnetwork_picker_provider_section">Çıkış / sağlayıcı</string>
+    <string name="urnetwork_picker_empty">Şu anda kullanılabilir bir şey yok</string>
+    <string name="urnetwork_picker_loading">Yükleniyor…</string>
+    <string name="urnetwork_picker_retry">Tekrar dene</string>
+    <string name="urnetwork_picker_clear">Kapat</string>
+    <string name="urnetwork_picker_selected">Seçilen çıkış: %1$s</string>
+    <string name="urnetwork_picker_choose_button">Çıkış seç</string>
+    <string name="urnetwork_settings_advanced">Gelişmiş ayarlar</string>
+    <string name="urnetwork_settings_advanced_hide">Gelişmiş ayarları gizle</string>
+    <string name="urnetwork_picker_error">Yüklenemedi: %1$s</string>
 </resources>

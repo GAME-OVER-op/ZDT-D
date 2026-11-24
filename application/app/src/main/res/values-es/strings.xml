@@ -2756,4 +2756,17 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="urnetwork_settings_saved">Ajustes guardados</string>
     <string name="urnetwork_settings_status_ip">IP: %1$s</string>
     <string name="urnetwork_settings_routing">Enrutamiento: %1$s</string>
+    <string name="urnetwork_picker_title">Elegir salida</string>
+    <string name="urnetwork_picker_auto">Automático / cualquier salida</string>
+    <string name="urnetwork_picker_country_section">País</string>
+    <string name="urnetwork_picker_provider_section">Salida / proveedor</string>
+    <string name="urnetwork_picker_empty">No hay nada disponible por ahora</string>
+    <string name="urnetwork_picker_loading">Cargando…</string>
+    <string name="urnetwork_picker_retry">Reintentar</string>
+    <string name="urnetwork_picker_clear">Ocultar</string>
+    <string name="urnetwork_picker_selected">Salida seleccionada: %1$s</string>
+    <string name="urnetwork_picker_choose_button">Elegir salida</string>
+    <string name="urnetwork_settings_advanced">Ajustes avanzados</string>
+    <string name="urnetwork_settings_advanced_hide">Ocultar ajustes avanzados</string>
+    <string name="urnetwork_picker_error">No se pudo cargar: %1$s</string>
 </resources>

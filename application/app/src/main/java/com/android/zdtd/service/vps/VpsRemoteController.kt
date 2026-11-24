@@ -98,6 +98,45 @@ class VpsRemoteController(
       timeoutMs = 30_000L,
     )
 
+  /** List exit locations offered by the URnetwork backend. */
+  suspend fun listUrnetworkCountries(server: VpsServer): List<VpsUrnetworkLocationOption> {
+    val result = run(server, listOf("list-countries"), timeoutMs = 30_000L)
+    checkPickerResult(result, "Unable to list URnetwork countries")
+    return result.output.lineSequence().mapNotNull { line ->
+      val body = line.removePrefix("ZDT_LOCATION=")
+      if (body == line) return@mapNotNull null
+      val p = body.split('|', limit = 4)
+      if (p.size < 4) return@mapNotNull null
+      val id = p[0].trim()
+      if (id.isBlank()) return@mapNotNull null
+      VpsUrnetworkLocationOption(
+        id = id,
+        name = p[1].trim(),
+        countryCode = p[2].trim(),
+        providerCount = p[3].trim().toIntOrNull() ?: 0,
+      )
+    }.toList()
+  }
+
+  /** List providers available within a URnetwork exit location. */
+  suspend fun listUrnetworkProviders(server: VpsServer, locationId: String): List<VpsUrnetworkProviderOption> {
+    val result = run(server, listOf("list-providers", locationId), timeoutMs = 30_000L)
+    checkPickerResult(result, "Unable to list URnetwork providers")
+    return result.output.lineSequence().mapNotNull { line ->
+      val body = line.removePrefix("ZDT_PROVIDER=")
+      if (body == line) return@mapNotNull null
+      val p = body.split('|', limit = 3)
+      if (p.size < 3) return@mapNotNull null
+      val id = p[0].trim()
+      if (id.isBlank()) return@mapNotNull null
+      VpsUrnetworkProviderOption(
+        id = id,
+        name = p[1].trim(),
+        country = p[2].trim(),
+      )
+    }.toList()
+  }
+
   suspend fun remove(server: VpsServer, kind: VpsServiceKind, onLine: (String) -> Unit): VpsCommandResult =
     run(server, listOf("remove", kind.wireId), onLine = onLine, timeoutMs = 5 * 60_000L)
 
@@ -272,6 +311,18 @@ class VpsRemoteController(
       append(command)
     }
     ssh.execute(server, actualCommand, timeoutMs, onLine)
+  }
+
+  private fun checkPickerResult(result: VpsCommandResult, fallback: String) {
+    if (result.successful) return
+    val message = result.output.lineSequence()
+      .firstOrNull { it.startsWith("ZDT_ERROR=") }
+      ?.substringAfter('=')
+      ?.trim()
+      ?.takeIf { it.isNotBlank() }
+      ?: result.output.lineSequence().firstOrNull { it.isNotBlank() }
+      ?: fallback
+    error(message)
   }
 
   private fun parseUrnetworkSettings(output: String): VpsUrnetworkSettings {

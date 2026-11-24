@@ -1424,6 +1424,179 @@ PY
   printf 'ZDT_EXIT_COUNTRY_CODE=%s\n' "$code"
 }
 
+# ---------------------------------------------------------------------------
+# URnetwork exit-picker data commands
+# ---------------------------------------------------------------------------
+
+# The service config may override the built-in API base URL.
+urnetwork_api_base() {
+  local configured
+  configured=$(urnetwork_config_get API_URL 2>/dev/null || true)
+  printf '%s\n' "${configured:-$URNETWORK_API_URL}"
+}
+
+urnetwork_jwt() {
+  local jwt
+  [[ -r $URNETWORK_JWT_FILE ]] || { printf 'ZDT_ERROR=URnetwork JWT file is not readable\n' >&2; return 1; }
+  jwt=$(tr -d '[:space:]' < "$URNETWORK_JWT_FILE" 2>/dev/null || true)
+  [[ -n $jwt ]] || { printf 'ZDT_ERROR=URnetwork JWT is empty\n' >&2; return 1; }
+  # A JWT only uses base64url characters and dot separators. Reject anything
+  # else so it cannot break out of the quoted curl config value below.
+  [[ $jwt =~ ^[A-Za-z0-9_.=-]+$ ]] || { printf 'ZDT_ERROR=URnetwork JWT has an unexpected format\n' >&2; return 1; }
+  printf '%s\n' "$jwt"
+}
+
+# Authenticated API request. The JWT is placed in a 0600 curl config file
+# rather than on the command line, so it is not visible in process listings and
+# is never printed. stderr carries ZDT_ERROR=...; stdout carries the response.
+# Usage: urnetwork_api_request GET|POST /path [json-payload]
+urnetwork_api_request() {
+  local method=$1 endpoint=$2 payload=${3:-}
+  local base jwt tmp cfg body code rc=0
+  base=$(urnetwork_api_base)
+  if ! jwt=$(urnetwork_jwt); then return 1; fi
+  tmp=$(mktemp -d) || { printf 'ZDT_ERROR=Unable to create a temporary directory\n' >&2; return 1; }
+  (
+    trap - ERR
+    set -Eeuo pipefail
+    trap 'rm -rf "$tmp"' EXIT
+    cfg="$tmp/curl.conf"
+    body="$tmp/body"
+    : > "$body"
+    cat > "$cfg" <<CFG
+header = "Authorization: Bearer $jwt"
+header = "Content-Type: application/json"
+CFG
+    chmod 0600 "$cfg"
+    args=( -sS --max-time 15 --retry 1 --config "$cfg" -X "$method" -o "$body" -w '%{http_code}' )
+    if [[ -n $payload ]]; then
+      printf '%s' "$payload" > "$tmp/payload"
+      args+=( --data-binary @"$tmp/payload" )
+    fi
+    code=$(curl "${args[@]}" "$base$endpoint" 2>"$tmp/curl.error") || rc=$?
+    if (( rc != 0 )); then
+      printf 'ZDT_ERROR=URnetwork API request failed (curl exit %s)\n' "$rc" >&2
+      exit 1
+    fi
+    if [[ ! $code =~ ^2[0-9][0-9]$ ]]; then
+      printf 'ZDT_ERROR=URnetwork API returned HTTP %s\n' "$code" >&2
+      exit 1
+    fi
+    cat "$body"
+  )
+}
+
+# ZDT_LOCATIONS_FILTER=country keeps only country rows; all keeps every type.
+zdt_parse_locations() {
+  local payload=$1 filter=${2:-all} lines
+  if ! lines=$(ZDT_LOCATIONS_PAYLOAD="$payload" ZDT_LOCATIONS_FILTER="$filter" python3 - <<'PY'
+import json, os, sys
+
+def fail(message):
+    sys.stderr.write('ZDT_ERROR=' + message.replace('\n', ' ').replace('|', ' ') + '\n')
+    raise SystemExit(1)
+
+def clean(value, limit):
+    if value is None:
+        return ''
+    # Collapse whitespace (including newlines) and remove field separators.
+    return ' '.join(str(value).split()).replace('|', ' ')[:limit]
+
+try:
+    data = json.loads(os.environ.get('ZDT_LOCATIONS_PAYLOAD', ''))
+except Exception:
+    fail('Unable to parse URnetwork provider-locations response')
+if not isinstance(data, dict) or not isinstance(data.get('locations'), list):
+    fail('Unexpected URnetwork provider-locations response')
+country_only = os.environ.get('ZDT_LOCATIONS_FILTER') == 'country'
+for item in data['locations']:
+    if not isinstance(item, dict):
+        continue
+    if country_only and item.get('location_type') != 'country':
+        continue
+    location_id = clean(item.get('location_id'), 64)
+    if not location_id:
+        continue
+    name = clean(item.get('name'), 128)
+    code = clean(item.get('country_code'), 16)
+    count = clean(item.get('provider_count'), 16)
+    print('ZDT_LOCATION=' + location_id + '|' + name + '|' + code + '|' + count)
+PY
+  ); then
+    return 1
+  fi
+  if [[ -n $lines ]]; then printf '%s\n' "$lines"; fi
+}
+
+zdt_parse_providers() {
+  local payload=$1 lines
+  if ! lines=$(ZDT_PROVIDERS_PAYLOAD="$payload" python3 - <<'PY'
+import json, os, sys
+
+def fail(message):
+    sys.stderr.write('ZDT_ERROR=' + message.replace('\n', ' ') + '\n')
+    raise SystemExit(1)
+
+try:
+    data = json.loads(os.environ.get('ZDT_PROVIDERS_PAYLOAD', ''))
+except Exception:
+    fail('Unable to parse URnetwork find-providers response')
+if not isinstance(data, dict) or not isinstance(data.get('client_ids'), list):
+    fail('Unexpected URnetwork find-providers response')
+for client_id in data['client_ids']:
+    value = '' if client_id is None else ' '.join(str(client_id).split()).replace('|', ' ')[:128]
+    if value:
+        # Name and country are not part of this API response yet.
+        print('ZDT_PROVIDER=' + value + '||')
+PY
+  ); then
+    return 1
+  fi
+  if [[ -n $lines ]]; then printf '%s\n' "$lines"; fi
+}
+
+list_countries() {
+  local body
+  if ! body=$(urnetwork_api_request GET /network/provider-locations); then return 1; fi
+  zdt_parse_locations "$body" country
+}
+
+list_locations() {
+  local query=$1 payload body
+  [[ -n $query ]] || { printf 'ZDT_ERROR=A search query is required\n' >&2; return 1; }
+  ((${#query} <= 256)) || { printf 'ZDT_ERROR=Search query is too long (maximum 256 characters)\n' >&2; return 1; }
+  [[ $query != *$'\n'* && $query != *$'\r'* ]] || { printf 'ZDT_ERROR=Search query must not contain newlines\n' >&2; return 1; }
+  if ! payload=$(python3 - "$query" <<'PY'
+import json, sys
+print(json.dumps({'query': sys.argv[1]}, separators=(',', ':')))
+PY
+  ); then printf 'ZDT_ERROR=Unable to encode search query\n' >&2; return 1; fi
+  if ! body=$(urnetwork_api_request POST /network/find-provider-locations "$payload"); then return 1; fi
+  zdt_parse_locations "$body" all
+}
+
+list_providers() {
+  local location_id=$1 payload body
+  # UUID and other location ids are alphanumerics/dashes, at most 64 chars.
+  [[ $location_id =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,63}$ ]] || { printf 'ZDT_ERROR=Invalid location identifier\n' >&2; return 1; }
+  if ! payload=$(python3 - "$location_id" <<'PY'
+import json, sys
+print(json.dumps({'location_id': sys.argv[1], 'count': 20}, separators=(',', ':')))
+PY
+  ); then printf 'ZDT_ERROR=Unable to encode location identifier\n' >&2; return 1; fi
+  if ! body=$(urnetwork_api_request POST /network/find-providers "$payload"); then return 1; fi
+  zdt_parse_providers "$body"
+}
+
+# Data commands have no transaction stage; keep their error output limited to
+# the ZDT_ERROR line emitted by the command itself.
+run_data_command() {
+  local rc=0
+  trap - ERR
+  "$@" || rc=$?
+  return "$rc"
+}
+
 install_openvpn() {
   local variant=${1:-normal}
   case "$variant" in
@@ -2495,6 +2668,9 @@ main() {
     enable-exit) enable_urnetwork_exit ;;
     disable-exit) disable_urnetwork_exit ;;
     check-exit) check_urnetwork_exit ;;
+    list-countries) run_data_command list_countries ;;
+    list-providers) run_data_command list_providers "${1:?location id required}" ;;
+    list-locations) run_data_command list_locations "${1:?query required}" ;;
     get-settings) get_urnetwork_settings ;;
     set-settings) set_urnetwork_settings "$@" ;;
     list-profiles) list_profiles "${1:?service required}" ;;

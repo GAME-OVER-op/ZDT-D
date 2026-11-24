@@ -2755,4 +2755,17 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="urnetwork_settings_saved">설정을 저장했습니다</string>
     <string name="urnetwork_settings_status_ip">IP: %1$s</string>
     <string name="urnetwork_settings_routing">라우팅: %1$s</string>
+    <string name="urnetwork_picker_title">출구 선택</string>
+    <string name="urnetwork_picker_auto">자동 / 모든 출구</string>
+    <string name="urnetwork_picker_country_section">국가</string>
+    <string name="urnetwork_picker_provider_section">출구 / 제공자</string>
+    <string name="urnetwork_picker_empty">사용 가능한 항목이 없습니다</string>
+    <string name="urnetwork_picker_loading">불러오는 중…</string>
+    <string name="urnetwork_picker_retry">다시 시도</string>
+    <string name="urnetwork_picker_clear">닫기</string>
+    <string name="urnetwork_picker_selected">선택된 출구: %1$s</string>
+    <string name="urnetwork_picker_choose_button">출구 선택</string>
+    <string name="urnetwork_settings_advanced">고급 설정</string>
+    <string name="urnetwork_settings_advanced_hide">고급 설정 숨기기</string>
+    <string name="urnetwork_picker_error">불러오지 못했습니다: %1$s</string>
 </resources>

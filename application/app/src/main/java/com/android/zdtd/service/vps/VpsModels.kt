@@ -181,6 +181,19 @@ data class VpsUrnetworkExitInfo(
   val countryCode: String = "",
 )
 
+data class VpsUrnetworkLocationOption(
+  val id: String,
+  val name: String,
+  val countryCode: String = "",
+  val providerCount: Int = 0,
+)
+
+data class VpsUrnetworkProviderOption(
+  val id: String,
+  val name: String = "",
+  val country: String = "",
+)
+
 data class VpsUrnetworkSettings(
   val share: Boolean = false,
   val routing: Boolean = false,
@@ -210,4 +223,8 @@ data class UrnetworkSetupUiState(
   val info: String? = null,
   val exitInfo: VpsUrnetworkExitInfo? = null,
   val settings: VpsUrnetworkSettings = VpsUrnetworkSettings(),
+  val locations: List<VpsUrnetworkLocationOption> = emptyList(),
+  val providers: List<VpsUrnetworkProviderOption> = emptyList(),
+  val pickerLoading: Boolean = false,
+  val pickerError: String? = null,
 )

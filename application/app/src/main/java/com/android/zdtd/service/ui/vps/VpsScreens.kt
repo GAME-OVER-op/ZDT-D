@@ -24,6 +24,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -143,6 +144,8 @@ import com.android.zdtd.service.vps.VpsServiceProfile
 import com.android.zdtd.service.vps.VpsServiceState
 import com.android.zdtd.service.vps.UrnetworkSetupUiState
 import com.android.zdtd.service.vps.VpsSshAuth
+import com.android.zdtd.service.vps.VpsUrnetworkLocationOption
+import com.android.zdtd.service.vps.VpsUrnetworkProviderOption
 import com.android.zdtd.service.vps.VpsUrnetworkSettings
 import com.android.zdtd.service.vps.VpsUrnetworkSetupStep
 import com.android.zdtd.service.vps.VpsViewModel
@@ -362,15 +365,7 @@ fun VpsServerDetailsScreen(
   if (urnetworkSetup.step != VpsUrnetworkSetupStep.NONE) {
     UrnetworkSetupDialog(
       state = urnetworkSetup,
-      onEmailChange = urnetworkCallbacks.setEmail,
-      onSendCode = urnetworkCallbacks.sendCode,
-      onCodeChange = urnetworkCallbacks.setCode,
-      onVerify = urnetworkCallbacks.verifyCode,
-      onShare = urnetworkCallbacks.setShare,
-      onRouting = urnetworkCallbacks.chooseRouting,
-      onSettingsChange = urnetworkCallbacks.updateSettings,
-      onSaveSettings = urnetworkCallbacks.saveSettingsFromSetup,
-      onDismiss = urnetworkCallbacks.dismissSetup,
+      callbacks = urnetworkCallbacks,
     )
   }
 
@@ -424,7 +419,10 @@ fun VpsServerDetailsScreen(
               onInstall = {
                 when (kind) {
                   VpsServiceKind.OPENVPN -> variantTarget = kind
-                  VpsServiceKind.URNETWORK -> urnetworkCallbacks.startSetup(serverId)
+                  VpsServiceKind.URNETWORK -> {
+                    urnetworkCallbacks.startSetup(serverId)
+                    urnetworkCallbacks.loadCountries()
+                  }
                   else -> viewModel.installService(serverId, kind)
                 }
               },
@@ -483,6 +481,7 @@ fun VpsServiceScreen(
   LaunchedEffect(serverId, kind) {
     if (kind == VpsServiceKind.URNETWORK) {
       urnetworkCallbacks.loadSettings(serverId)
+      urnetworkCallbacks.loadCountries()
       if (urnetworkSetup.exitInfo == null) {
         urnetworkCallbacks.checkExit(serverId)
       }
@@ -790,6 +789,10 @@ data class UrnetworkUiCallbacks(
   val saveSettings: (String, VpsUrnetworkSettings) -> Unit,
   val saveSettingsFromSetup: () -> Unit,
   val loadSettings: (String) -> Unit,
+  val loadCountries: () -> Unit,
+  val loadProviders: (String) -> Unit,
+  val chooseExit: (VpsUrnetworkLocationOption?, VpsUrnetworkProviderOption?) -> Unit,
+  val clearPickerError: () -> Unit,
 ) {
   companion object {
     fun from(viewModel: VpsViewModel): UrnetworkUiCallbacks = UrnetworkUiCallbacks(
@@ -807,8 +810,164 @@ data class UrnetworkUiCallbacks(
       saveSettings = { serverId, settings -> viewModel.saveUrnetworkSettings(serverId, settings) },
       saveSettingsFromSetup = { viewModel.saveUrnetworkSettingsFromSetup() },
       loadSettings = { serverId -> viewModel.loadUrnetworkSettings(serverId) },
+      loadCountries = { viewModel.loadUrnetworkCountries() },
+      loadProviders = { locationId -> viewModel.loadUrnetworkProviders(locationId) },
+      chooseExit = { location, provider -> viewModel.chooseUrnetworkExit(location, provider) },
+      clearPickerError = { viewModel.clearUrnetworkPickerError() },
     )
   }
+}
+
+/** Country/provider picker for the URnetwork exit. */
+@Composable
+fun UrnetworkExitPickerDialog(
+  locations: List<VpsUrnetworkLocationOption>,
+  providers: List<VpsUrnetworkProviderOption>,
+  selectedCountry: String,
+  selectedProviderId: String,
+  loading: Boolean,
+  error: String?,
+  onSelectCountry: (VpsUrnetworkLocationOption) -> Unit,
+  onSelectProvider: (VpsUrnetworkProviderOption) -> Unit,
+  onAuto: () -> Unit,
+  onDismiss: () -> Unit,
+  onClearError: () -> Unit,
+) {
+  val selectedLocation = locations.firstOrNull {
+    it.name.equals(selectedCountry, ignoreCase = true) || it.countryCode.equals(selectedCountry, ignoreCase = true)
+  }
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.urnetwork_picker_title)) },
+    text = {
+      Column(
+        modifier = Modifier
+          .heightIn(max = 520.dp)
+          .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        val summary = listOfNotNull(
+          selectedCountry.takeIf { it.isNotBlank() },
+          selectedProviderId.takeIf { it.isNotBlank() },
+        ).joinToString(" · ").ifBlank { stringResource(R.string.urnetwork_picker_auto) }
+        Text(
+          stringResource(R.string.urnetwork_picker_selected, summary),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FilledTonalButton(onClick = onAuto, modifier = Modifier.fillMaxWidth()) {
+          Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(17.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.urnetwork_picker_auto))
+        }
+        if (loading) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.urnetwork_picker_loading), style = MaterialTheme.typography.bodySmall)
+          }
+        }
+        error?.takeIf { it.isNotBlank() }?.let { message ->
+          Text(
+            stringResource(R.string.urnetwork_picker_error, message),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (selectedLocation != null) {
+              TextButton(onClick = { onSelectCountry(selectedLocation) }) {
+                Text(stringResource(R.string.urnetwork_picker_retry))
+              }
+            }
+            TextButton(onClick = onClearError) {
+              Text(stringResource(R.string.urnetwork_picker_clear))
+            }
+          }
+        }
+        Text(
+          stringResource(R.string.urnetwork_picker_country_section),
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.SemiBold,
+        )
+        if (locations.isEmpty() && !loading) {
+          Text(
+            stringResource(R.string.urnetwork_picker_empty),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        } else {
+          locations.forEach { location ->
+            val isSelected = selectedLocation?.id == location.id
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                  if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                  else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                )
+                .clickable(enabled = !loading) { onSelectCountry(location) }
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(
+                text = listOfNotNull(
+                  location.name.takeIf { it.isNotBlank() },
+                  location.countryCode.takeIf { it.isNotBlank() },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+              )
+              Text(
+                text = location.providerCount.toString(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+        }
+        Text(
+          stringResource(R.string.urnetwork_picker_provider_section),
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.SemiBold,
+        )
+        if (providers.isEmpty() && !loading) {
+          Text(
+            stringResource(R.string.urnetwork_picker_empty),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        } else {
+          providers.forEach { provider ->
+            val isSelected = provider.id.isNotBlank() && provider.id == selectedProviderId
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                  if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                  else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                )
+                .clickable(enabled = !loading) { onSelectProvider(provider) }
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(
+                text = listOfNotNull(
+                  provider.id.takeIf { it.isNotBlank() },
+                  provider.name.takeIf { it.isNotBlank() },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodyMedium,
+              )
+            }
+          }
+        }
+      }
+    },
+    confirmButton = {
+      TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+    },
+  )
 }
 
 /** Compact, scrollable editor for the URnetwork exit configuration. */
@@ -912,18 +1071,24 @@ fun UrnetworkSettingsFields(
 @Composable
 fun UrnetworkSetupDialog(
   state: UrnetworkSetupUiState,
-  onEmailChange: (String) -> Unit,
-  onSendCode: () -> Unit,
-  onCodeChange: (String) -> Unit,
-  onVerify: () -> Unit,
-  onShare: (Boolean) -> Unit,
-  onRouting: (Boolean) -> Unit,
-  onSettingsChange: (VpsUrnetworkSettings) -> Unit,
-  onSaveSettings: () -> Unit,
-  onDismiss: () -> Unit,
+  callbacks: UrnetworkUiCallbacks,
 ) {
+  val onEmailChange = callbacks.setEmail
+  val onSendCode = callbacks.sendCode
+  val onCodeChange = callbacks.setCode
+  val onVerify = callbacks.verifyCode
+  val onSettingsChange = callbacks.updateSettings
+  val onSaveSettings = callbacks.saveSettingsFromSetup
+  val onShare = callbacks.setShare
+  val onRouting = callbacks.chooseRouting
+  val onDismiss = callbacks.dismissSetup
   val step = state.step
   val busy = state.busy
+  var showExitPicker by remember { mutableStateOf(false) }
+  var advancedExpanded by remember { mutableStateOf(false) }
+  LaunchedEffect(step) {
+    if (step == VpsUrnetworkSetupStep.SETTINGS) callbacks.loadCountries()
+  }
   // "Back" from settings re-shows the code step locally; a successful verification
   // replaces the JWT and takes the wizard forward again without resending e-mail.
   var settingsBackToCode by remember { mutableStateOf(false) }
@@ -987,11 +1152,34 @@ fun UrnetworkSetupDialog(
           }
           VpsUrnetworkSetupStep.SETTINGS -> {
             Text(stringResource(R.string.urnetwork_setup_settings_body), style = MaterialTheme.typography.bodyMedium)
-            UrnetworkSettingsFields(
-              settings = state.settings,
-              onChange = onSettingsChange,
-              enabled = !busy,
+            val selection = listOfNotNull(
+              state.settings.country.takeIf { it.isNotBlank() },
+              state.settings.providerId.takeIf { it.isNotBlank() },
+            ).joinToString(" · ").ifBlank { stringResource(R.string.urnetwork_picker_auto) }
+            Text(
+              stringResource(R.string.urnetwork_picker_selected, selection),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Button(
+              enabled = !busy,
+              onClick = { showExitPicker = true },
+              modifier = Modifier.fillMaxWidth(),
+            ) {
+              Icon(Icons.Outlined.Dns, contentDescription = null, modifier = Modifier.size(17.dp))
+              Spacer(Modifier.width(6.dp))
+              Text(stringResource(R.string.urnetwork_picker_choose_button))
+            }
+            TextButton(onClick = { advancedExpanded = !advancedExpanded }) {
+              Text(stringResource(if (advancedExpanded) R.string.urnetwork_settings_advanced_hide else R.string.urnetwork_settings_advanced))
+            }
+            if (advancedExpanded) {
+              UrnetworkSettingsFields(
+                settings = state.settings,
+                onChange = onSettingsChange,
+                enabled = !busy,
+              )
+            }
           }
           VpsUrnetworkSetupStep.SHARE -> Text(stringResource(R.string.urnetwork_setup_share_body), style = MaterialTheme.typography.bodyMedium)
           VpsUrnetworkSetupStep.ROUTING -> Text(stringResource(R.string.urnetwork_setup_routing_body), style = MaterialTheme.typography.bodyMedium)
@@ -1079,6 +1267,42 @@ fun UrnetworkSetupDialog(
       }
     },
   )
+
+  if (showExitPicker) {
+    UrnetworkExitPickerDialog(
+      locations = state.locations,
+      providers = state.providers,
+      selectedCountry = state.settings.country,
+      selectedProviderId = state.settings.providerId,
+      loading = state.pickerLoading,
+      error = state.pickerError,
+      onSelectCountry = { location ->
+        onSettingsChange(state.settings.copy(country = location.name, providerId = ""))
+        callbacks.clearPickerError()
+        callbacks.loadProviders(location.id)
+      },
+      onSelectProvider = { provider ->
+        val location = state.locations.firstOrNull {
+          it.name.equals(state.settings.country, ignoreCase = true) || it.countryCode.equals(state.settings.country, ignoreCase = true)
+        }
+        onSettingsChange(
+          state.settings.copy(
+            country = location?.name ?: state.settings.country,
+            providerId = provider.id,
+          ),
+        )
+        callbacks.chooseExit(location, provider)
+        showExitPicker = false
+      },
+      onAuto = {
+        onSettingsChange(state.settings.copy(country = "", providerId = ""))
+        callbacks.chooseExit(null, null)
+        showExitPicker = false
+      },
+      onDismiss = { showExitPicker = false },
+      onClearError = callbacks.clearPickerError,
+    )
+  }
 }
 
 @Composable
@@ -1094,6 +1318,8 @@ private fun UrnetworkSettingsCard(
   val canEdit = enabled && !busy
   val settings = setup.settings
   var savedNotice by remember { mutableStateOf(false) }
+  var showExitPicker by remember { mutableStateOf(false) }
+  var advancedExpanded by remember { mutableStateOf(false) }
   LaunchedEffect(settings, setup.error) { savedNotice = false }
 
   val address = exit?.ip.orEmpty()
@@ -1147,11 +1373,34 @@ private fun UrnetworkSettingsCard(
         style = MaterialTheme.typography.bodySmall,
       )
 
-      UrnetworkSettingsFields(
-        settings = settings,
-        onChange = callbacks.updateSettings,
-        enabled = canEdit,
+      val selection = listOfNotNull(
+        settings.country.takeIf { it.isNotBlank() },
+        settings.providerId.takeIf { it.isNotBlank() },
+      ).joinToString(" · ").ifBlank { stringResource(R.string.urnetwork_picker_auto) }
+      Text(
+        stringResource(R.string.urnetwork_picker_selected, selection),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
+      Button(
+        enabled = canEdit,
+        onClick = { showExitPicker = true },
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Icon(Icons.Outlined.Dns, contentDescription = null, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(stringResource(R.string.urnetwork_picker_choose_button))
+      }
+      TextButton(onClick = { advancedExpanded = !advancedExpanded }) {
+        Text(stringResource(if (advancedExpanded) R.string.urnetwork_settings_advanced_hide else R.string.urnetwork_settings_advanced))
+      }
+      if (advancedExpanded) {
+        UrnetworkSettingsFields(
+          settings = settings,
+          onChange = callbacks.updateSettings,
+          enabled = canEdit,
+        )
+      }
 
       setup.info?.takeIf { it.isNotBlank() }?.let { info ->
         Text(info, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1204,6 +1453,42 @@ private fun UrnetworkSettingsCard(
         Text(stringResource(if (connected) R.string.urnetwork_settings_disable_routing else R.string.urnetwork_settings_enable_routing))
       }
     }
+  }
+
+  if (showExitPicker) {
+    UrnetworkExitPickerDialog(
+      locations = setup.locations,
+      providers = setup.providers,
+      selectedCountry = settings.country,
+      selectedProviderId = settings.providerId,
+      loading = setup.pickerLoading,
+      error = setup.pickerError,
+      onSelectCountry = { location ->
+        callbacks.updateSettings(settings.copy(country = location.name, providerId = ""))
+        callbacks.clearPickerError()
+        callbacks.loadProviders(location.id)
+      },
+      onSelectProvider = { provider ->
+        val location = setup.locations.firstOrNull {
+          it.name.equals(settings.country, ignoreCase = true) || it.countryCode.equals(settings.country, ignoreCase = true)
+        }
+        callbacks.updateSettings(
+          settings.copy(
+            country = location?.name ?: settings.country,
+            providerId = provider.id,
+          ),
+        )
+        callbacks.chooseExit(location, provider)
+        showExitPicker = false
+      },
+      onAuto = {
+        callbacks.updateSettings(settings.copy(country = "", providerId = ""))
+        callbacks.chooseExit(null, null)
+        showExitPicker = false
+      },
+      onDismiss = { showExitPicker = false },
+      onClearError = callbacks.clearPickerError,
+    )
   }
 }
 

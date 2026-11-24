@@ -2790,4 +2790,17 @@ APatch: 10700+</string>
     <string name="urnetwork_settings_saved">Настройки сохранены</string>
     <string name="urnetwork_settings_status_ip">IP-адрес: %1$s</string>
     <string name="urnetwork_settings_routing">Маршрутизация: %1$s</string>
+    <string name="urnetwork_picker_title">Выбор выхода</string>
+    <string name="urnetwork_picker_auto">Авто / любой выход</string>
+    <string name="urnetwork_picker_country_section">Страна</string>
+    <string name="urnetwork_picker_provider_section">Выход / провайдер</string>
+    <string name="urnetwork_picker_empty">Пока ничего недоступно</string>
+    <string name="urnetwork_picker_loading">Загрузка…</string>
+    <string name="urnetwork_picker_retry">Повторить</string>
+    <string name="urnetwork_picker_clear">Очистить</string>
+    <string name="urnetwork_picker_selected">Выбранный выход: %1$s</string>
+    <string name="urnetwork_picker_choose_button">Выбрать выход</string>
+    <string name="urnetwork_settings_advanced">Дополнительные настройки</string>
+    <string name="urnetwork_settings_advanced_hide">Скрыть дополнительные настройки</string>
+    <string name="urnetwork_picker_error">Не удалось загрузить: %1$s</string>
 </resources>

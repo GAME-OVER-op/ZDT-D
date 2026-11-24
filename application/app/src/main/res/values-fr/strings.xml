@@ -2756,4 +2756,17 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="urnetwork_settings_saved">Paramètres enregistrés</string>
     <string name="urnetwork_settings_status_ip">IP : %1$s</string>
     <string name="urnetwork_settings_routing">Routage : %1$s</string>
+    <string name="urnetwork_picker_title">Choisir une sortie</string>
+    <string name="urnetwork_picker_auto">Automatique / toute sortie</string>
+    <string name="urnetwork_picker_country_section">Pays</string>
+    <string name="urnetwork_picker_provider_section">Sortie / fournisseur</string>
+    <string name="urnetwork_picker_empty">Rien de disponible pour le moment</string>
+    <string name="urnetwork_picker_loading">Chargement…</string>
+    <string name="urnetwork_picker_retry">Réessayer</string>
+    <string name="urnetwork_picker_clear">Masquer</string>
+    <string name="urnetwork_picker_selected">Sortie sélectionnée : %1$s</string>
+    <string name="urnetwork_picker_choose_button">Choisir une sortie</string>
+    <string name="urnetwork_settings_advanced">Paramètres avancés</string>
+    <string name="urnetwork_settings_advanced_hide">Masquer les paramètres avancés</string>
+    <string name="urnetwork_picker_error">Échec du chargement : %1$s</string>
 </resources>

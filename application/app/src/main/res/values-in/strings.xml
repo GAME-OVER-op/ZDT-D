@@ -2755,4 +2755,17 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="urnetwork_settings_saved">Pengaturan disimpan</string>
     <string name="urnetwork_settings_status_ip">IP: %1$s</string>
     <string name="urnetwork_settings_routing">Perutean: %1$s</string>
+    <string name="urnetwork_picker_title">Pilih keluar</string>
+    <string name="urnetwork_picker_auto">Otomatis / keluar apa pun</string>
+    <string name="urnetwork_picker_country_section">Negara</string>
+    <string name="urnetwork_picker_provider_section">Keluar / penyedia</string>
+    <string name="urnetwork_picker_empty">Belum ada yang tersedia</string>
+    <string name="urnetwork_picker_loading">Memuat…</string>
+    <string name="urnetwork_picker_retry">Coba lagi</string>
+    <string name="urnetwork_picker_clear">Sembunyikan</string>
+    <string name="urnetwork_picker_selected">Keluar terpilih: %1$s</string>
+    <string name="urnetwork_picker_choose_button">Pilih keluar</string>
+    <string name="urnetwork_settings_advanced">Pengaturan lanjutan</string>
+    <string name="urnetwork_settings_advanced_hide">Sembunyikan pengaturan lanjutan</string>
+    <string name="urnetwork_picker_error">Gagal memuat: %1$s</string>
 </resources>

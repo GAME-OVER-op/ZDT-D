@@ -2760,4 +2760,17 @@ APatch: ‏10700+</string>
     <string name="urnetwork_settings_saved">تم حفظ الإعدادات</string>
     <string name="urnetwork_settings_status_ip">عنوان IP: %1$s</string>
     <string name="urnetwork_settings_routing">التوجيه: %1$s</string>
+    <string name="urnetwork_picker_title">اختر نقطة الخروج</string>
+    <string name="urnetwork_picker_auto">تلقائي / أي نقطة خروج</string>
+    <string name="urnetwork_picker_country_section">البلد</string>
+    <string name="urnetwork_picker_provider_section">نقطة الخروج / المزوّد</string>
+    <string name="urnetwork_picker_empty">لا شيء متاح حالياً</string>
+    <string name="urnetwork_picker_loading">جارٍ التحميل…</string>
+    <string name="urnetwork_picker_retry">إعادة المحاولة</string>
+    <string name="urnetwork_picker_clear">إخفاء</string>
+    <string name="urnetwork_picker_selected">نقطة الخروج المحددة: %1$s</string>
+    <string name="urnetwork_picker_choose_button">اختر نقطة الخروج</string>
+    <string name="urnetwork_settings_advanced">الإعدادات المتقدمة</string>
+    <string name="urnetwork_settings_advanced_hide">إخفاء الإعدادات المتقدمة</string>
+    <string name="urnetwork_picker_error">تعذّر التحميل: %1$s</string>
 </resources>

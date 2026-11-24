@@ -2755,4 +2755,17 @@ APatch：10700+</string>
     <string name="urnetwork_settings_saved">设置已保存</string>
     <string name="urnetwork_settings_status_ip">IP: %1$s</string>
     <string name="urnetwork_settings_routing">路由: %1$s</string>
+    <string name="urnetwork_picker_title">选择出口</string>
+    <string name="urnetwork_picker_auto">自动 / 任意出口</string>
+    <string name="urnetwork_picker_country_section">国家</string>
+    <string name="urnetwork_picker_provider_section">出口 / 提供商</string>
+    <string name="urnetwork_picker_empty">暂无可用项</string>
+    <string name="urnetwork_picker_loading">加载中…</string>
+    <string name="urnetwork_picker_retry">重试</string>
+    <string name="urnetwork_picker_clear">关闭</string>
+    <string name="urnetwork_picker_selected">已选出口：%1$s</string>
+    <string name="urnetwork_picker_choose_button">选择出口</string>
+    <string name="urnetwork_settings_advanced">高级设置</string>
+    <string name="urnetwork_settings_advanced_hide">隐藏高级设置</string>
+    <string name="urnetwork_picker_error">加载失败：%1$s</string>
 </resources>

@@ -2755,4 +2755,17 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="urnetwork_settings_saved">設定を保存しました</string>
     <string name="urnetwork_settings_status_ip">IP: %1$s</string>
     <string name="urnetwork_settings_routing">ルーティング: %1$s</string>
+    <string name="urnetwork_picker_title">出口を選択</string>
+    <string name="urnetwork_picker_auto">自動 / 任意の出口</string>
+    <string name="urnetwork_picker_country_section">国</string>
+    <string name="urnetwork_picker_provider_section">出口 / プロバイダー</string>
+    <string name="urnetwork_picker_empty">利用できる項目がありません</string>
+    <string name="urnetwork_picker_loading">読み込み中…</string>
+    <string name="urnetwork_picker_retry">再試行</string>
+    <string name="urnetwork_picker_clear">閉じる</string>
+    <string name="urnetwork_picker_selected">選択中の出口: %1$s</string>
+    <string name="urnetwork_picker_choose_button">出口を選択</string>
+    <string name="urnetwork_settings_advanced">詳細設定</string>
+    <string name="urnetwork_settings_advanced_hide">詳細設定を閉じる</string>
+    <string name="urnetwork_picker_error">読み込みに失敗しました: %1$s</string>
 </resources>

@@ -418,7 +418,9 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
   fun loadUrnetworkSettings(serverId: String) {
     val server = server(serverId) ?: return
     if (_operation.value.running || _urnetworkSetup.value.busy) return
-    _urnetworkSetup.update { it.copy(busy = true, error = null) }
+    // The exit picker methods read serverId from this state; keep it in sync
+    // when settings are opened from the service screen (outside the setup wizard).
+    _urnetworkSetup.update { it.copy(serverId = serverId, busy = true, error = null) }
     viewModelScope.launch {
       runCatching { controller.getUrnetworkSettings(server) }
         .onSuccess { settings ->
@@ -435,7 +437,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
   fun saveUrnetworkSettings(serverId: String, settings: VpsUrnetworkSettings) {
     if (_operation.value.running || _urnetworkSetup.value.busy) return
     val server = server(serverId) ?: return
-    _urnetworkSetup.update { it.copy(settings = settings, busy = true, error = null, info = null) }
+    _urnetworkSetup.update { it.copy(serverId = serverId, settings = settings, busy = true, error = null, info = null) }
     viewModelScope.launch {
       startOperation("Saving URnetwork settings")
       try {
@@ -539,6 +541,74 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
         loadServices(serverId, silent = true)
       },
     )
+  }
+
+  /** Load exit countries for the URnetwork exit picker. */
+  fun loadUrnetworkCountries() {
+    val serverId = _urnetworkSetup.value.serverId ?: return
+    val server = server(serverId) ?: return
+    _urnetworkSetup.update { it.copy(pickerLoading = true, pickerError = null) }
+    viewModelScope.launch {
+      runCatching { controller.listUrnetworkCountries(server) }
+        .onSuccess { locations ->
+          _urnetworkSetup.update {
+            it.copy(
+              locations = locations,
+              pickerLoading = false,
+              pickerError = if (locations.isEmpty()) "Не удалось получить список стран" else null,
+            )
+          }
+        }
+        .onFailure { error ->
+          _urnetworkSetup.update {
+            it.copy(
+              pickerLoading = false,
+              pickerError = error.message ?: "Не удалось загрузить список стран",
+            )
+          }
+        }
+    }
+  }
+
+  /** Load providers for a chosen exit country. */
+  fun loadUrnetworkProviders(locationId: String) {
+    val serverId = _urnetworkSetup.value.serverId ?: return
+    val server = server(serverId) ?: return
+    _urnetworkSetup.update { it.copy(pickerLoading = true) }
+    viewModelScope.launch {
+      runCatching { controller.listUrnetworkProviders(server, locationId) }
+        .onSuccess { providers ->
+          _urnetworkSetup.update { it.copy(providers = providers, pickerLoading = false) }
+        }
+        .onFailure { error ->
+          _urnetworkSetup.update {
+            it.copy(
+              pickerLoading = false,
+              pickerError = error.message ?: "Не удалось загрузить список провайдеров",
+            )
+          }
+        }
+    }
+  }
+
+  /** Apply the selected exit country and provider to the settings being edited. */
+  fun chooseUrnetworkExit(
+    location: VpsUrnetworkLocationOption?,
+    provider: VpsUrnetworkProviderOption?,
+  ) {
+    _urnetworkSetup.update { current ->
+      current.copy(
+        settings = current.settings.copy(
+          country = location?.name.orEmpty(),
+          providerId = provider?.id.orEmpty(),
+        ),
+        pickerError = null,
+      )
+    }
+  }
+
+  fun clearUrnetworkPickerError() {
+    _urnetworkSetup.update { it.copy(pickerError = null) }
   }
 
   fun removeService(serverId: String, kind: VpsServiceKind) {

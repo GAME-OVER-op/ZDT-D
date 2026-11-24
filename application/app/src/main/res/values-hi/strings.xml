@@ -2756,4 +2756,17 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="urnetwork_settings_saved">सेटिंग्स सहेजी गईं</string>
     <string name="urnetwork_settings_status_ip">IP: %1$s</string>
     <string name="urnetwork_settings_routing">रूटिंग: %1$s</string>
+    <string name="urnetwork_picker_title">एग्ज़िट चुनें</string>
+    <string name="urnetwork_picker_auto">स्वतः / कोई भी एग्ज़िट</string>
+    <string name="urnetwork_picker_country_section">देश</string>
+    <string name="urnetwork_picker_provider_section">एग्ज़िट / प्रदाता</string>
+    <string name="urnetwork_picker_empty">अभी कुछ उपलब्ध नहीं है</string>
+    <string name="urnetwork_picker_loading">लोड हो रहा है…</string>
+    <string name="urnetwork_picker_retry">पुनः प्रयास करें</string>
+    <string name="urnetwork_picker_clear">छिपाएँ</string>
+    <string name="urnetwork_picker_selected">चुना गया एग्ज़िट: %1$s</string>
+    <string name="urnetwork_picker_choose_button">एग्ज़िट चुनें</string>
+    <string name="urnetwork_settings_advanced">उन्नत सेटिंग्स</string>
+    <string name="urnetwork_settings_advanced_hide">उन्नत सेटिंग्स छिपाएँ</string>
+    <string name="urnetwork_picker_error">लोड करने में विफल: %1$s</string>
 </resources>

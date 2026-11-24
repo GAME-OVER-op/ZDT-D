@@ -3256,16 +3256,28 @@ jobs:
 
           echo "=== Build opera-proxy (${OPERA_PROXY_REF}) ==="
           pushd "$SRC/opera-proxy" > /dev/null
-          GOOS=android \
-          GOARCH=${{ matrix.goarch }} \
-          GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=${{ matrix.cgo_enabled }} \
-            go build \
-              -trimpath \
-              -buildvcs=false \
-              -ldflags="-s -w -buildid=" \
-              -o "$ARTIFACT_DIR/opera-proxy" \
-              .
+          build_ok=0
+          for attempt in 1 2 3; do
+            if GOOS=android \
+            GOARCH=${{ matrix.goarch }} \
+            GOARM=${{ matrix.goarm }} \
+            CGO_ENABLED=${{ matrix.cgo_enabled }} \
+              go build \
+                -trimpath \
+                -buildvcs=false \
+                -ldflags="-s -w -buildid=" \
+                -o "$ARTIFACT_DIR/opera-proxy" \
+                .; then
+              build_ok=1
+              break
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "::error::opera-proxy build failed after 3 attempts"
+              exit 1
+            fi
+            echo "::warning::opera-proxy build failed (attempt $attempt), retrying"
+            sleep $((attempt * 10))
+          done
           popd > /dev/null
 
           chmod 755 "$ARTIFACT_DIR/opera-proxy"

@@ -52,6 +52,7 @@ URNETWORK_TABLE="ur_exit"
 URNETWORK_TABLE_ID="105"
 URNETWORK_FWMARK="0x5555"
 URNETWORK_SOCKS="127.0.0.1:9999"
+URNETWORK_COUNTRY="Germany"
 URNETWORK_MANGLE_CHAIN="ZDT_UR_BYPASS"
 # Hosts whose addresses must keep using the main table (service control plane).
 URNETWORK_API_HOSTS="api.bringyour.com connect.bringyour.com whodis.bringyour.com extender.bringyour.com api.urnetwork.com connect.urnetwork.com exchange.urnetwork.com"
@@ -1017,6 +1018,7 @@ install_urnetwork() {
   cat > "$URNETWORK_CONFIG" <<CFG
 SHARE=$share_flag
 ROUTING=0
+COUNTRY=$URNETWORK_COUNTRY
 API_HOSTS="$URNETWORK_API_HOSTS"
 CFG
   chown root:root "$URNETWORK_CONFIG"; chmod 0644 "$URNETWORK_CONFIG"
@@ -1050,7 +1052,7 @@ cleanup() {
   wait 2>/dev/null || true
 }
 trap cleanup TERM INT EXIT
-nohup ./proxy-socks --addr $URNETWORK_SOCKS >>"\$LOG/proxy-socks.log" 2>&1 &
+nohup ./proxy-socks --addr $URNETWORK_SOCKS --country "\${COUNTRY:-Germany}" >>"\$LOG/proxy-socks.log" 2>&1 &
 pids+=(\$!)
 if [[ "\${SHARE:-0}" == 1 && -x ./provider ]]; then
   nohup ./provider start "\${provider_flags[@]}" >>"\$LOG/provider.log" 2>&1 &
@@ -1178,6 +1180,9 @@ apply_urnetwork_exit_rules() {
     # Clear stale rules from an interrupted previous attempt so `ip rule add`
     # does not fail with "File exists".
     remove_urnetwork_exit_rules || true
+    # A stale TUN from a previous restart can satisfy the wait loop below and
+    # then disappear, taking the default route with it. Remove it first.
+    ip link del "$URNETWORK_TUN" 2>/dev/null || true
     run_visible systemctl daemon-reload
     run_visible systemctl restart "$URNETWORK_UNIT"
     for ((i=0; i<30; i++)); do
@@ -1186,7 +1191,9 @@ apply_urnetwork_exit_rules() {
     done
     ip link show "$URNETWORK_TUN" >/dev/null 2>&1 || fail "TUN device $URNETWORK_TUN did not appear"
 
+    sleep 2
     ip route replace default dev "$URNETWORK_TUN" table "$URNETWORK_TABLE" || fail 'Failed to install URnetwork exit route'
+    ip route show table "$URNETWORK_TABLE" | grep -q '^default' || fail 'URnetwork exit route was not installed'
     ip rule add fwmark "$URNETWORK_FWMARK" lookup main pref 100 || fail 'Failed to add URnetwork bypass rule'
     ip rule add from all lookup "$URNETWORK_TABLE" pref 200 || fail 'Failed to add URnetwork exit rule'
 

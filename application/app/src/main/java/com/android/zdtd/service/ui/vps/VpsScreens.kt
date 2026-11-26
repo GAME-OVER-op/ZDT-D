@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.android.zdtd.service.ui.EmptyStateCard
 import com.android.zdtd.service.ui.ScreenIntroHeader
+import com.android.zdtd.service.ui.rememberIsRussianAppLanguage
 import com.android.zdtd.service.ui.rememberScreenContentPadding
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
@@ -288,6 +289,7 @@ fun VpsServerDetailsScreen(
   val serviceLoads by viewModel.serviceLoads.collectAsState()
   val operation by viewModel.operation.collectAsState()
   val urnetworkSetup by viewModel.urnetworkSetup.collectAsState()
+  val russianLocale = rememberIsRussianAppLanguage()
   var removeTarget by remember { mutableStateOf<VpsServiceKind?>(null) }
   var variantTarget by remember { mutableStateOf<VpsServiceKind?>(null) }
   var logs by remember { mutableStateOf<String?>(null) }
@@ -410,7 +412,12 @@ fun VpsServerDetailsScreen(
         onRetry = { viewModel.loadServices(serverId, silent = true) },
       ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          VpsServiceKind.entries.forEach { kind ->
+          VpsServiceKind.entries
+            .filter { kind ->
+              kind != VpsServiceKind.URNETWORK || !russianLocale ||
+                (states[kind]?.installed == true)
+            }
+            .forEach { kind ->
             val state = states[kind] ?: VpsServiceState(kind, installed = false, active = false)
             VpsServiceCard(
               kind = kind,

@@ -50,22 +50,9 @@ import com.android.zdtd.service.R
 @Composable
 fun SupportScreen(topContentPadding: Dp = 0.dp) {
   val context = LocalContext.current
-  val configuration = LocalConfiguration.current
   val isCompactWidth = rememberIsCompactWidth()
   val isNarrowWidth = rememberIsNarrowWidth()
-  val languageMode = remember(context) {
-    RootConfigManager(context.applicationContext).getAppLanguageMode().trim().lowercase()
-  }
-  val effectiveLanguage = remember(configuration) {
-    val locale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-      configuration.locales.get(0)
-    } else {
-      @Suppress("DEPRECATION")
-      configuration.locale
-    }
-    locale?.language?.lowercase().orEmpty()
-  }
-  val showSupportAuthor = languageMode == "ru" || (languageMode == "auto" && effectiveLanguage == "ru")
+  val showSupportAuthor = rememberIsRussianAppLanguage()
 
   val links = remember(showSupportAuthor) {
     buildList {

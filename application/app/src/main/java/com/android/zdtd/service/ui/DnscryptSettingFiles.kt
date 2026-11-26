@@ -1,7 +1,9 @@
 package com.android.zdtd.service.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -124,9 +126,12 @@ fun DnscryptSettingFilesSection(
         val isEditable = editable[name] ?: true
         val sz = sizes[name]
 
-        ElevatedCard(
+        Card(
           modifier = Modifier.fillMaxWidth(),
-          colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+          shape = RoundedCornerShape(18.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+          elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
         ) {
           Column(Modifier.fillMaxWidth()) {
             Row(

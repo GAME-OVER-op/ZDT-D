@@ -22,13 +22,42 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import android.os.Build
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.android.zdtd.service.RootConfigManager
+
+/**
+ * True when the app is effectively Russian: either an explicit Russian mode,
+ * or auto mode following a Russian system locale. Shared by features that are
+ * shown only to one language group (support author link, URnetwork).
+ */
+@Composable
+internal fun rememberIsRussianAppLanguage(): Boolean {
+  val context = LocalContext.current
+  val configuration = LocalConfiguration.current
+  val languageMode = remember(context) {
+    RootConfigManager(context.applicationContext).getAppLanguageMode().trim().lowercase()
+  }
+  val effectiveLanguage = remember(configuration) {
+    val locale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      configuration.locales.get(0)
+    } else {
+      @Suppress("DEPRECATION")
+      configuration.locale
+    }
+    locale?.language?.lowercase().orEmpty()
+  }
+  return languageMode == "ru" || (languageMode == "auto" && effectiveLanguage == "ru")
+}
 
 /**
  * One canonical content padding for all root tool/profile screens.

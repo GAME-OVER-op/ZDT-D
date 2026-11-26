@@ -2769,4 +2769,25 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="urnetwork_settings_advanced">Paramètres avancés</string>
     <string name="urnetwork_settings_advanced_hide">Masquer les paramètres avancés</string>
     <string name="urnetwork_picker_error">Échec du chargement : %1$s</string>
+    <string name="support_diag_title">Rapport de diagnostic</string>
+    <string name="support_diag_subtitle">Collecte les infos de l appareil, l état du démon, les règles et les journaux. Les adresses IP sont supprimées.</string>
+    <string name="support_diag_section_device">Appareil</string>
+    <string name="support_diag_section_daemon">Démon</string>
+    <string name="support_diag_section_network">Règles du pare-feu</string>
+    <string name="support_diag_section_logs">Journaux</string>
+    <string name="support_diag_section_module">Module</string>
+    <string name="support_diag_section_device_desc">Modèle, Android et build.prop complet</string>
+    <string name="support_diag_section_daemon_desc">État, processus et dernier plantage</string>
+    <string name="support_diag_section_network_desc">règles iptables nat et mangle, adresses masquées</string>
+    <string name="support_diag_section_logs_desc">Journaux du démon et des programmes</string>
+    <string name="support_diag_section_module_desc">module.prop, dossiers et stockage</string>
+    <string name="support_diag_collect">Générer le rapport</string>
+    <string name="support_diag_collecting">Génération du rapport...</string>
+    <string name="support_diag_ready">Rapport prêt</string>
+    <string name="support_diag_size">Taille : %1$s</string>
+    <string name="support_diag_again">Régénérer</string>
+    <string name="support_diag_error">Impossible de générer le rapport : %1$s</string>
+    <string name="support_diag_hint">Vérifiez le fichier avant de l envoyer.</string>
+    <string name="support_diag_empty_selection">Sélectionnez au moins une section.</string>
+    <string name="support_diag_copied">Copié dans le presse-papiers</string>
 </resources>

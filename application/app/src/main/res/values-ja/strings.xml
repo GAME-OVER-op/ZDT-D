@@ -2768,4 +2768,25 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="urnetwork_settings_advanced">詳細設定</string>
     <string name="urnetwork_settings_advanced_hide">詳細設定を閉じる</string>
     <string name="urnetwork_picker_error">読み込みに失敗しました: %1$s</string>
+    <string name="support_diag_title">診断レポート</string>
+    <string name="support_diag_subtitle">デバイス情報、デーモンの状態、ルール、ログを収集します。IPアドレスは削除されます。</string>
+    <string name="support_diag_section_device">デバイス</string>
+    <string name="support_diag_section_daemon">デーモン</string>
+    <string name="support_diag_section_network">ファイアウォール規則</string>
+    <string name="support_diag_section_logs">ログ</string>
+    <string name="support_diag_section_module">モジュール</string>
+    <string name="support_diag_section_device_desc">モデル、Android、完全な build.prop</string>
+    <string name="support_diag_section_daemon_desc">状態、プロセス、最後のクラッシュ</string>
+    <string name="support_diag_section_network_desc">iptables nat と mangle の規則、アドレスは非表示</string>
+    <string name="support_diag_section_logs_desc">デーモンとプログラムのログ</string>
+    <string name="support_diag_section_module_desc">module.prop、フォルダー、ストレージ</string>
+    <string name="support_diag_collect">レポートを収集</string>
+    <string name="support_diag_collecting">レポートを収集中...</string>
+    <string name="support_diag_ready">レポートの準備ができました</string>
+    <string name="support_diag_size">サイズ: %1$s</string>
+    <string name="support_diag_again">再生成</string>
+    <string name="support_diag_error">レポートを収集できませんでした: %1$s</string>
+    <string name="support_diag_hint">送信する前にファイルを確認してください。</string>
+    <string name="support_diag_empty_selection">少なくとも1つのセクションを選択してください。</string>
+    <string name="support_diag_copied">クリップボードにコピーしました</string>
 </resources>

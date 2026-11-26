@@ -2768,4 +2768,25 @@ APatch：10700+</string>
     <string name="urnetwork_settings_advanced">高级设置</string>
     <string name="urnetwork_settings_advanced_hide">隐藏高级设置</string>
     <string name="urnetwork_picker_error">加载失败：%1$s</string>
+    <string name="support_diag_title">诊断报告</string>
+    <string name="support_diag_subtitle">收集设备信息、守护进程状态、规则和日志。IP 地址会被移除。</string>
+    <string name="support_diag_section_device">设备</string>
+    <string name="support_diag_section_daemon">守护进程</string>
+    <string name="support_diag_section_network">防火墙规则</string>
+    <string name="support_diag_section_logs">日志</string>
+    <string name="support_diag_section_module">模块</string>
+    <string name="support_diag_section_device_desc">型号、Android 和完整 build.prop</string>
+    <string name="support_diag_section_daemon_desc">状态、进程和最近崩溃</string>
+    <string name="support_diag_section_network_desc">iptables nat 和 mangle 规则，地址已隐藏</string>
+    <string name="support_diag_section_logs_desc">守护进程和程序日志</string>
+    <string name="support_diag_section_module_desc">module.prop、文件夹和存储</string>
+    <string name="support_diag_collect">收集报告</string>
+    <string name="support_diag_collecting">正在收集报告...</string>
+    <string name="support_diag_ready">报告已就绪</string>
+    <string name="support_diag_size">大小：%1$s</string>
+    <string name="support_diag_again">重新生成</string>
+    <string name="support_diag_error">无法收集报告：%1$s</string>
+    <string name="support_diag_hint">发送前请检查文件。</string>
+    <string name="support_diag_empty_selection">请至少选择一个部分。</string>
+    <string name="support_diag_copied">已复制到剪贴板</string>
 </resources>

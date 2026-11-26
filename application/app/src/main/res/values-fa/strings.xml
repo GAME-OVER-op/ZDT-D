@@ -2769,4 +2769,25 @@ APatch: 10700+</string>
     <string name="urnetwork_settings_advanced">تنظیمات پیشرفته</string>
     <string name="urnetwork_settings_advanced_hide">پنهان کردن تنظیمات پیشرفته</string>
     <string name="urnetwork_picker_error">بارگذاری ناموفق بود: %1$s</string>
+    <string name="support_diag_title">گزارش تشخیصی</string>
+    <string name="support_diag_subtitle">اطلاعات دستگاه، وضعیت دیمون، قوانین و لاگ ها را جمع می کند. آدرس های IP حذف می شوند.</string>
+    <string name="support_diag_section_device">دستگاه</string>
+    <string name="support_diag_section_daemon">دیمون</string>
+    <string name="support_diag_section_network">قوانین فایروال</string>
+    <string name="support_diag_section_logs">لاگ ها</string>
+    <string name="support_diag_section_module">ماژول</string>
+    <string name="support_diag_section_device_desc">مدل، اندروید و build.prop کامل</string>
+    <string name="support_diag_section_daemon_desc">وضعیت، فرآیندها و آخرین خرابی</string>
+    <string name="support_diag_section_network_desc">قوانین iptables nat و mangle، آدرس ها پنهان شده</string>
+    <string name="support_diag_section_logs_desc">لاگ های دیمون و برنامه ها</string>
+    <string name="support_diag_section_module_desc">module.prop، پوشه ها و ذخیره سازی</string>
+    <string name="support_diag_collect">جمع آوری گزارش</string>
+    <string name="support_diag_collecting">در حال جمع آوری گزارش...</string>
+    <string name="support_diag_ready">گزارش آماده است</string>
+    <string name="support_diag_size">اندازه: %1$s</string>
+    <string name="support_diag_again">ساخت دوباره</string>
+    <string name="support_diag_error">نتوانست گزارش را جمع آوری کند: %1$s</string>
+    <string name="support_diag_hint">قبل از ارسال فایل آن را بررسی کنید.</string>
+    <string name="support_diag_empty_selection">حداقل یک بخش را انتخاب کنید.</string>
+    <string name="support_diag_copied">در کلیپ بورد کپی شد</string>
 </resources>

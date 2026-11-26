@@ -2771,4 +2771,25 @@ APatch: 10700+</string>
     <string name="urnetwork_settings_advanced">Додаткові налаштування</string>
     <string name="urnetwork_settings_advanced_hide">Сховати додаткові налаштування</string>
     <string name="urnetwork_picker_error">Не вдалося завантажити: %1$s</string>
+    <string name="support_diag_title">Звіт для підтримки</string>
+    <string name="support_diag_subtitle">Збирає дані пристрою, стан демона, правила та логи. IP-адреси видаляються.</string>
+    <string name="support_diag_section_device">Пристрій</string>
+    <string name="support_diag_section_daemon">Демон</string>
+    <string name="support_diag_section_network">Правила файрволу</string>
+    <string name="support_diag_section_logs">Логи</string>
+    <string name="support_diag_section_module">Модуль</string>
+    <string name="support_diag_section_device_desc">Модель, Android і повний build.prop</string>
+    <string name="support_diag_section_daemon_desc">Стан, процеси та останній збій</string>
+    <string name="support_diag_section_network_desc">правила iptables nat і mangle, адреси приховані</string>
+    <string name="support_diag_section_logs_desc">Логи демона та програм</string>
+    <string name="support_diag_section_module_desc">module.prop, папки та сховище</string>
+    <string name="support_diag_collect">Зібрати звіт</string>
+    <string name="support_diag_collecting">Збирання звіту...</string>
+    <string name="support_diag_ready">Звіт готовий</string>
+    <string name="support_diag_size">Розмір: %1$s</string>
+    <string name="support_diag_again">Зібрати знову</string>
+    <string name="support_diag_error">Не вдалося зібрати звіт: %1$s</string>
+    <string name="support_diag_hint">Перевірте файл перед надсиланням.</string>
+    <string name="support_diag_empty_selection">Виберіть хоча б один розділ.</string>
+    <string name="support_diag_copied">Скопійовано до буфера обміну</string>
 </resources>

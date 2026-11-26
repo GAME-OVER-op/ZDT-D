@@ -2769,4 +2769,25 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="urnetwork_settings_advanced">उन्नत सेटिंग्स</string>
     <string name="urnetwork_settings_advanced_hide">उन्नत सेटिंग्स छिपाएँ</string>
     <string name="urnetwork_picker_error">लोड करने में विफल: %1$s</string>
+    <string name="support_diag_title">निदान रिपोर्ट</string>
+    <string name="support_diag_subtitle">डिवाइस डेटा, डेमन स्थिति, नियम और लॉग एकत्र करता है। IP पते हटा दिए जाते हैं।</string>
+    <string name="support_diag_section_device">डिवाइस</string>
+    <string name="support_diag_section_daemon">डेमन</string>
+    <string name="support_diag_section_network">फ़ायरवॉल नियम</string>
+    <string name="support_diag_section_logs">लॉग</string>
+    <string name="support_diag_section_module">मॉड्यूल</string>
+    <string name="support_diag_section_device_desc">मॉडल, Android और पूरा build.prop</string>
+    <string name="support_diag_section_daemon_desc">स्थिति, प्रक्रियाएँ और अंतिम क्रैश</string>
+    <string name="support_diag_section_network_desc">iptables nat और mangle नियम, पते छिपे हुए</string>
+    <string name="support_diag_section_logs_desc">डेमन और प्रोग्राम लॉग</string>
+    <string name="support_diag_section_module_desc">module.prop, फ़ोल्डर और स्टोरेज</string>
+    <string name="support_diag_collect">रिपोर्ट एकत्र करें</string>
+    <string name="support_diag_collecting">रिपोर्ट एकत्र हो रही है...</string>
+    <string name="support_diag_ready">रिपोर्ट तैयार</string>
+    <string name="support_diag_size">आकार: %1$s</string>
+    <string name="support_diag_again">फिर से बनाएँ</string>
+    <string name="support_diag_error">रिपोर्ट एकत्र नहीं हो सकी: %1$s</string>
+    <string name="support_diag_hint">भेजने से पहले फ़ाइल जाँच लें।</string>
+    <string name="support_diag_empty_selection">कम से कम एक अनुभाग चुनें।</string>
+    <string name="support_diag_copied">क्लिपबोर्ड में कॉपी किया गया</string>
 </resources>

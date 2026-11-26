@@ -2768,4 +2768,25 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="urnetwork_settings_advanced">Cài đặt nâng cao</string>
     <string name="urnetwork_settings_advanced_hide">Ẩn cài đặt nâng cao</string>
     <string name="urnetwork_picker_error">Tải không thành công: %1$s</string>
+    <string name="support_diag_title">Báo cáo chẩn đoán</string>
+    <string name="support_diag_subtitle">Thu thập dữ liệu thiết bị, trạng thái daemon, quy tắc và nhật ký. Địa chỉ IP bị xóa.</string>
+    <string name="support_diag_section_device">Thiết bị</string>
+    <string name="support_diag_section_daemon">Daemon</string>
+    <string name="support_diag_section_network">Quy tắc tường lửa</string>
+    <string name="support_diag_section_logs">Nhật ký</string>
+    <string name="support_diag_section_module">Mô-đun</string>
+    <string name="support_diag_section_device_desc">Model, Android và build.prop đầy đủ</string>
+    <string name="support_diag_section_daemon_desc">Trạng thái, tiến trình và lần crash gần nhất</string>
+    <string name="support_diag_section_network_desc">quy tắc iptables nat và mangle, địa chỉ bị ẩn</string>
+    <string name="support_diag_section_logs_desc">Nhật ký daemon và chương trình</string>
+    <string name="support_diag_section_module_desc">module.prop, thư mục và bộ nhớ</string>
+    <string name="support_diag_collect">Thu thập báo cáo</string>
+    <string name="support_diag_collecting">Đang thu thập báo cáo...</string>
+    <string name="support_diag_ready">Báo cáo đã sẵn sàng</string>
+    <string name="support_diag_size">Kích thước: %1$s</string>
+    <string name="support_diag_again">Tạo lại</string>
+    <string name="support_diag_error">Không thể thu thập báo cáo: %1$s</string>
+    <string name="support_diag_hint">Kiểm tra tệp trước khi gửi.</string>
+    <string name="support_diag_empty_selection">Chọn ít nhất một mục.</string>
+    <string name="support_diag_copied">Đã sao chép vào bảng nhớ tạm</string>
 </resources>

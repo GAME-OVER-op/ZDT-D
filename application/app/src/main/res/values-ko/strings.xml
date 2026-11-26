@@ -2768,4 +2768,25 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="urnetwork_settings_advanced">고급 설정</string>
     <string name="urnetwork_settings_advanced_hide">고급 설정 숨기기</string>
     <string name="urnetwork_picker_error">불러오지 못했습니다: %1$s</string>
+    <string name="support_diag_title">진단 보고서</string>
+    <string name="support_diag_subtitle">기기 정보, 데몬 상태, 규칙 및 로그를 수집합니다. IP 주소는 제거됩니다.</string>
+    <string name="support_diag_section_device">기기</string>
+    <string name="support_diag_section_daemon">데몬</string>
+    <string name="support_diag_section_network">방화벽 규칙</string>
+    <string name="support_diag_section_logs">로그</string>
+    <string name="support_diag_section_module">모듈</string>
+    <string name="support_diag_section_device_desc">모델, Android 및 전체 build.prop</string>
+    <string name="support_diag_section_daemon_desc">상태, 프로세스 및 마지막 충돌</string>
+    <string name="support_diag_section_network_desc">iptables nat 및 mangle 규칙, 주소 숨김</string>
+    <string name="support_diag_section_logs_desc">데몬 및 프로그램 로그</string>
+    <string name="support_diag_section_module_desc">module.prop, 폴더 및 저장소</string>
+    <string name="support_diag_collect">보고서 수집</string>
+    <string name="support_diag_collecting">보고서 수집 중...</string>
+    <string name="support_diag_ready">보고서 준비 완료</string>
+    <string name="support_diag_size">크기: %1$s</string>
+    <string name="support_diag_again">다시 생성</string>
+    <string name="support_diag_error">보고서를 수집하지 못했습니다: %1$s</string>
+    <string name="support_diag_hint">전송하기 전에 파일을 확인하세요.</string>
+    <string name="support_diag_empty_selection">섹션을 하나 이상 선택하세요.</string>
+    <string name="support_diag_copied">클립보드에 복사됨</string>
 </resources>

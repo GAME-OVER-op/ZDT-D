@@ -2773,4 +2773,25 @@ APatch: ‏10700+</string>
     <string name="urnetwork_settings_advanced">الإعدادات المتقدمة</string>
     <string name="urnetwork_settings_advanced_hide">إخفاء الإعدادات المتقدمة</string>
     <string name="urnetwork_picker_error">تعذّر التحميل: %1$s</string>
+    <string name="support_diag_title">تقرير الدعم</string>
+    <string name="support_diag_subtitle">يجمع بيانات الجهاز وحالة الخدمة والقواعد والسجلات. تتم إزالة عناوين IP.</string>
+    <string name="support_diag_section_device">الجهاز</string>
+    <string name="support_diag_section_daemon">الخدمة الخلفية</string>
+    <string name="support_diag_section_network">قواعد جدار الحماية</string>
+    <string name="support_diag_section_logs">السجلات</string>
+    <string name="support_diag_section_module">الوحدة</string>
+    <string name="support_diag_section_device_desc">الطراز و Android و build.prop الكامل</string>
+    <string name="support_diag_section_daemon_desc">الحالة والعمليات وآخر تعطل</string>
+    <string name="support_diag_section_network_desc">قواعد iptables nat و mangle مع إخفاء العناوين</string>
+    <string name="support_diag_section_logs_desc">سجلات الخدمة والبرامج</string>
+    <string name="support_diag_section_module_desc">module.prop والمجلدات والتخزين</string>
+    <string name="support_diag_collect">جمع التقرير</string>
+    <string name="support_diag_collecting">جارٍ جمع التقرير...</string>
+    <string name="support_diag_ready">التقرير جاهز</string>
+    <string name="support_diag_size">الحجم: %1$s</string>
+    <string name="support_diag_again">إعادة الإنشاء</string>
+    <string name="support_diag_error">تعذر جمع التقرير: %1$s</string>
+    <string name="support_diag_hint">تحقق من الملف قبل إرساله.</string>
+    <string name="support_diag_empty_selection">اختر قسما واحدا على الأقل.</string>
+    <string name="support_diag_copied">تم النسخ إلى الحافظة</string>
 </resources>

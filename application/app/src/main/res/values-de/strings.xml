@@ -2769,4 +2769,25 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="urnetwork_settings_advanced">Erweiterte Einstellungen</string>
     <string name="urnetwork_settings_advanced_hide">Erweiterte Einstellungen ausblenden</string>
     <string name="urnetwork_picker_error">Laden fehlgeschlagen: %1$s</string>
+    <string name="support_diag_title">Diagnosebericht</string>
+    <string name="support_diag_subtitle">Sammelt Geräteinformationen, Daemon-Status, Regeln und Protokolle. IP-Adressen werden entfernt.</string>
+    <string name="support_diag_section_device">Gerät</string>
+    <string name="support_diag_section_daemon">Daemon</string>
+    <string name="support_diag_section_network">Firewall-Regeln</string>
+    <string name="support_diag_section_logs">Protokolle</string>
+    <string name="support_diag_section_module">Modul</string>
+    <string name="support_diag_section_device_desc">Modell, Android und vollständige build.prop</string>
+    <string name="support_diag_section_daemon_desc">Status, Prozesse und letzter Absturz</string>
+    <string name="support_diag_section_network_desc">iptables nat und mangle, Adressen ausgeblendet</string>
+    <string name="support_diag_section_logs_desc">Daemon- und Programmprotokolle</string>
+    <string name="support_diag_section_module_desc">module.prop, Ordner und Speicher</string>
+    <string name="support_diag_collect">Bericht erstellen</string>
+    <string name="support_diag_collecting">Bericht wird erstellt...</string>
+    <string name="support_diag_ready">Bericht bereit</string>
+    <string name="support_diag_size">Größe: %1$s</string>
+    <string name="support_diag_again">Erneut erstellen</string>
+    <string name="support_diag_error">Bericht konnte nicht erstellt werden: %1$s</string>
+    <string name="support_diag_hint">Prüfe die Datei vor dem Versenden.</string>
+    <string name="support_diag_empty_selection">Wähle mindestens einen Abschnitt.</string>
+    <string name="support_diag_copied">In die Zwischenablage kopiert</string>
 </resources>

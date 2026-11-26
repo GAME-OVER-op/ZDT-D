@@ -2768,4 +2768,25 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="urnetwork_settings_advanced">Gelişmiş ayarlar</string>
     <string name="urnetwork_settings_advanced_hide">Gelişmiş ayarları gizle</string>
     <string name="urnetwork_picker_error">Yüklenemedi: %1$s</string>
+    <string name="support_diag_title">Tanılama raporu</string>
+    <string name="support_diag_subtitle">Cihaz verilerini, daemon durumunu, kuralları ve günlükleri toplar. IP adresleri kaldırılır.</string>
+    <string name="support_diag_section_device">Cihaz</string>
+    <string name="support_diag_section_daemon">Daemon</string>
+    <string name="support_diag_section_network">Güvenlik duvarı kuralları</string>
+    <string name="support_diag_section_logs">Günlükler</string>
+    <string name="support_diag_section_module">Modül</string>
+    <string name="support_diag_section_device_desc">Model, Android ve tam build.prop</string>
+    <string name="support_diag_section_daemon_desc">Durum, süreçler ve son çökme</string>
+    <string name="support_diag_section_network_desc">iptables nat ve mangle kuralları, adresler gizli</string>
+    <string name="support_diag_section_logs_desc">Daemon ve program günlükleri</string>
+    <string name="support_diag_section_module_desc">module.prop, klasörler ve depolama</string>
+    <string name="support_diag_collect">Raporu topla</string>
+    <string name="support_diag_collecting">Rapor toplanıyor...</string>
+    <string name="support_diag_ready">Rapor hazır</string>
+    <string name="support_diag_size">Boyut: %1$s</string>
+    <string name="support_diag_again">Yeniden oluştur</string>
+    <string name="support_diag_error">Rapor toplanamadı: %1$s</string>
+    <string name="support_diag_hint">Göndermeden önce dosyayı kontrol edin.</string>
+    <string name="support_diag_empty_selection">En az bir bölüm seçin.</string>
+    <string name="support_diag_copied">Panoya kopyalandı</string>
 </resources>

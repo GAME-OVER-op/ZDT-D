@@ -2768,4 +2768,25 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="urnetwork_settings_advanced">Pengaturan lanjutan</string>
     <string name="urnetwork_settings_advanced_hide">Sembunyikan pengaturan lanjutan</string>
     <string name="urnetwork_picker_error">Gagal memuat: %1$s</string>
+    <string name="support_diag_title">Laporan diagnostik</string>
+    <string name="support_diag_subtitle">Mengumpulkan data perangkat, status daemon, aturan, dan log. Alamat IP dihapus.</string>
+    <string name="support_diag_section_device">Perangkat</string>
+    <string name="support_diag_section_daemon">Daemon</string>
+    <string name="support_diag_section_network">Aturan firewall</string>
+    <string name="support_diag_section_logs">Log</string>
+    <string name="support_diag_section_module">Modul</string>
+    <string name="support_diag_section_device_desc">Model, Android, dan build.prop lengkap</string>
+    <string name="support_diag_section_daemon_desc">Status, proses, dan crash terakhir</string>
+    <string name="support_diag_section_network_desc">aturan iptables nat dan mangle, alamat disembunyikan</string>
+    <string name="support_diag_section_logs_desc">Log daemon dan program</string>
+    <string name="support_diag_section_module_desc">module.prop, folder, dan penyimpanan</string>
+    <string name="support_diag_collect">Kumpulkan laporan</string>
+    <string name="support_diag_collecting">Mengumpulkan laporan...</string>
+    <string name="support_diag_ready">Laporan siap</string>
+    <string name="support_diag_size">Ukuran: %1$s</string>
+    <string name="support_diag_again">Buat ulang</string>
+    <string name="support_diag_error">Gagal mengumpulkan laporan: %1$s</string>
+    <string name="support_diag_hint">Periksa file sebelum mengirimnya.</string>
+    <string name="support_diag_empty_selection">Pilih minimal satu bagian.</string>
+    <string name="support_diag_copied">Disalin ke clipboard</string>
 </resources>

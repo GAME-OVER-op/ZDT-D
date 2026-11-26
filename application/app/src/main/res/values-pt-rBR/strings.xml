@@ -2769,4 +2769,25 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="urnetwork_settings_advanced">Configurações avançadas</string>
     <string name="urnetwork_settings_advanced_hide">Ocultar configurações avançadas</string>
     <string name="urnetwork_picker_error">Falha ao carregar: %1$s</string>
+    <string name="support_diag_title">Relatório de diagnóstico</string>
+    <string name="support_diag_subtitle">Coleta dados do dispositivo, estado do daemon, regras e logs. Endereços IP são removidos.</string>
+    <string name="support_diag_section_device">Dispositivo</string>
+    <string name="support_diag_section_daemon">Daemon</string>
+    <string name="support_diag_section_network">Regras de firewall</string>
+    <string name="support_diag_section_logs">Logs</string>
+    <string name="support_diag_section_module">Módulo</string>
+    <string name="support_diag_section_device_desc">Modelo, Android e build.prop completo</string>
+    <string name="support_diag_section_daemon_desc">Estado, processos e última falha</string>
+    <string name="support_diag_section_network_desc">regras iptables nat e mangle, endereços ocultos</string>
+    <string name="support_diag_section_logs_desc">Logs do daemon e dos programas</string>
+    <string name="support_diag_section_module_desc">module.prop, pastas e armazenamento</string>
+    <string name="support_diag_collect">Coletar relatório</string>
+    <string name="support_diag_collecting">Coletando relatório...</string>
+    <string name="support_diag_ready">Relatório pronto</string>
+    <string name="support_diag_size">Tamanho: %1$s</string>
+    <string name="support_diag_again">Gerar novamente</string>
+    <string name="support_diag_error">Não foi possível coletar o relatório: %1$s</string>
+    <string name="support_diag_hint">Verifique o arquivo antes de enviar.</string>
+    <string name="support_diag_empty_selection">Selecione pelo menos uma seção.</string>
+    <string name="support_diag_copied">Copiado para a área de transferência</string>
 </resources>

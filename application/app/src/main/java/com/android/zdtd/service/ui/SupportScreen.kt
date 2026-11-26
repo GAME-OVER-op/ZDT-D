@@ -3,8 +3,13 @@ package com.android.zdtd.service.ui
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,23 +24,33 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.ripple
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -44,7 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.android.zdtd.service.RootConfigManager
+import com.android.zdtd.service.BuildConfig
 import com.android.zdtd.service.R
 
 @Composable
@@ -98,6 +113,8 @@ fun SupportScreen(topContentPadding: Dp = 0.dp) {
   }
 
   val screenPadding = rememberAdaptiveScreenPadding()
+  var heroAppeared by remember { mutableStateOf(false) }
+  LaunchedEffect(Unit) { heroAppeared = true }
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -109,41 +126,78 @@ fun SupportScreen(topContentPadding: Dp = 0.dp) {
     ),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    item {
-      ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+    if (BuildConfig.IS_ROOT_BUILD) {
+      item(key = "diagnostics") {
+        SupportDiagnosticsCard()
+      }
+    }
+
+    item(key = "intro") {
+      val introAppear by animateFloatAsState(
+        targetValue = if (heroAppeared) 1f else 0f,
+        animationSpec = tween(420),
+        label = "supportIntroAppear",
+      )
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .clip(RoundedCornerShape(18.dp))
+          .graphicsLayer {
+            alpha = introAppear
+            translationY = (1f - introAppear) * 18f
+          },
       ) {
-        Column(Modifier.padding(16.dp)) {
-          Text(
-            text = stringResource(R.string.support_title),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-          )
-          Spacer(Modifier.height(6.dp))
-          Text(
-            text = stringResource(R.string.support_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-          )
+        Box(
+          modifier = Modifier
+            .matchParentSize()
+            .background(
+              Brush.linearGradient(
+                listOf(
+                  MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                  MaterialTheme.colorScheme.surfaceContainerLow,
+                ),
+              ),
+            ),
+        )
+        ElevatedCard(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(18.dp),
+          colors = CardDefaults.elevatedCardColors(containerColor = Color.Transparent),
+          elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        ) {
+          Column(Modifier.padding(16.dp)) {
+            Text(
+              text = stringResource(R.string.support_title),
+              style = MaterialTheme.typography.titleLarge,
+              fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+              text = stringResource(R.string.support_subtitle),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            )
+          }
         }
       }
     }
 
-    items(links, key = { it.url }, contentType = { "support_link" }) { link ->
-      SupportLinkCard(
-        compact = isCompactWidth,
-        narrow = isNarrowWidth,
-        link = link,
-        onOpen = {
-          runCatching {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link.url)).apply {
-              addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    itemsIndexed(links, key = { _, link -> link.url }, contentType = { _, _ -> "support_link" }) { index, link ->
+      StaggeredReveal(index = index + 1) {
+        SupportLinkCard(
+          compact = isCompactWidth,
+          narrow = isNarrowWidth,
+          link = link,
+          onOpen = {
+            runCatching {
+              val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link.url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+              }
+              context.startActivity(intent)
             }
-            context.startActivity(intent)
-          }
-        },
-      )
+          },
+        )
+      }
     }
   }
 }
@@ -159,11 +213,19 @@ private data class SupportLink(
 @Composable
 private fun SupportLinkCard(compact: Boolean, narrow: Boolean, link: SupportLink, onOpen: () -> Unit) {
   val title = link.titleRaw ?: stringResource(link.titleRes ?: R.string.support_title)
+  val interaction = remember { MutableInteractionSource() }
+  val pressed by interaction.collectIsPressedAsState()
+  val scale by animateFloatAsState(
+    targetValue = if (pressed) 0.985f else 1f,
+    animationSpec = spring(dampingRatio = 0.7f, stiffness = 360f),
+    label = "supportLinkPress",
+  )
 
   ElevatedCard(
     modifier = Modifier
       .fillMaxWidth()
-      .clickable { onOpen() },
+      .graphicsLayer { scaleX = scale; scaleY = scale }
+      .clickable(interactionSource = interaction, indication = ripple(), onClick = onOpen),
     shape = RoundedCornerShape(18.dp),
   ) {
     if (compact || narrow) {

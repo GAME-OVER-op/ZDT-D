@@ -2769,4 +2769,25 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="urnetwork_settings_advanced">Ajustes avanzados</string>
     <string name="urnetwork_settings_advanced_hide">Ocultar ajustes avanzados</string>
     <string name="urnetwork_picker_error">No se pudo cargar: %1$s</string>
+    <string name="support_diag_title">Informe de diagnóstico</string>
+    <string name="support_diag_subtitle">Recopila datos del dispositivo, estado del demonio, reglas y logs. Se eliminan las direcciones IP.</string>
+    <string name="support_diag_section_device">Dispositivo</string>
+    <string name="support_diag_section_daemon">Demonio</string>
+    <string name="support_diag_section_network">Reglas de firewall</string>
+    <string name="support_diag_section_logs">Registros</string>
+    <string name="support_diag_section_module">Módulo</string>
+    <string name="support_diag_section_device_desc">Modelo, Android y build.prop completo</string>
+    <string name="support_diag_section_daemon_desc">Estado, procesos y último fallo</string>
+    <string name="support_diag_section_network_desc">reglas iptables nat y mangle, direcciones ocultas</string>
+    <string name="support_diag_section_logs_desc">Registros del demonio y de programas</string>
+    <string name="support_diag_section_module_desc">module.prop, carpetas y almacenamiento</string>
+    <string name="support_diag_collect">Recopilar informe</string>
+    <string name="support_diag_collecting">Recopilando informe...</string>
+    <string name="support_diag_ready">Informe listo</string>
+    <string name="support_diag_size">Tamaño: %1$s</string>
+    <string name="support_diag_again">Generar de nuevo</string>
+    <string name="support_diag_error">No se pudo recopilar el informe: %1$s</string>
+    <string name="support_diag_hint">Revisa el archivo antes de enviarlo.</string>
+    <string name="support_diag_empty_selection">Selecciona al menos una sección.</string>
+    <string name="support_diag_copied">Copiado al portapapeles</string>
 </resources>

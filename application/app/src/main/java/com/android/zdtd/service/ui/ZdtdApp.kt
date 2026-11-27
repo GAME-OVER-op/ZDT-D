@@ -3006,7 +3006,10 @@ private fun TabBody(
             bottomContentPadding = bottomContentPadding,
           )
           Tab.STATS -> StatsScreen(uiStateFlow = uiStateFlow, actions = actions, topContentPadding = topContentPadding, bottomContentPadding = bottomContentPadding)
-          Tab.SUPPORT -> SupportScreen(topContentPadding = topContentPadding)
+          Tab.SUPPORT -> SupportScreen(
+            topContentPadding = topContentPadding,
+            bottomContentPadding = bottomContentPadding,
+          )
           Tab.APPS -> AppsHost(
             uiStateFlow = uiStateFlow,
             route = appsRoute,

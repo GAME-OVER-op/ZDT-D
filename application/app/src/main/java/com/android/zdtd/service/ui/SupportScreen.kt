@@ -63,7 +63,10 @@ import com.android.zdtd.service.BuildConfig
 import com.android.zdtd.service.R
 
 @Composable
-fun SupportScreen(topContentPadding: Dp = 0.dp) {
+fun SupportScreen(
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
+) {
   val context = LocalContext.current
   val isCompactWidth = rememberIsCompactWidth()
   val isNarrowWidth = rememberIsNarrowWidth()
@@ -122,7 +125,7 @@ fun SupportScreen(topContentPadding: Dp = 0.dp) {
       start = screenPadding,
       top = topContentPadding + screenPadding,
       end = screenPadding,
-      bottom = screenPadding,
+      bottom = bottomContentPadding + screenPadding,
     ),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {

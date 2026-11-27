@@ -1444,7 +1444,7 @@ private fun MainShell(
   val floatingTopBarReserve = WindowInsets.statusBars
     .asPaddingValues()
     .calculateTopPadding() + (if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp)
-  val settingsTopReserve = if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp
+  val settingsTopReserve = if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 112.dp else 82.dp
   // Settings content starts below the floating card, so the top of the shell
   // uses the card colour instead of the near-black background gradient.
   val settingsShellTopColor by animateColorAsState(
@@ -2634,6 +2634,7 @@ private fun RootSettingsScreen(
 ) {
   val content: @Composable () -> Unit = {
     AppUpdateSettings(
+      topContentPadding = topContentPadding,
       enabled = appUpdate.enabled,
       onToggle = actions::setAppUpdateChecksEnabled,
       onCheckNow = actions::checkAppUpdateNow,
@@ -2700,6 +2701,7 @@ private fun RootSettingsScreen(
     loading = loading,
     showBackButton = showBackButton,
     topContentPadding = topContentPadding,
+    contentFillsHeight = true,
   ) {
     content()
   }

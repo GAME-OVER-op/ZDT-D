@@ -50,6 +50,7 @@ fun SettingsScreen(
   loading: Boolean,
   showBackButton: Boolean = true,
   topContentPadding: Dp = 64.dp,
+  contentFillsHeight: Boolean = false,
   content: @Composable () -> Unit,
 ) {
   val television = rememberIsTelevision()
@@ -69,7 +70,7 @@ fun SettingsScreen(
     Box(
       modifier = Modifier
         .fillMaxSize()
-        .padding(top = topContentPadding),
+        .padding(top = if (contentFillsHeight) 0.dp else topContentPadding),
     ) {
       if (loading) {
         Box(

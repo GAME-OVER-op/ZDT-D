@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
@@ -168,6 +169,7 @@ fun NonRootSettingsContent(
 
 @Composable
 fun AppUpdateSettings(
+  topContentPadding: Dp = 0.dp,
   enabled: Boolean,
   onToggle: (Boolean) -> Unit,
   onCheckNow: () -> Unit,
@@ -236,7 +238,7 @@ fun AppUpdateSettings(
   var showEnergySaverConfigure by rememberSaveable { mutableStateOf(false) }
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = rememberScreenContentPadding(0.dp, 0.dp),
+    contentPadding = rememberScreenContentPadding(topContentPadding, 0.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     item(key = "header") {

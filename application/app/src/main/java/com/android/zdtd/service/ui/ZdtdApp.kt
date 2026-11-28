@@ -116,6 +116,10 @@ import com.android.zdtd.service.WorldMapActivity
 import com.android.zdtd.service.StartupStage
 import com.android.zdtd.service.StartupUiState
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.chatplugin.ChatPluginOffer
+import com.android.zdtd.service.chatplugin.ChatPluginTopAction
+import com.android.zdtd.service.chatplugin.ChatPluginUi
+import com.android.zdtd.service.chatplugin.rememberChatPluginUi
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
@@ -1128,6 +1132,7 @@ private fun MainShell(
   var settingsCloseRequested by remember { mutableStateOf(false) }
   var programLogsTarget by remember { mutableStateOf<ProgramLogTarget?>(null) }
   var showWorldMapPrompt by remember { mutableStateOf(false) }
+  val chatPlugin = rememberChatPluginUi()
 
   // System Back behavior:
   // - From Stats/Programs -> go to Home
@@ -1635,6 +1640,7 @@ private fun MainShell(
           remoteTargetName = uiState.remoteTargetName,
           remoteTargetAddress = uiState.remoteTargetAddress,
           onRemoteDisconnect = actions::exitRemoteControl,
+          chatPlugin = chatPlugin,
           appUpdate = appUpdate,
           uiStateFlow = uiStateFlow,
           appsRoute = appsRoute,
@@ -1781,6 +1787,7 @@ private fun MainShell(
             remoteTargetName = uiState.remoteTargetName,
             remoteTargetAddress = uiState.remoteTargetAddress,
             onRemoteDisconnect = actions::exitRemoteControl,
+            chatPlugin = chatPlugin,
           )
     }
 
@@ -1821,6 +1828,11 @@ private fun MainShell(
         onFullyHidden = { startupHostVisible = false },
       )
     }
+    if (tab == Tab.HOME && !startupHostVisible && !uiState.startup.visible && !setup.showUpdatePrompt &&
+      !showSettings && !showLogs && !showBackup && !showWorldMapPrompt && !showDeleteModule && !showDeleteModuleNext
+    ) {
+      ChatPluginOffer(chatPlugin)
+    }
   }
 }
 
@@ -1845,6 +1857,7 @@ private fun LandscapeShellContent(
   remoteTargetName: String,
   remoteTargetAddress: String,
   onRemoteDisconnect: () -> Unit,
+  chatPlugin: ChatPluginUi,
   appUpdate: AppUpdateUiState,
   uiStateFlow: StateFlow<UiState>,
   appsRoute: AppsRoute,
@@ -1876,7 +1889,7 @@ private fun LandscapeShellContent(
     Column(
       modifier = Modifier
         .fillMaxSize()
-        .padding(end = 104.dp),
+        .padding(end = if (chatPlugin.fallback) 148.dp else 104.dp),
     ) {
       LandscapeContentHeader(
         title = title,
@@ -1933,6 +1946,7 @@ private fun LandscapeShellContent(
       remoteTargetName = remoteTargetName,
       remoteTargetAddress = remoteTargetAddress,
       onRemoteDisconnect = onRemoteDisconnect,
+      chatPlugin = chatPlugin,
     )
 
     LandscapeRightNav(
@@ -2234,6 +2248,7 @@ private fun FloatingTopBarCard(
   remoteTargetName: String,
   remoteTargetAddress: String,
   onRemoteDisconnect: () -> Unit,
+  chatPlugin: ChatPluginUi,
   settingsActive: Boolean = false,
 ) {
   // One animation drives everything: the card width. The title and the action
@@ -2315,6 +2330,7 @@ private fun FloatingTopBarCard(
                 onOpenBackup = onOpenBackup,
                 onOpenSettings = onOpenSettings,
                 onOpenRemoteSetup = onOpenRemoteSetup,
+                chatPlugin = chatPlugin,
               )
             }
           }
@@ -2488,6 +2504,7 @@ private fun LandscapeQuickActions(
   remoteTargetName: String,
   remoteTargetAddress: String,
   onRemoteDisconnect: () -> Unit,
+  chatPlugin: ChatPluginUi,
 ) {
   Surface(
     modifier = modifier,
@@ -2512,6 +2529,7 @@ private fun LandscapeQuickActions(
         IconButton(onClick = { onOpenBackup() }, modifier = Modifier.size(44.dp)) {
           Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup), modifier = Modifier.size(26.dp))
         }
+        ChatPluginTopAction(chatPlugin, size = 44)
         IconButton(onClick = { onOpenLogs(programLogTarget) }, modifier = Modifier.size(44.dp)) {
           Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs), modifier = Modifier.size(26.dp))
         }
@@ -2824,6 +2842,7 @@ private fun TopBarActionCluster(
   onOpenBackup: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenRemoteSetup: () -> Unit,
+  chatPlugin: ChatPluginUi,
 ) {
   val target = programLogTarget
   var collapsed by remember { mutableStateOf(false) }
@@ -2882,6 +2901,9 @@ private fun TopBarActionCluster(
     contentAlignment = Alignment.CenterEnd,
   ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
+      CollapsingTopBarAction(visible = showFullActions && chatPlugin.fallback) {
+        ChatPluginTopAction(chatPlugin)
+      }
       IconButton(onClick = { onOpenLogs(target) }) {
         Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs))
       }

@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <package android:name="com.zdtd.chat" />
+    </queries>
     <application>
         <meta-data android:name="xposedmodule" android:value="true" />
         <meta-data android:name="xposeddescription" android:value="@string/xposed_description" />
@@ -48,6 +51,9 @@
         </activity>
 
         <activity android:name=".RemoteSetupActivity" android:exported="false" />
+        <activity android:name=".chatplugin.ChatShortcutActivity" android:exported="true"
+            android:noHistory="true" android:excludeFromRecents="true" android:theme="@android:style/Theme.NoDisplay" />
+        <receiver android:name=".chatplugin.ChatShortcutReceiver" android:exported="false" />
         <activity android:name=".WorldMapActivity" android:exported="false" />
         <activity android:name=".LocalWebPanelActivity" android:exported="false" />
         <activity android:name=".T2sPanelActivity" android:exported="false" />

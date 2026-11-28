@@ -118,7 +118,7 @@ jobs:
               changed_files="$(git diff-tree --no-commit-id --name-only -r "$head" || true)"
             fi
 
-            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|plugin/|zygisk/|rust/|module_template/|prebuilt/|scripts/module/|\.github/workflows/build\.yml$|\.github/chat-plugin\.ref$|module\.prop$)'; then
+            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|plugin/|zygisk/|rust/|module_template/|prebuilt/|scripts/module/|\.github/workflows/build\.yml$|module\.prop$)'; then
               paths_changed=true
               reason="Tracked build paths changed"
             fi
@@ -139,7 +139,6 @@ jobs:
             echo "- prebuilt/**"
             echo "- scripts/module/**"
             echo "- .github/workflows/build.yml"
-            echo "- .github/chat-plugin.ref"
             echo "- module.prop"
             if [[ -n "$changed_files" ]]; then
               echo
@@ -5646,157 +5645,6 @@ jobs:
           retention-days: 1
 
 
-  build_chat_plugin_apk:
-    name: Build unsigned ZDT Chat plugin
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    needs: build_gate
-    if: needs.build_gate.outputs.should_build == 'true' && github.ref == 'refs/heads/main'
-    outputs:
-      ready: ${{ steps.config.outputs.ready }}
-      source: ${{ steps.config.outputs.source }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Check chat build inputs
-        id: config
-        env:
-          CHAT_COMMUNITY_ROOM_ID: ${{ secrets.CHAT_COMMUNITY_ROOM_ID }}
-          CHAT_COMMUNITY_RENDEZVOUS_TOPIC: ${{ secrets.CHAT_COMMUNITY_RENDEZVOUS_TOPIC }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$CHAT_COMMUNITY_ROOM_ID" || -z "$CHAT_COMMUNITY_RENDEZVOUS_TOPIC" ]]; then
-            echo '::warning::ZDT Chat discovery inputs are not configured. Existing chat assets are left untouched.'
-            echo 'ready=false' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          ref=$(cat .github/chat-plugin.ref)
-          [[ "$ref" =~ ^[0-9a-f]{40}$ ]]
-          printf 'ready=true\nsource=%s\n' "$ref" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v7
-        if: steps.config.outputs.ready == 'true'
-        with:
-          repository: ${{ github.repository_owner }}/ZDT-D_chat
-          ref: ${{ steps.config.outputs.source }}
-          path: chat-source
-          persist-credentials: false
-      - uses: actions/setup-java@v6
-        if: steps.config.outputs.ready == 'true'
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: actions/setup-go@v6
-        if: steps.config.outputs.ready == 'true'
-        with:
-          go-version: '1.25.14'
-          cache-dependency-path: chat-source/core/go.sum
-      - name: Build chat from pinned source without the ZDT-D key
-        if: steps.config.outputs.ready == 'true'
-        working-directory: chat-source
-        env:
-          CHAT_SOURCE_REF: ${{ steps.config.outputs.source }}
-          CHAT_COMMUNITY_ROOM_ID: ${{ secrets.CHAT_COMMUNITY_ROOM_ID }}
-          CHAT_COMMUNITY_RENDEZVOUS_TOPIC: ${{ secrets.CHAT_COMMUNITY_RENDEZVOUS_TOPIC }}
-        run: |
-          set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "$CHAT_SOURCE_REF" ]]
-          export ANDROID_HOME="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
-          sdk="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$sdk" ]]; then
-            sdk=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)
-          fi
-          "$sdk" --licenses < <(yes) >/dev/null
-          for pkg in "platforms;android-$ANDROID_API_LEVEL" "build-tools;$ANDROID_BUILD_TOOLS_VERSION" "ndk;$NATIVE_NDK_VERSION"; do
-            "$sdk" --channel=3 "$pkg" || "$sdk" --channel=3 "$pkg"
-          done
-          bash build-core.sh
-          ./gradlew --no-daemon :app:assembleRelease
-          test -s app/build/outputs/apk/release/app-release-unsigned.apk
-      - uses: actions/upload-artifact@v7
-        if: steps.config.outputs.ready == 'true'
-        with:
-          name: chat-plugin-unsigned
-          path: chat-source/app/build/outputs/apk/release/app-release-unsigned.apk
-          if-no-files-found: error
-          retention-days: 1
-
-  sign_chat_plugin_apk:
-    name: Sign ZDT Chat plugin with ZDT-D release key
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    needs: build_chat_plugin_apk
-    if: needs.build_chat_plugin_apk.outputs.ready == 'true'
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: chat-plugin-unsigned
-          path: chat-unsigned
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Prepare APK verification tools
-        run: |
-          set -euo pipefail
-          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          sdk="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$sdk" ]]; then
-            sdk=$(find "$sdk_root/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)
-          fi
-          "$sdk" --licenses < <(yes) >/dev/null
-          "$sdk" --channel=3 "build-tools;$ANDROID_BUILD_TOOLS_VERSION"
-          printf 'CHAT_ANDROID_TOOLS=%s\n' "$sdk_root/build-tools/$ANDROID_BUILD_TOOLS_VERSION" >> "$GITHUB_ENV"
-      - name: Sign, verify and describe chat plugin assets
-        env:
-          ZDT_KEYSTORE_BASE64: ${{ secrets.ZDT_KEYSTORE_BASE64 }}
-          ZDT_KEYSTORE_PASSWORD: ${{ secrets.ZDT_KEYSTORE_PASSWORD }}
-          ZDT_KEY_ALIAS: ${{ secrets.ZDT_KEY_ALIAS }}
-          ZDT_KEY_PASSWORD: ${{ secrets.ZDT_KEY_PASSWORD }}
-          CHAT_SOURCE_REF: ${{ needs.build_chat_plugin_apk.outputs.source }}
-        run: |
-          set -euo pipefail
-          in_apk=chat-unsigned/app-release-unsigned.apk
-          out_dir=out/technical/chat-plugin
-          out_apk="$out_dir/zdt-d-chat-plugin.apk"
-          test -s "$in_apk"
-          unzip -Z1 "$in_apk" 'lib/arm64-v8a/libygggram.so' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
-          mkdir -p "$out_dir"
-          umask 077
-          scratch=$(mktemp -d)
-          trap 'rm -f -- "$scratch/key.jks" "$scratch/aligned.apk"; rmdir -- "$scratch"' EXIT
-          "$CHAT_ANDROID_TOOLS/zipalign" -P 16 -f 4 "$in_apk" "$scratch/aligned.apk"
-          printf '%s' "$ZDT_KEYSTORE_BASE64" | base64 --decode > "$scratch/key.jks"
-          unset ZDT_KEYSTORE_BASE64
-          "$CHAT_ANDROID_TOOLS/apksigner" sign --ks "$scratch/key.jks" --ks-key-alias "$ZDT_KEY_ALIAS" \
-            --ks-pass env:ZDT_KEYSTORE_PASSWORD --key-pass env:ZDT_KEY_PASSWORD --out "$out_apk" "$scratch/aligned.apk"
-          expected=$(keytool -exportcert -keystore "$scratch/key.jks" -storepass:env ZDT_KEYSTORE_PASSWORD -alias "$ZDT_KEY_ALIAS" | sha256sum | cut -d' ' -f1)
-          verified=$("$CHAT_ANDROID_TOOLS/apksigner" verify --verbose --print-certs "$out_apk")
-          printf '%s\n' "$verified" | grep -Ei "certificate SHA-256 digest: $expected$" >/dev/null
-          badging=$("$CHAT_ANDROID_TOOLS/aapt2" dump badging "$out_apk")
-          printf '%s\n' "$badging" | grep -Fx "native-code: 'arm64-v8a'" >/dev/null
-          python3 - "$out_apk" "$out_dir/chat-plugin.json" "$CHAT_SOURCE_REF" "$badging" <<'PY'
-          import hashlib, json, re, sys
-          from pathlib import Path
-          apk, manifest, ref, badging = sys.argv[1:]
-          package, code, name = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']+)'", badging, re.M).groups()
-          assert package == 'com.zdtd.chat' and int(code) > 0
-          apk = Path(apk)
-          assert 0 < apk.stat().st_size <= 100 * 1024 * 1024
-          metadata = dict(packageName=package, versionCode=int(code), versionName=name, apiVersion=1,
-                          asset=apk.name, size=apk.stat().st_size, sha256=hashlib.sha256(apk.read_bytes()).hexdigest(), sourceRef=ref)
-          Path(manifest).write_text(json.dumps(metadata, indent=2) + '\n')
-          PY
-      - uses: actions/upload-artifact@v7
-        with:
-          name: chat-plugin-technical-assets
-          path: out/technical/chat-plugin/
-          if-no-files-found: error
-          retention-days: 1
-
   build_dpi_detector:
     name: build dpi-detector ${{ matrix.abi }}
     runs-on: ubuntu-latest
@@ -6847,7 +6695,6 @@ jobs:
       - package_tg_ws_proxy_asset
       - package_singbox_lx_asset
       - build_tgws_plugin_apk
-      - sign_chat_plugin_apk
     if: always() && github.ref == 'refs/heads/main' && needs.build_apk.result == 'success'
 
     steps:
@@ -6901,13 +6748,6 @@ jobs:
           name: tgws-plugin-technical-assets
           path: out/technical/tgws-plugin
 
-      - name: Download ZDT Chat plugin technical assets
-        if: needs.sign_chat_plugin_apk.result == 'success'
-        uses: actions/download-artifact@v8
-        with:
-          name: chat-plugin-technical-assets
-          path: out/technical/chat-plugin
-
       - name: Set up Node.js for GitHub Copilot CLI
         uses: actions/setup-node@v7
         with:
@@ -6924,7 +6764,6 @@ jobs:
           TG_WS_PROXY_PACKAGE_RESULT: ${{ needs.package_tg_ws_proxy_asset.result }}
           SING_BOX_LX_PACKAGE_RESULT: ${{ needs.package_singbox_lx_asset.result }}
           TGWS_PLUGIN_BUILD_RESULT: ${{ needs.build_tgws_plugin_apk.result }}
-          CHAT_PLUGIN_BUILD_RESULT: ${{ needs.sign_chat_plugin_apk.result }}
         run: |
           set -euo pipefail
 
@@ -7395,21 +7234,6 @@ jobs:
             if ! upload_optional_asset_clobber_only "$TECHNICAL_TAG" "$TGWS_PLUGIN_MANIFEST#tgws-plugin.json" "tgws-plugin.json"; then
               TGWS_PLUGIN_UPLOAD_MODE="failed-manifest"
             fi
-          fi
-
-          if [[ "$CHAT_PLUGIN_BUILD_RESULT" == success ]]; then
-            chat_apk=out/technical/chat-plugin/zdt-d-chat-plugin.apk
-            chat_manifest=out/technical/chat-plugin/chat-plugin.json
-            if [[ -s "$chat_apk" && -s "$chat_manifest" ]] &&
-              upload_optional_asset_clobber_only "$TECHNICAL_TAG" "$chat_apk#zdt-d-chat-plugin.apk" zdt-d-chat-plugin.apk; then
-              if ! upload_optional_asset_clobber_only "$TECHNICAL_TAG" "$chat_manifest#chat-plugin.json" chat-plugin.json; then
-                echo '::warning::ZDT Chat manifest upload failed; clients will reject mismatched assets.'
-              fi
-            else
-              echo '::warning::ZDT Chat APK upload failed; the chat manifest was left untouched.'
-            fi
-          else
-            echo '::warning::ZDT Chat was not rebuilt; existing chat assets were left untouched.'
           fi
 
           STABLE_ACTION="skipped"
